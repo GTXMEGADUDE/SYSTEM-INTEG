@@ -27,3 +27,14 @@ Use JSON with `title`, `author`, `genre`, and `year_published`.
 - `GET /api/books/{id}`
 - `PUT /api/books/{id}`
 - `DELETE /api/books/{id}`
+
+## AniBayan frontend layout
+
+The AniBayan homepage and role dashboards are static pages in `public/anibayan/`. With the app running, open:
+
+- `http://127.0.0.1:8000/anibayan/`: homepage
+- `http://127.0.0.1:8000/anibayan/admin.html`: administrator (accounts, user reports, organization applications, site health)
+- `http://127.0.0.1:8000/anibayan/organization.html`: farmer organization representative
+- `http://127.0.0.1:8000/anibayan/consumer.html`: buyer
+
+The pages use fictional sample data and don't read or write the database yet. Features, source and build steps are in `resources/anibayan/README.md`.
