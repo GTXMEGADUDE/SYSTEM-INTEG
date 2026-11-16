@@ -146,3 +146,16 @@ getElement('open-land-story').addEventListener('click',()=>landDialog.showModal(
 getElement('open-care-story').addEventListener('click',()=>landDialog.showModal());
 getElement('close-land-story').addEventListener('click',()=>landDialog.close());
 landDialog.addEventListener('click',event=>{if(event.target===landDialog){const box=landDialog.getBoundingClientRect();if(event.clientX<box.left||event.clientX>box.right||event.clientY<box.top||event.clientY>box.bottom)landDialog.close();}});
+
+// The header follows the account signed in on login.html, and the cart count is that buyer's cart.
+function setupAccountLinks():void {
+  dashLoadStore();
+  const account=dashAccountByEmail(dashSessionEmail());
+  const active=account&&account.status==='Active'?account:undefined;
+  const signIn=document.querySelector<HTMLAnchorElement>('.header-actions .sign-in');
+  if(signIn&&active){signIn.href=dashHomeFor(active);signIn.textContent=active.name.split(' ')[0]+'’s account';}
+  const lines=active&&active.role==='Consumer'?(dashboardCarts[active.email]||[]).length:0;
+  getElement('cart-count').textContent=String(lines);
+  getElement('open-cart').setAttribute('aria-label','Open your cart, '+dashPlural(lines,'item'));
+}
+setupAccountLinks();

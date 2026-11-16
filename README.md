@@ -28,13 +28,12 @@ Use JSON with `title`, `author`, `genre`, and `year_published`.
 - `PUT /api/books/{id}`
 - `DELETE /api/books/{id}`
 
-## AniBayan frontend layout
+## AniBayan
 
-The AniBayan homepage and role dashboards are static pages in `public/anibayan/`. With the app running, open:
+AniBayan is a working prototype served from `public/anibayan/`. With the app running, open `http://127.0.0.1:8000/anibayan/` and sign in with a test account. Every test account uses the password `anibayan`.
 
-- `http://127.0.0.1:8000/anibayan/`: homepage
-- `http://127.0.0.1:8000/anibayan/admin.html`: administrator (accounts, user reports, organization applications, site health)
-- `http://127.0.0.1:8000/anibayan/organization.html`: farmer organization representative
-- `http://127.0.0.1:8000/anibayan/consumer.html`: buyer
+- `alex@example.com`: buyer (shop, cart, checkout, orders)
+- `ramon@example.com`: representative of Benguet Highland Growers (orders, listings, members)
+- `admin@example.com`: administrator (accounts, user reports, organization applications, site health)
 
-The pages use fictional sample data and don't read or write the database yet. Features, source and build steps are in `resources/anibayan/README.md`.
+AniBayan keeps its data in the browser for now, not in MySQL. Features, test accounts, source and build steps are in `resources/anibayan/README.md`.
