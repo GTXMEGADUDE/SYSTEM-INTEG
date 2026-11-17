@@ -81,11 +81,15 @@ function authSignIn(form:HTMLFormElement):void{
  const error=document.getElementById('signin-error')!;
  const fail=(message:string)=>{error.hidden=false;error.textContent=message;};
  const account=dashAccountByEmail(email);
- if(!account||(account.password||dashDemoPassword)!==password){fail('The email or password is incorrect.');return;}
- if(account.status==='Suspended'){fail('This account is suspended. Contact AniBayan support if you think this is a mistake.');return;}
- if(account.status==='Pending'){fail('Your organization application is still being reviewed. You can sign in once an administrator approves it.');return;}
- if(account.status==='Declined'){fail('Your organization application was declined, so this account can’t sign in.');return;}
+ const refuse=(type:string,detail:string,message:string)=>{dashLog(type,account?account.email:email.toLowerCase(),detail);dashSaveStore();fail(message);};
+ if(!account){refuse('signin-failed','No account with this email','The email or password is incorrect.');return;}
+ if((account.password||dashDemoPassword)!==password){refuse('signin-failed','Wrong password','The email or password is incorrect.');return;}
+ if(account.status==='Suspended'){refuse('signin-blocked','Account suspended','This account is suspended. Contact AniBayan support if you think this is a mistake.');return;}
+ if(account.status==='Pending'){refuse('signin-waiting','Application under review','Your organization application is still being reviewed. You can sign in once an administrator approves it.');return;}
+ if(account.status==='Declined'){refuse('signin-blocked','Application declined','Your organization application was declined, so this account can’t sign in.');return;}
+ if(account.status==='Terminated'){refuse('signin-blocked','Organization terminated','Your organization was terminated after repeated warnings, so this account can’t sign in.');return;}
  account.lastActive=dashToday;
+ dashLog('signin',account.email);
  dashSaveStore();dashSetSession(account.email);
  location.href=authDestination(account);
 }
@@ -116,6 +120,7 @@ function authRegister(form:HTMLFormElement):void{
   dashboardOrganizations.push({name:account.organization,region:value('province')+', '+value('region'),crop:value('crops'),image:'field-detail.jpg',listings:0,status:'Pending review',representative:account.name,applied:dashToday,members:Number(value('members')),documents:data.getAll('documents').map(String),phone:account.phone});
  }
  dashboardAccounts.push(account);
+ dashLog('register',account.email,organization?'Organization application · '+account.organization:'Buyer');
  dashSaveStore();
  if(!organization){dashSetSession(account.email);const next=authDestination(account);location.href=next==='consumer.html'?'consumer.html#shop':next;return;}
  authSubmitted=account;authView='submitted';authRender();

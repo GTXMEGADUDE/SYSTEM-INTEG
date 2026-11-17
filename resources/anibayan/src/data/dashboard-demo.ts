@@ -3,23 +3,33 @@
 interface DashboardPeriod { label:string; value:number; orders:number; labels:string[]; values:number[]; orderValues:number[]; valueScale:number; orderScale:number }
 interface DashboardOrderItem { crop:string; name:string; quantity:number; unit:string; price:number }
 // Orders placed through checkout also carry their items, delivery details and payment method.
-interface DashboardOrder { id:string; customer:string; organization:string; crop:string; image:string; quantity:string; total:number; date:string; status:string; payment:string; items?:DashboardOrderItem[]; address?:string; phone?:string; method?:string; note?:string }
+// checkout: the PayMongo checkout opened for an unpaid order; paymentRef: PayMongo's payment id once it is paid.
+interface DashboardOrder { id:string; customer:string; organization:string; crop:string; image:string; quantity:string; total:number; date:string; status:string; payment:string; items?:DashboardOrderItem[]; address?:string; phone?:string; method?:string; note?:string; checkout?:string; paymentRef?:string }
 // harvested: date the crop was harvested (required on every listing). shelfLife: days the produce keeps well after harvest.
 // image: a file in assets/ or an uploaded photo stored as a data URL.
 interface DashboardCrop { id:string; name:string; organization:string; image:string; price:number; unit:string; category:string; stock:number; status:string; harvested:string; shelfLife:number }
-// status: 'Active' (approved and selling), 'Pending review' (application waiting for an administrator) or 'Declined'.
-interface DashboardOrganization { name:string; region:string; crop:string; image:string; listings:number; status:string; representative:string; applied:string; members:number; documents:string[]; approved?:string; phone?:string; description?:string }
+// status: 'Active' (approved and selling), 'Pending review' (application waiting for an administrator), 'Declined', or
+// 'Terminated' (removed after its final warning; terminated is the date and terminatedFor the offence that ended it).
+interface DashboardOrganization { name:string; region:string; crop:string; image:string; listings:number; status:string; representative:string; applied:string; members:number; documents:string[]; approved?:string; phone?:string; description?:string; terminated?:string; terminatedFor?:string }
 // Starting accounts use dashDemoPassword until their password is changed or reset.
 interface DashboardAccount { name:string; email:string; role:string; organization?:string; joined:string; lastActive:string; status:string; note?:string; phone?:string; address?:string; password?:string }
-// Buyer feedback (1–5 stars) and buyer reports feed each organization's credit score.
+// Buyer feedback: 1–5 stars for a completed order, with an optional comment.
 interface DashboardFeedback { id:string; organization:string; customer:string; rating:number; comment:string; date:string; order?:string }
-// status: 'Open' (waiting for an administrator), 'Upheld' (lowers the credit score) or 'Dismissed'.
-interface DashboardReport { id:string; organization:string; customer:string; reason:string; details:string; date:string; status:string; order?:string }
+// status: 'Open' (waiting for an administrator), 'Upheld' (counts as a warning against the organization) or 'Dismissed'.
+// decided: the day an administrator upheld or dismissed it.
+interface DashboardReport { id:string; organization:string; customer:string; reason:string; details:string; date:string; status:string; order?:string; decided?:string }
+// A warning an administrator gave an organization directly. Upheld reports are warnings too; see dashWarningsFor.
+interface DashboardWarning { id:string; organization:string; reason:string; details:string; date:string; by:string }
+// One event in the administrators' activity log. actor: the email that did it (also an unknown email that tried to
+// sign in). target: the account an administrator acted on. type: a key of dashActivityTypes in dashboards.ts.
+interface DashboardActivity { time:string; actor:string; type:string; detail:string; target?:string }
 interface DashboardMember { id:string; organization:string; name:string; place:string; crops:string; area:number; joined:string; status:string }
 interface DashboardCartLine { crop:string; quantity:number }
 // One run of the admin site-health checks.
 interface DashboardHealthResult { service:string; ok:boolean; latency:number; error?:string }
-interface DashboardHealthRun { time:string; results:DashboardHealthResult[] }
+// CPU (% in use), memory and storage (bytes) of the machine serving AniBayan; null when it can't be read.
+interface DashboardHardware { cpu:number|null; cores:number|null; memoryUsed:number|null; memoryTotal:number|null; storageUsed:number|null; storageTotal:number|null }
+interface DashboardHealthRun { time:string; results:DashboardHealthResult[]; hardware?:DashboardHardware; hardwareError?:string }
 
 const dashTodayDate=new Date();
 const dashIsoDate=(date:Date)=>date.getFullYear()+'-'+String(date.getMonth()+1).padStart(2,'0')+'-'+String(date.getDate()).padStart(2,'0');
@@ -105,10 +115,42 @@ const dashboardFeedback:DashboardFeedback[]=[
  {id:'FB-107',organization:'Guimaras Mango Farmers',customer:'Maria Santos',rating:2,comment:'Received fewer kilos than ordered.',date:dashDaysAgo(17),order:'AB-2026-1028'},
 ];
 const dashboardReports:DashboardReport[]=[
- {id:'RP-031',organization:'Guimaras Mango Farmers',customer:'Maria Santos',reason:'Short or wrong quantity',details:'The order weighed 3.4 kg instead of the 4 kg I paid for.',date:dashDaysAgo(17),status:'Upheld',order:'AB-2026-1028'},
+ {id:'RP-031',organization:'Guimaras Mango Farmers',customer:'Maria Santos',reason:'Short or wrong quantity',details:'The order weighed 3.4 kg instead of the 4 kg I paid for.',date:dashDaysAgo(17),status:'Upheld',order:'AB-2026-1028',decided:dashDaysAgo(16)},
  {id:'RP-032',organization:'Guimaras Mango Farmers',customer:'Daniel Tan',reason:'Poor quality or spoiled',details:'Several mangoes were overripe and bruised on arrival.',date:dashDaysAgo(11),status:'Open',order:'AB-2026-1032'},
- {id:'RP-033',organization:'Benguet Highland Growers',customer:'Carlo Mendoza',reason:'Late or no fulfillment',details:'The organization took more than two days to confirm my order.',date:dashDaysAgo(6),status:'Dismissed',order:'AB-2026-1038'},
+ {id:'RP-033',organization:'Benguet Highland Growers',customer:'Carlo Mendoza',reason:'Late or no fulfillment',details:'The organization took more than two days to confirm my order.',date:dashDaysAgo(6),status:'Dismissed',order:'AB-2026-1038',decided:dashDaysAgo(5)},
 ];
+const dashboardWarnings:DashboardWarning[]=[];
+// Activity log: [minutes ago, actor, type, detail, target]
+const dashMinutesAgo=(minutes:number)=>new Date(dashTodayDate.getTime()-minutes*60000).toISOString();
+const dashboardActivity:DashboardActivity[]=([
+ [23,'admin@anibayan.ph','signin-failed','No account with this email'],
+ [24,'admin@anibayan.ph','signin-failed','No account with this email'],
+ [24,'admin@anibayan.ph','signin-failed','No account with this email'],
+ [26,'admin@anibayan.ph','signin-failed','No account with this email'],
+ [40,'jessa@example.com','signin-blocked','Account suspended'],
+ [41,'jessa@example.com','signin-blocked','Account suspended'],
+ [43,'jessa@example.com','signin-blocked','Account suspended'],
+ [50,'ramon@example.com','order-updated','#1048 → Processing'],
+ [55,'ramon@example.com','signin',''],
+ [67,'alex@example.com','order-paid','#1048 · ₱485'],
+ [68,'alex@example.com','order-placed','#1048 · ₱485 · Benguet Highland Growers'],
+ [72,'alex@example.com','signin',''],
+ [170,'maria@example.com','order-placed','#1047 · ₱650 · Guimaras Mango Farmers'],
+ [175,'maria@example.com','password-changed',''],
+ [178,'maria@example.com','signin',''],
+ [180,'maria@example.com','signin-failed','Wrong password'],
+ [182,'maria@example.com','signin-failed','Wrong password'],
+ [1500,'edna@example.com','register','Organization application · Quezon Coconut Farmers Association'],
+ [2910,'joel@example.com','register','Organization application · Laguna Harvest Collective'],
+ [3080,'ramon@example.com','price-changed','Fresh carrots · ₱65 → ₱70 /kg'],
+ [7395,'admin@example.com','report-dismissed','RP-033 · Benguet Highland Growers'],
+ [7500,'daniel@example.com','order-cancelled','#1042'],
+ [16110,'daniel@example.com','report-filed','RP-032 · Guimaras Mango Farmers'],
+ [18990,'admin@example.com','application-declined','Tarlac Vegetable Growers'],
+ [23275,'admin@example.com','report-upheld','RP-031 · Guimaras Mango Farmers'],
+ [24610,'maria@example.com','report-filed','RP-031 · Guimaras Mango Farmers'],
+ [36260,'admin@example.com','account-suspended','Jessa Bautista','jessa@example.com'],
+] as [number,string,string,string,string?][]).map(([minutes,actor,type,detail,target])=>target?{time:dashMinutesAgo(minutes),actor,type,detail,target}:{time:dashMinutesAgo(minutes),actor,type,detail});
 const dashboardMembers:DashboardMember[]=[
  {id:'MB-001',organization:'Benguet Highland Growers',name:'Ramon Dulnuan',place:'La Trinidad',crops:'Carrots, cabbage',area:1.2,joined:'2021',status:'Active'},
  {id:'MB-002',organization:'Benguet Highland Growers',name:'Josefa Baniwas',place:'Atok',crops:'Potatoes, carrots',area:0.8,joined:'2021',status:'Active'},

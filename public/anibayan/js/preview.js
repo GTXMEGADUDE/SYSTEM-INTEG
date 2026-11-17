@@ -106,10 +106,42 @@ const dashboardFeedback = [
     { id: 'FB-107', organization: 'Guimaras Mango Farmers', customer: 'Maria Santos', rating: 2, comment: 'Received fewer kilos than ordered.', date: dashDaysAgo(17), order: 'AB-2026-1028' },
 ];
 const dashboardReports = [
-    { id: 'RP-031', organization: 'Guimaras Mango Farmers', customer: 'Maria Santos', reason: 'Short or wrong quantity', details: 'The order weighed 3.4 kg instead of the 4 kg I paid for.', date: dashDaysAgo(17), status: 'Upheld', order: 'AB-2026-1028' },
+    { id: 'RP-031', organization: 'Guimaras Mango Farmers', customer: 'Maria Santos', reason: 'Short or wrong quantity', details: 'The order weighed 3.4 kg instead of the 4 kg I paid for.', date: dashDaysAgo(17), status: 'Upheld', order: 'AB-2026-1028', decided: dashDaysAgo(16) },
     { id: 'RP-032', organization: 'Guimaras Mango Farmers', customer: 'Daniel Tan', reason: 'Poor quality or spoiled', details: 'Several mangoes were overripe and bruised on arrival.', date: dashDaysAgo(11), status: 'Open', order: 'AB-2026-1032' },
-    { id: 'RP-033', organization: 'Benguet Highland Growers', customer: 'Carlo Mendoza', reason: 'Late or no fulfillment', details: 'The organization took more than two days to confirm my order.', date: dashDaysAgo(6), status: 'Dismissed', order: 'AB-2026-1038' },
+    { id: 'RP-033', organization: 'Benguet Highland Growers', customer: 'Carlo Mendoza', reason: 'Late or no fulfillment', details: 'The organization took more than two days to confirm my order.', date: dashDaysAgo(6), status: 'Dismissed', order: 'AB-2026-1038', decided: dashDaysAgo(5) },
 ];
+const dashboardWarnings = [];
+// Activity log: [minutes ago, actor, type, detail, target]
+const dashMinutesAgo = (minutes) => new Date(dashTodayDate.getTime() - minutes * 60000).toISOString();
+const dashboardActivity = [
+    [23, 'admin@anibayan.ph', 'signin-failed', 'No account with this email'],
+    [24, 'admin@anibayan.ph', 'signin-failed', 'No account with this email'],
+    [24, 'admin@anibayan.ph', 'signin-failed', 'No account with this email'],
+    [26, 'admin@anibayan.ph', 'signin-failed', 'No account with this email'],
+    [40, 'jessa@example.com', 'signin-blocked', 'Account suspended'],
+    [41, 'jessa@example.com', 'signin-blocked', 'Account suspended'],
+    [43, 'jessa@example.com', 'signin-blocked', 'Account suspended'],
+    [50, 'ramon@example.com', 'order-updated', '#1048 → Processing'],
+    [55, 'ramon@example.com', 'signin', ''],
+    [67, 'alex@example.com', 'order-paid', '#1048 · ₱485'],
+    [68, 'alex@example.com', 'order-placed', '#1048 · ₱485 · Benguet Highland Growers'],
+    [72, 'alex@example.com', 'signin', ''],
+    [170, 'maria@example.com', 'order-placed', '#1047 · ₱650 · Guimaras Mango Farmers'],
+    [175, 'maria@example.com', 'password-changed', ''],
+    [178, 'maria@example.com', 'signin', ''],
+    [180, 'maria@example.com', 'signin-failed', 'Wrong password'],
+    [182, 'maria@example.com', 'signin-failed', 'Wrong password'],
+    [1500, 'edna@example.com', 'register', 'Organization application · Quezon Coconut Farmers Association'],
+    [2910, 'joel@example.com', 'register', 'Organization application · Laguna Harvest Collective'],
+    [3080, 'ramon@example.com', 'price-changed', 'Fresh carrots · ₱65 → ₱70 /kg'],
+    [7395, 'admin@example.com', 'report-dismissed', 'RP-033 · Benguet Highland Growers'],
+    [7500, 'daniel@example.com', 'order-cancelled', '#1042'],
+    [16110, 'daniel@example.com', 'report-filed', 'RP-032 · Guimaras Mango Farmers'],
+    [18990, 'admin@example.com', 'application-declined', 'Tarlac Vegetable Growers'],
+    [23275, 'admin@example.com', 'report-upheld', 'RP-031 · Guimaras Mango Farmers'],
+    [24610, 'maria@example.com', 'report-filed', 'RP-031 · Guimaras Mango Farmers'],
+    [36260, 'admin@example.com', 'account-suspended', 'Jessa Bautista', 'jessa@example.com'],
+].map(([minutes, actor, type, detail, target]) => target ? { time: dashMinutesAgo(minutes), actor, type, detail, target } : { time: dashMinutesAgo(minutes), actor, type, detail });
 const dashboardMembers = [
     { id: 'MB-001', organization: 'Benguet Highland Growers', name: 'Ramon Dulnuan', place: 'La Trinidad', crops: 'Carrots, cabbage', area: 1.2, joined: '2021', status: 'Active' },
     { id: 'MB-002', organization: 'Benguet Highland Growers', name: 'Josefa Baniwas', place: 'Atok', crops: 'Potatoes, carrots', area: 0.8, joined: '2021', status: 'Active' },
@@ -181,7 +213,7 @@ function dashReplaceRecord(target, source) {
     Object.assign(target, source);
 }
 function dashSnapshot() {
-    return JSON.stringify({ orders: dashboardOrders, crops: dashboardCrops, organizations: dashboardOrganizations, accounts: dashboardAccounts, feedback: dashboardFeedback, reports: dashboardReports, members: dashboardMembers, saved: dashboardSaved, carts: dashboardCarts, healthLog: dashboardHealthLog });
+    return JSON.stringify({ orders: dashboardOrders, crops: dashboardCrops, organizations: dashboardOrganizations, accounts: dashboardAccounts, feedback: dashboardFeedback, reports: dashboardReports, warnings: dashboardWarnings, activity: dashboardActivity, members: dashboardMembers, saved: dashboardSaved, carts: dashboardCarts, healthLog: dashboardHealthLog });
 }
 // Replaces the starting data with the copy saved by any AniBayan page, if there is one.
 function dashLoadStore() {
@@ -202,6 +234,8 @@ function dashLoadStore() {
         dashReplaceList(dashboardAccounts, data.accounts);
         dashReplaceList(dashboardFeedback, data.feedback);
         dashReplaceList(dashboardReports, data.reports);
+        dashReplaceList(dashboardWarnings, data.warnings);
+        dashReplaceList(dashboardActivity, data.activity);
         dashReplaceList(dashboardMembers, data.members);
         dashReplaceList(dashboardHealthLog, data.healthLog);
         dashReplaceRecord(dashboardSaved, data.saved);
@@ -224,6 +258,12 @@ function dashSaveStore() {
     }
     dashLastSaved = json;
     return true;
+}
+// Adds one event to the administrators' activity log, newest first. The caller saves.
+function dashLog(type, actor, detail = '', target = '') {
+    dashboardActivity.unshift(target ? { time: new Date().toISOString(), actor, type, detail, target } : { time: new Date().toISOString(), actor, type, detail });
+    if (dashboardActivity.length > 1000)
+        dashboardActivity.length = 1000;
 }
 function dashResetStore() { try {
     localStorage.removeItem(dashStoreKey);

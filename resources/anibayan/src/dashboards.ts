@@ -49,7 +49,7 @@ const dashDialog=document.getElementById('detail-dialog') as HTMLDialogElement;
 interface DashShopFilters{type:string;min:string;max:string;harvest:string;location:string;sort:string}
 const dashShopDefaults:DashShopFilters={type:'All',min:'',max:'',harvest:'any',location:'All',sort:'fresh'};
 // bar: the highlighted chart bar; anything past the end selects the newest one.
-const dashState={view:'overview',query:'',filter:'All',nextFilter:'',period:'week' as 'week'|'month',chart:'value',bar:99,shop:{...dashShopDefaults}};
+const dashState={view:'overview',query:'',filter:'All',nextFilter:'',period:'week' as 'week'|'month',chart:'value',hardwareChart:'cpu',bar:99,shop:{...dashShopDefaults}};
 const dashPaths:Record<string,string>={
  grid:'M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z',
  bag:'M5 7h14l2 14H3L5 7Z M8 8V6a4 4 0 0 1 8 0v2',
@@ -112,37 +112,64 @@ const dashAgeText=(age:number)=>age<=0?'today':age===1?'yesterday':age+' days ag
 const dashFreshBadge=(crop:DashboardCrop)=>{const f=dashFreshness(crop);return '<span class="status '+f.tone+'">'+f.label+'</span>';};
 const dashHarvestLine=(crop:DashboardCrop,withShelfLife=false)=>{const f=dashFreshness(crop);return '<p class="harvest-line">'+di('calendar')+'<span>Harvested '+dd(crop.harvested)+' · '+dashAgeText(f.age)+(withShelfLife?' · '+f.label.toLowerCase():'')+'</span></p>';};
 const dashShelfDefaults:Record<string,number>={Vegetables:7,Fruits:7,'Rice & grains':180};
-const dashIsBuyable=(crop:DashboardCrop)=>crop.status==='Active'&&crop.stock>0&&dashFreshness(crop).left>=0;
+// A terminated organization's listings leave the shop.
+const dashIsBuyable=(crop:DashboardCrop)=>crop.status==='Active'&&crop.stock>0&&dashFreshness(crop).left>=0&&dashboardOrganizations.find(o=>o.name===crop.organization)?.status!=='Terminated';
 
-/* ---------- Organization credit score ---------- */
-// Credit score (0–100) = average buyer rating × 20, minus 10 points for every report an administrator upheld.
-// Open reports don't count until they are reviewed and dismissed reports never count. Organizations without ratings are "New".
-const dashReportPenalty=10;
-interface DashCredit{score:number|null;base:number;rating:number;reviews:number;upheld:number;open:number;band:string;tone:string}
-function dashCredit(org:string):DashCredit{
+/* ---------- Buyer ratings ---------- */
+interface DashRating{rating:number;reviews:number}
+function dashRatingOf(org:string):DashRating{
  const ratings=dashboardFeedback.filter(f=>f.organization===org).map(f=>f.rating);
- const reports=dashboardReports.filter(r=>r.organization===org);
- const upheld=reports.filter(r=>r.status==='Upheld').length;
- const rating=ratings.length?ratings.reduce((sum,r)=>sum+r,0)/ratings.length:0;
- const base=Math.round(rating*20);
- const score=ratings.length?Math.max(0,Math.min(100,base-upheld*dashReportPenalty)):null;
- const band=score===null?'New':score>=90?'Excellent':score>=75?'Good':score>=60?'Fair':'At risk';
- return {score,base,rating,reviews:ratings.length,upheld,open:reports.filter(r=>r.status==='Open').length,band,tone:band.toLowerCase().replace(/ /g,'-')};
-}
-function dashScoreBadge(org:string):string{
- const c=dashCredit(org);
- return '<span class="score-badge '+c.tone+'" title="AniBayan credit score">'+(c.score===null?'New · no ratings yet':'<strong>'+c.score+'</strong>/100 · '+c.band)+'</span>';
+ return {rating:ratings.length?ratings.reduce((sum,r)=>sum+r,0)/ratings.length:0,reviews:ratings.length};
 }
 function dashRatingText(org:string):string{
- const c=dashCredit(org);
- return c.reviews?'<span class="rating"><b aria-hidden="true">★</b> '+c.rating.toFixed(1)+' <small>('+dashPlural(c.reviews,'review')+')</small></span>':'<span class="rating">No reviews yet</span>';
+ const r=dashRatingOf(org);
+ return r.reviews?'<span class="rating"><b aria-hidden="true">★</b> '+r.rating.toFixed(1)+' <small>('+dashPlural(r.reviews,'review')+')</small></span>':'<span class="rating">No reviews yet</span>';
 }
 const dashStars=(rating:number)=>'<span class="stars" role="img" aria-label="Rated '+rating+' out of 5">'+'★'.repeat(rating)+'<span class="stars-off">'+'★'.repeat(5-rating)+'</span></span>';
-function dashScoreExplainer(org:string):string{
- const c=dashCredit(org);
- const ring='<div class="score-ring '+c.tone+'" style="--score:'+(c.score??0)+'"><span><strong>'+(c.score??'–')+'</strong><small>'+(c.score===null?'New':'of 100')+'</small></span></div>';
- if(c.score===null)return '<div class="score-explainer">'+ring+'<p class="score-empty">No buyer ratings yet. The credit score appears after the first rating.</p></div>';
- return '<div class="score-explainer">'+ring+'<dl class="score-lines"><div><dt>Average rating '+c.rating.toFixed(1)+' ★ × 20</dt><dd>'+c.base+'</dd></div><div><dt>Upheld reports ('+c.upheld+' × −'+dashReportPenalty+')</dt><dd>'+(c.upheld?'−'+c.upheld*dashReportPenalty:'0')+'</dd></div><div class="score-total"><dt>Credit score</dt><dd>'+c.score+' · '+c.band+'</dd></div></dl></div>';
+
+/* ---------- Organization warnings ---------- */
+// Every report an administrator upholds is a warning, and administrators can also warn an organization directly
+// for breaking AniBayan's rules. The last of dashWarningLimit warnings is the final warning; the next offence
+// terminates the organization: its listings leave the shop and its representative can no longer sign in.
+const dashWarningLimit=3;
+interface DashWarningEntry{id:string;reason:string;details:string;date:string;report?:string;by?:string}
+function dashWarningsFor(org:string):DashWarningEntry[]{
+ const fromReports:DashWarningEntry[]=dashboardReports.filter(r=>r.organization===org&&r.status==='Upheld').map(r=>({id:r.id,reason:r.reason,details:r.details,date:r.decided||r.date,report:r.id}));
+ const direct:DashWarningEntry[]=dashboardWarnings.filter(w=>w.organization===org).map(w=>({id:w.id,reason:w.reason,details:w.details,date:w.date,by:w.by}));
+ return fromReports.concat(direct).sort((a,b)=>b.date.localeCompare(a.date));
+}
+interface DashStanding{count:number;final:boolean;terminated:boolean;label:string;tone:string}
+function dashStanding(org:string):DashStanding{
+ const count=dashWarningsFor(org).length;
+ const terminated=dashboardOrganizations.find(o=>o.name===org)?.status==='Terminated';
+ const final=!terminated&&count>=dashWarningLimit;
+ const label=terminated?'Terminated':final?'Final warning':count?count+' of '+dashWarningLimit+' warnings':'No warnings';
+ return {count,final,terminated,label,tone:terminated?'terminated':final?'final-warning':count?'warned':'no-warnings'};
+}
+const dashStandingBadge=(org:string)=>{const s=dashStanding(org);return '<span class="status '+s.tone+'">'+s.label+'</span>';};
+function dashStandingSentence(org:string):string{
+ const s=dashStanding(org);
+ return org+(s.terminated?' is terminated.':s.final?' is on its final warning.':s.count?' has '+s.label+'.':' has no warnings.');
+}
+// What the next upheld report or warning does to the organization.
+function dashNextOffence(org:string):string{
+ const s=dashStanding(org);
+ return s.terminated?'Nothing more: it is terminated':s.final?'Terminates the organization':s.count+1>=dashWarningLimit?'Final warning ('+dashWarningLimit+' of '+dashWarningLimit+')':'Warning '+(s.count+1)+' of '+dashWarningLimit;
+}
+// One segment per warning before termination.
+function dashWarningMeter(org:string):string{
+ const s=dashStanding(org);
+ return '<div class="warning-meter'+(s.final||s.terminated?' final':'')+'" role="img" aria-label="'+s.label+'">'+Array.from({length:dashWarningLimit},(_,i)=>'<i'+(i<s.count?' class="on"':'')+'></i>').join('')+'</div>';
+}
+// Administrators can withdraw a warning they gave; a report's warning goes when the report is reopened.
+function dashWarningRows(org:string,listClass:string,canWithdraw:boolean):string{
+ return '<div class="'+listClass+'">'+dashWarningsFor(org).map(w=>'<article class="feedback-row"><header><strong>'+de(w.reason)+'</strong><small>'+dd(w.date)+'</small></header>'+(w.details?'<p>'+de(w.details)+'</p>':'')+'<small>'+(w.report?'Upheld report '+w.report:'Given by '+de(w.by||'AniBayan'))+'</small>'+(canWithdraw&&!w.report?' <button class="text-button" data-withdraw-warning="'+w.id+'">Withdraw</button>':'')+'</article>').join('')+'</div>';
+}
+function dashWarningCallout():string{
+ const s=dashStanding(dashOrgName);
+ if(!s.count)return '';
+ const latest=dashWarningsFor(dashOrgName)[0];
+ return '<div class="warning-callout'+(s.final?' final':'')+'">'+di('flag')+'<span><b>'+s.label+'</b> · '+de(latest.reason)+'</span><button data-go="feedback">See warnings →</button></div>';
 }
 const dashRated=(orderId:string)=>dashboardFeedback.some(f=>f.order===orderId);
 const dashMyReport=(orderId:string)=>dashboardReports.find(r=>r.order===orderId&&r.customer===dashConsumerName);
@@ -214,8 +241,15 @@ const dashHealthChecks:[string,string,()=>Promise<number>][]=[
   return performance.now()-start;
  }],
 ];
+// CPU, memory and storage of the machine serving AniBayan, read by the Laravel app (routes/web.php).
+async function dashReadHardware():Promise<DashboardHardware>{
+ if(location.protocol==='file:')throw new Error('Open AniBayan through the web server to read the hardware.');
+ const response=await fetch('../server-health',{cache:'no-store',headers:{Accept:'application/json'}});
+ if(!response.ok)throw new Error('The server answered '+response.status+'.');
+ return await response.json() as DashboardHardware;
+}
 // Services AniBayan will connect to, with their current state.
-const dashIntegrations=[['PayMongo payments','Online payments','Test mode','Card and GCash payments are simulated; no money is charged.'],['Tawk.to live chat','Customer support chat','Not connected','Live chat is not set up yet.'],['Email notifications','Order and account emails','Not connected','Email sending is not set up yet.']];
+const dashIntegrations=[['PayMongo payments','Card and GCash checkout','Test mode','No money is charged'],['Tawk.to live chat','Customer support chat','Not connected','Live chat is not set up yet.'],['Email notifications','Order and account emails','Not connected','Email sending is not set up yet.']];
 async function dashRunHealthChecks():Promise<void>{
  if(dashChecking)return;
  dashChecking=true;dashRender();
@@ -224,7 +258,9 @@ async function dashRunHealthChecks():Promise<void>{
   try{results.push({service,ok:true,latency:Math.round(await run())});}
   catch(error){results.push({service,ok:false,latency:0,error:error instanceof Error?error.message:String(error)});}
  }
- dashboardHealthLog.push({time:new Date().toISOString(),results});
+ let hardware:DashboardHardware|undefined,hardwareError:string|undefined;
+ try{hardware=await dashReadHardware();}catch(error){hardwareError=error instanceof Error?error.message:String(error);}
+ dashboardHealthLog.push({time:new Date().toISOString(),results,hardware,hardwareError});
  if(dashboardHealthLog.length>30)dashboardHealthLog.splice(0,dashboardHealthLog.length-30);
  dashChecking=false;dashRender();
 }
@@ -246,13 +282,13 @@ const dashUserName=dashMe()?.name||'Guest';
 const dashRoles:Record<DashRole,DashRoleConfig>={
  admin:{
   page:'admin.html',workspace:'Admin workspace',navLabel:'Administration',
-  nav:[['overview','grid','Overview'],['accounts','people','Accounts'],['reports','flag','User reports'],['applications','clipboard','Applications'],['health','pulse','Site health']],
+  nav:[['overview','grid','Overview'],['accounts','people','Accounts'],['activity','eye','Activity log'],['reports','flag','User reports'],['applications','clipboard','Applications'],['health','pulse','Site health']],
   settingsNav:['settings','settings','Settings'],
   user:dashUserName,userRole:'Platform administrator',initials:'AD',
   search:'Search accounts, reports, applications…',
   cardIcon:'shield',cardTitle:'Platform oversight',cardText:'Accounts, user reports, organization applications and site health.',
   shortcut:['Public homepage','index.html','home'],
-  titles:{overview:['Admin overview','Accounts, user reports, organization applications and site health.'],accounts:['Account management','Consumer, representative and administrator accounts.'],reports:['User reports','Reports buyers filed about organizations. Upheld reports lower the organization’s credit score.'],applications:['Organization applications','Farmer organizations asking to sell on AniBayan.'],health:['Site health','Live checks of AniBayan’s services, plus the history of recent checks.'],settings:['Workspace settings','Your administrator account and preferences.'],help:dashHelpTitle},
+  titles:{overview:['Admin overview','Accounts, user reports, organization applications and site health.'],accounts:['Account management','Consumer, representative and administrator accounts.'],activity:['Activity log','Sign-ins, orders, listings and administrator actions, newest first.'],reports:['User reports','Reports buyers filed about organizations.'],applications:['Organization applications','Farmer organizations asking to sell on AniBayan.'],health:['Site health','Live checks of AniBayan’s services, plus the history of recent checks.'],settings:['Workspace settings','Your administrator account and preferences.'],help:dashHelpTitle},
  },
  organization:{
   page:'organization.html',workspace:'Organization workspace',navLabel:'Your organization',
@@ -262,7 +298,7 @@ const dashRoles:Record<DashRole,DashRoleConfig>={
   search:'Search your orders, listings, feedback…',
   cardIcon:'leaf',cardTitle:dashOrgName,cardText:dashOrgAtLoad?dashOrgAtLoad.region+' · '+dashOrgAtLoad.crops:'',
   shortcut:['View public storefront','consumer.html?grower='+encodeURIComponent(dashOrgName)+'#growers','store'],
-  titles:{overview:[dashOrgName,'Orders, listings and members for your organization.'],orders:['Incoming orders','Confirm, prepare and complete orders from your buyers.'],listings:['My listings','The crops your organization offers. Buyers see each harvest date and shelf life.'],feedback:['Ratings & feedback','What buyers say about your organization, and how your credit score is calculated.'],members:['Member farmers','The growers who supply your organization.'],payments:['Payments','Payment status for your organization’s orders.'],settings:['Organization profile','How your organization appears on AniBayan.'],help:dashHelpTitle},
+  titles:{overview:[dashOrgName,'Orders, listings and members for your organization.'],orders:['Incoming orders','Confirm, prepare and complete orders from your buyers.'],listings:['My listings','The crops your organization offers. Buyers see each harvest date and shelf life.'],feedback:['Ratings & feedback','What buyers say about your organization, and any warnings from AniBayan.'],members:['Member farmers','The growers who supply your organization.'],payments:['Payments','Payment status for your organization’s orders.'],settings:['Organization profile','How your organization appears on AniBayan.'],help:dashHelpTitle},
  },
  consumer:{
   page:'consumer.html',workspace:isGuest?'AniBayan market':'My AniBayan',navLabel:isGuest?'Browse':'Your account',
@@ -272,7 +308,7 @@ const dashRoles:Record<DashRole,DashRoleConfig>={
   search:'Search harvests, orders and growers…',
   cardIcon:'leaf',cardTitle:'Good food starts here.',cardText:'Discover fresh harvests and the communities behind them.',
   shortcut:['Shop the harvest','#shop','store'],
-  titles:{overview:['Your harvest, at a glance.','Welcome back, '+dashUserName.split(' ')[0]+'. Good things are on their way.'],shop:['Shop the harvest',isGuest?'Fresh harvests from local growing communities. Sign in to order.':'Filter by price, crop type, harvest time and location.'],cart:['Your cart','Each organization fulfils its own order.'],orders:['My orders','Follow each order, then rate it or report a problem.'],saved:['Saved harvests','Crops you want to come back to.'],growers:[isGuest?'Growing communities':'Your growing communities','The organizations behind your food, with their buyer ratings and credit scores.'],payments:['Payment history','Payments for your orders.'],settings:['Your profile','Your account, delivery details and preferences.'],help:dashHelpTitle},
+  titles:{overview:['Your harvest, at a glance.','Welcome back, '+dashUserName.split(' ')[0]+'. Good things are on their way.'],shop:['Shop the harvest',isGuest?'Fresh harvests from local growing communities. Sign in to order.':'Filter by price, crop type, harvest time and location.'],cart:['Your cart','Each organization fulfils its own order.'],orders:['My orders','Follow each order, then rate it or report a problem.'],saved:['Saved harvests','Crops you want to come back to.'],growers:[isGuest?'Growing communities':'Your growing communities','The organizations behind your food, with their buyer ratings.'],payments:['Payment history','Payments for your orders.'],settings:['Your profile','Your account, delivery details and preferences.'],help:dashHelpTitle},
  },
 };
 const dashRole=dashRoles[dashboardRole];
@@ -291,6 +327,7 @@ function dashBlocked():string[]{
  const me=dashMe();
  if(!me)return [];
  if(me.status==='Suspended')return ['This account is suspended','An AniBayan administrator suspended '+me.email+'. Contact AniBayan support if you think this is a mistake.'];
+ if(me.status==='Terminated'||(isOrgDashboard&&dashMyOrg()?.status==='Terminated'))return ['Your organization was terminated',(me.organization||'Your organization')+' was removed from AniBayan after repeated warnings. Contact AniBayan support if you think this is a mistake.'];
  if(isOrgDashboard){
   const org=dashMyOrg();
   if(me.status==='Pending'||org?.status==='Pending review')return ['Your application is being reviewed','An AniBayan administrator is reviewing '+dashOrgName+'. You can manage listings and orders once it is approved.'];
@@ -302,6 +339,7 @@ function dashNotifications():string[][]{
  if(isAdminDashboard){
   const notes:string[][]=[];
   if(dashPendingApplications())notes.push([dashPlural(dashPendingApplications(),'organization application')+' awaiting review.','applications','Review applications']);
+  if(dashFlaggedToday())notes.push([dashPlural(dashFlaggedToday(),'flagged sign-in')+' today.','activity','Open the activity log']);
   if(dashOpenReports())notes.push([dashPlural(dashOpenReports(),'user report')+' waiting for your decision.','reports','Review user reports']);
   dashHealthSummary().down.forEach(r=>notes.push([r.service+' failed its last check.','health','View site health']));
   return notes;
@@ -310,6 +348,8 @@ function dashNotifications():string[][]{
  const orders=dashRoleOrders();
  if(isOrgDashboard){
   const notes:string[][]=[];
+  const warning=dashWarningsFor(dashOrgName)[0];
+  if(warning)notes.push(['AniBayan warning: '+warning.reason+'. '+dashStandingSentence(dashOrgName),'feedback','See warnings']);
   const pending=orders.filter(o=>o.status==='Pending');
   if(pending.length)notes.push([pending.length===1?'New order '+dashOrderNo(pending[0].id)+' from '+pending[0].customer+' is waiting for confirmation.':pending.length+' new orders are waiting for confirmation.','orders','Open incoming orders']);
   dashRoleCrops().filter(c=>c.status==='Active'&&c.stock>0&&c.stock<50).slice(0,2).forEach(c=>notes.push([c.name+' is running low: '+c.stock+' '+c.unit+' left.','listings','Manage listings']));
@@ -360,21 +400,23 @@ function dashHeading():string{
  return '<div class="page-heading"><div><h1>'+de(title)+'</h1><p>'+de(sub)+'</p></div><div class="page-tools">'+tools+'</div></div>';
 }
 function dashMetric(label:string,value:string,icon:string,caption:string,trend='',down=false):string{
- return '<article class="metric"><div class="metric-top"><span>'+label+'</span>'+di(icon)+'</div><div class="metric-value"><strong>'+value+'</strong>'+(trend?'<span class="trend'+(down?' down':'')+'">'+(down?'↘ ':'↗ ')+trend+'</span>':'')+'</div><p class="metric-caption">'+caption+'</p></article>';
+ return '<article class="metric"><div class="metric-top"><span>'+label+'</span>'+di(icon)+'</div><div class="metric-value"><strong>'+value+'</strong>'+(trend?'<span class="trend'+(down?' down':'')+'">'+(down?'↘ ':'↗ ')+trend+'</span>':'')+'</div>'+(caption?'<p class="metric-caption">'+caption+'</p>':'')+'</article>';
 }
 function dashPanelHead(title:string,note:string,action=''):string{
  return '<div class="panel-head"><div><h2>'+title+'</h2>'+(note?'<p>'+note+'</p>':'')+'</div>'+action+'</div>';
 }
 // A bar chart panel with one tab per data series; dashState.chart picks the visible series.
 interface DashSeries{key:string;tab:string;title:string;note:string;legend:string;values:number[];scale:number;axis:(value:number)=>string;caption:(value:number)=>string;suffix:string}
-function dashBarChart(series:DashSeries[],labels:string[],chip:string,foot:string):string{
- const s=series.find(item=>item.key===dashState.chart)||series[0];
+// group 'hardware' keeps its own tab, so the hardware chart and the response chart can sit on one page.
+function dashBarChart(series:DashSeries[],labels:string[],chip:string,foot:string,group=''):string{
+ const chosen=group==='hardware'?dashState.hardwareChart:dashState.chart;
+ const s=series.find(item=>item.key===chosen)||series[0];
  const selected=Math.min(dashState.bar,s.values.length-1);
  const bars=s.values.map((value,index)=>{
    const caption=s.caption(value);
    return '<div class="chart-column"><button class="chart-bar '+(selected===index?'selected':'')+'" style="--bar-height:'+Math.min(100,Math.round(value/s.scale*100))+'%" data-bar="'+index+'" aria-pressed="'+(selected===index)+'" aria-label="'+labels[index]+': '+caption+s.suffix+'"><span>'+caption+'</span></button><span class="chart-day">'+labels[index]+'</span></div>';
  }).join('');
- return '<section class="panel">'+dashPanelHead(s.title,s.note,'<span class="chip">'+chip+'</span>')+'<div class="chart-tabs">'+series.map(item=>'<button data-chart="'+item.key+'" aria-pressed="'+(item===s)+'">'+item.tab+'</button>').join('')+'</div><div class="chart-body"><div class="chart-axis">'+[1,.75,.5,.25,0].map(part=>'<span>'+s.axis(Math.round(part*s.scale*100)/100)+'</span>').join('')+'</div><div class="bar-chart">'+bars+'</div></div><div class="chart-foot"><span><i class="legend-dot"></i> '+s.legend+'</span><span>'+foot+'</span></div></section>';
+ return '<section class="panel">'+dashPanelHead(s.title,s.note,'<span class="chip">'+chip+'</span>')+'<div class="chart-tabs">'+series.map(item=>'<button data-chart="'+item.key+'"'+(group?' data-chart-group="'+group+'"':'')+' aria-pressed="'+(item===s)+'">'+item.tab+'</button>').join('')+'</div><div class="chart-body"><div class="chart-axis">'+[1,.75,.5,.25,0].map(part=>'<span>'+s.axis(Math.round(part*s.scale*100)/100)+'</span>').join('')+'</div><div class="bar-chart">'+bars+'</div></div><div class="chart-foot"><span><i class="legend-dot"></i> '+s.legend+'</span><span>'+foot+'</span></div></section>';
 }
 function dashChart(period:DashboardPeriod,valueNote:string,volumeNote:string):string{
  return dashBarChart([
@@ -384,8 +426,10 @@ function dashChart(period:DashboardPeriod,valueNote:string,volumeNote:string):st
 }
 function dashMatching(text:string):boolean{return text.toLowerCase().includes(dashState.query.trim().toLowerCase());}
 function dashEmpty(title:string,description:string):string{return '<div class="empty-state"><h2>'+title+'</h2><p>'+description+'</p></div>';}
-function dashFilters(options:string[],summary:string):string{
- return '<div class="filters">'+options.map(f=>'<button class="filter-chip" data-filter="'+f+'" aria-pressed="'+(dashState.filter===f)+'">'+f+'</button>').join('')+'<span class="filter-summary">'+summary+'</span></div>';
+// search: the placeholder of a search box for this table; it shares the header search's query.
+function dashFilters(options:string[],summary:string,search=''):string{
+ const box=search?'<label class="global-search table-search">'+di('search')+'<input type="search" data-table-search value="'+de(dashState.query)+'" placeholder="'+search+'" aria-label="'+search+'"></label>':'';
+ return '<div class="filters">'+options.map(f=>'<button class="filter-chip" data-filter="'+f+'" aria-pressed="'+(dashState.filter===f)+'">'+f+'</button>').join('')+box+'<span class="filter-summary">'+summary+'</span></div>';
 }
 // Orders visible to the current role, before search and status filters. Administrators and guests see none.
 function dashRoleOrders():DashboardOrder[]{
@@ -464,7 +508,7 @@ function dashReportTable(limit:number):string{
  const reports=limit?all.slice(0,limit):all;
  const table=reports.length?'<table><thead><tr><th scope="col">Report</th><th scope="col">Organization</th><th scope="col">Reported by</th><th scope="col">Reason</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>'+reports.map(r=>'<tr><td><strong>'+r.id+'</strong><small class="cell-note">'+dfull(r.date)+'</small></td><td>'+de(r.organization)+'</td><td>'+de(r.customer)+'</td><td>'+de(r.reason)+'</td><td>'+ds(r.status)+'</td><td><div class="row-actions"><button class="control small'+(r.status==='Open'?' primary':'')+'" data-report-id="'+r.id+'">'+(r.status==='Open'?'Review':'View')+'</button></div></td></tr>').join('')+'</tbody></table>':dashEmpty(dashboardReports.length?'No matching reports':'No reports yet',dashboardReports.length?'Try another search or report status.':'Reports that buyers file appear here.');
  const head=limit?dashPanelHead('Latest user reports','Newest first','<button class="text-button" data-go="reports">View all '+di('arrow')+'</button>'):dashPanelHead('Reports from buyers','');
- return '<section class="panel">'+head+(limit?'':dashFilters(['All','Open','Upheld','Dismissed'],dashPlural(reports.length,'report')))+'<div class="table-wrap">'+table+'</div></section>';
+ return '<section class="panel">'+head+(limit?'':dashFilters(['All','Open','Upheld','Dismissed'],dashPlural(reports.length,'report'),'Search reports'))+'<div class="table-wrap">'+table+'</div></section>';
 }
 function dashAdminOverview():string{
  const pending=dashboardOrganizations.filter(o=>o.status==='Pending review').sort((a,b)=>b.applied.localeCompare(a.applied));
@@ -481,11 +525,18 @@ function dashAccountsView():string{
  const metrics='<div class="metric-grid">'+dashMetric('Total accounts',String(dashboardAccounts.length),'people','<b>'+count(a=>dashAge(a.joined)<7)+' new</b> this week')+dashMetric('Buyers',String(count(a=>a.role==='Consumer')),'user','Buyer accounts')+dashMetric('Representatives',String(count(a=>a.role==='Representative')),'leaf',count(a=>a.status==='Pending')+' waiting on an application')+dashMetric('Suspended',String(count(a=>a.status==='Suspended')),'lock','Can’t sign in, order or sell')+'</div>';
  const rows=accounts.map(a=>'<tr><td><div class="table-product"><span class="avatar '+dashAvatarClass(a.role)+'">'+dashInitials(a.name)+'</span><div><strong>'+de(a.name)+'</strong><small>'+de(a.email)+'</small></div></div></td><td>'+(a.role==='Consumer'?'Buyer':a.role)+(a.organization?'<small class="cell-note">'+de(a.organization)+'</small>':'')+'</td><td>'+dfull(a.joined)+'</td><td>'+dd(a.lastActive)+'</td><td>'+ds(a.status)+'</td><td><div class="row-actions"><button class="control small" data-account="'+de(a.email)+'">Manage</button></div></td></tr>').join('');
  const table=accounts.length?'<table><thead><tr><th scope="col">Account</th><th scope="col">Role</th><th scope="col">Joined</th><th scope="col">Last active</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>'+rows+'</tbody></table>':dashEmpty('No matching accounts','Try a different name, email, role or status.');
- return metrics+'<section class="panel">'+dashPanelHead('Accounts','')+dashFilters(['All','Buyer','Representative','Administrator','Pending','Suspended'],dashPlural(accounts.length,'account'))+'<div class="table-wrap">'+table+'</div></section>';
+ return metrics+'<section class="panel">'+dashPanelHead('Accounts','')+dashFilters(['All','Buyer','Representative','Administrator','Pending','Suspended'],dashPlural(accounts.length,'account'),'Search accounts')+'<div class="table-wrap">'+table+'</div></section>';
 }
 function dashReportsView():string{
  const n=(status:string)=>dashboardReports.filter(r=>r.status===status).length;
- return '<div class="metric-grid three">'+dashMetric('Open reports',String(n('Open')),'flag','Waiting for your decision')+dashMetric('Upheld',String(n('Upheld')),'check','Each lowers the credit score by '+dashReportPenalty)+dashMetric('Dismissed',String(n('Dismissed')),'clock','No effect on the credit score')+'</div><p class="sample-callout">Credit score = average buyer rating × 20, minus '+dashReportPenalty+' points for every upheld report. Open reports don’t count until you decide.</p>'+dashReportTable(0);
+ return '<div class="metric-grid three">'+dashMetric('Open reports',String(n('Open')),'flag','')+dashMetric('Upheld',String(n('Upheld')),'check','')+dashMetric('Dismissed',String(n('Dismissed')),'clock','')+'</div>'+dashReportTable(0)+dashWarningPanel();
+}
+// Every approved or terminated organization, those closest to termination first.
+function dashWarningPanel():string{
+ const rank=(o:DashboardOrganization)=>{const s=dashStanding(o.name);return s.terminated?-1:s.count;};
+ const orgs=dashboardOrganizations.filter(o=>(o.status==='Active'||o.status==='Terminated')&&dashMatching(o.name+' '+o.region)).sort((a,b)=>rank(b)-rank(a)||a.name.localeCompare(b.name));
+ const row=(o:DashboardOrganization)=>{const latest=dashWarningsFor(o.name)[0];return '<button class="organization-row" data-organization="'+de(o.name)+'"><img src="'+dashImg(o.image)+'" alt=""><span><strong>'+de(o.name)+'</strong><small>'+(latest?'Latest: '+de(latest.reason)+' · '+dd(latest.date):de(o.region))+'</small></span>'+dashStandingBadge(o.name)+di('arrow')+'</button>';};
+ return '<section class="panel">'+dashPanelHead('Organization warnings','')+'<div class="organization-list">'+(orgs.length?orgs.map(row).join(''):dashEmpty('No matching organizations','Try another search.'))+'</div></section>';
 }
 function dashApplicationsView():string{
  const n=(status:string)=>dashboardOrganizations.filter(o=>dashAppStatus(o)===status).length;
@@ -494,7 +545,34 @@ function dashApplicationsView():string{
   const pending=o.status==='Pending review';
   return '<tr><td><div class="table-product"><img class="round" src="'+dashImg(o.image)+'" alt=""><div><strong>'+de(o.name)+'</strong><small>'+de(o.region)+'</small></div></div></td><td>'+de(o.representative)+'</td><td>'+o.members+'</td><td>'+dashPlural(o.documents.length,'file')+'</td><td>'+dfull(o.applied)+'</td><td>'+ds(dashAppStatus(o))+'</td><td><div class="row-actions"><button class="control small'+(pending?' primary':'')+'" data-organization="'+de(o.name)+'">'+(pending?'Review application':'View')+'</button></div></td></tr>';
  }).join('')+'</tbody></table>':dashEmpty('No matching applications','Try a different name, place or status.');
- return '<div class="metric-grid three">'+dashMetric('Awaiting review',String(n('Pending review')),'clock','Organizations asking to sell')+dashMetric('Approved',String(n('Approved')),'check','Selling on AniBayan')+dashMetric('Declined',String(n('Declined')),'flag','Can apply again with complete documents')+'</div><section class="panel">'+dashPanelHead('Applications','')+dashFilters(['All','Pending review','Approved','Declined'],dashPlural(apps.length,'application'))+'<div class="table-wrap">'+table+'</div></section>';
+ return '<div class="metric-grid three">'+dashMetric('Awaiting review',String(n('Pending review')),'clock','Organizations asking to sell')+dashMetric('Approved',String(n('Approved')),'check','Selling on AniBayan')+dashMetric('Declined',String(n('Declined')),'flag','Can apply again with complete documents')+'</div><section class="panel">'+dashPanelHead('Applications','')+dashFilters(['All','Pending review','Approved','Declined','Terminated'],dashPlural(apps.length,'application'),'Search applications')+'<div class="table-wrap">'+table+'</div></section>';
+}
+const dashGB=(bytes:number)=>bytes/1073741824;
+const dashGBText=(gb:number)=>(gb>=100?Math.round(gb):Math.round(gb*10)/10)+' GB';
+const dashHardwareRuns=()=>dashboardHealthLog.filter(run=>run.hardware);
+function dashHardwareChart():string{
+ const runs=dashHardwareRuns().slice(-7);
+ const last=dashboardHealthLog[dashboardHealthLog.length-1];
+ if(!runs.length)return '<section class="panel">'+dashPanelHead('Hardware','')+dashEmpty(dashChecking?'Reading the hardware…':'No readings yet',last?.hardwareError||'Run the checks to read CPU, memory and storage.')+'</section>';
+ const hw=runs.map(run=>run.hardware!);
+ const latest=hw[hw.length-1];
+ const labels=runs.map(run=>new Date(run.time).toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit'}));
+ const memory=hw.map(h=>h.memoryUsed===null?0:Math.round(dashGB(h.memoryUsed)*10)/10);
+ const storage=hw.map(h=>h.storageUsed===null?0:Math.round(dashGB(h.storageUsed)));
+ const scale=(total:number|null,values:number[])=>Math.max(1,Math.ceil(total?dashGB(total):Math.max(...values)*1.25));
+ return dashBarChart([
+  {key:'cpu',tab:'CPU',title:'CPU',note:latest.cores?dashPlural(latest.cores,'core'):'',legend:'CPU in use (%)',values:hw.map(h=>h.cpu??0),scale:100,axis:value=>String(Math.round(value)),caption:value=>value+'%',suffix:' CPU'},
+  {key:'memory',tab:'Memory',title:'Memory',note:latest.memoryTotal?dashGBText(dashGB(latest.memoryTotal))+' installed':'',legend:'Memory in use (GB)',values:memory,scale:scale(latest.memoryTotal,memory),axis:value=>String(Math.round(value)),caption:value=>dashGBText(value),suffix:' in use'},
+  {key:'storage',tab:'Storage',title:'Storage',note:latest.storageTotal?dashGBText(dashGB(latest.storageTotal))+' drive':'',legend:'Storage used (GB)',values:storage,scale:scale(latest.storageTotal,storage),axis:value=>String(Math.round(value)),caption:value=>dashGBText(value),suffix:' used'},
+ ],labels,'Last '+dashPlural(runs.length,'reading'),'Times are when each check ran','hardware');
+}
+// The latest reading of each part, as a meter.
+function dashServerPanel():string{
+ const latest=dashHardwareRuns().pop()?.hardware;
+ const row=(name:string,share:number|null,value:string,detail:string)=>'<div class="stock-row"><div><div class="stock-row-top"><strong>'+name+'</strong><strong>'+value+'</strong></div><div class="meter'+(share!==null&&share>=90?' high':'')+'" role="img" aria-label="'+name+': '+value+'"><i style="width:'+(share??0)+'%"></i></div><small>'+detail+'</small></div></div>';
+ const part=(name:string,used:number|null,total:number|null)=>{const share=used!==null&&total?Math.round(used/total*100):null;return row(name,share,share===null?'–':share+'%',used!==null&&total?dashGBText(dashGB(used))+' of '+dashGBText(dashGB(total)):'Not available');};
+ const body=latest?row('CPU',latest.cpu,latest.cpu===null?'–':latest.cpu+'%',latest.cores?dashPlural(latest.cores,'core'):'Not available')+part('Memory',latest.memoryUsed,latest.memoryTotal)+part('Storage',latest.storageUsed,latest.storageTotal):dashEmpty(dashChecking?'Reading the hardware…':'No readings yet','');
+ return '<section class="panel">'+dashPanelHead('Server','')+'<div class="stock-list">'+body+'</div></section>';
 }
 function dashHealthView():string{
  const summary=dashHealthSummary();
@@ -502,7 +580,85 @@ function dashHealthView():string{
  dashboardHealthLog.slice().reverse().forEach(run=>run.results.filter(r=>!r.ok).forEach(result=>failures.push({time:run.time,result})));
  const shown=failures.filter(f=>dashMatching(f.result.service+' '+(f.result.error||''))).slice(0,10);
  const incidents='<section class="panel">'+dashPanelHead('Failed checks','Most recent first')+'<div class="incident-list">'+(shown.length?shown.map(f=>'<article class="incident-row"><div class="incident-top"><strong>'+de(f.result.service)+' check failed</strong>'+ds('Down')+'</div><small>'+dtime(f.time)+'</small><p>'+de(f.result.error||'No details were recorded.')+'</p></article>').join(''):dashEmpty('No failed checks','Every recorded check passed.'))+'</div></section>';
- return '<div class="metric-grid">'+dashMetric('Checks passed',summary.uptime,'pulse',summary.runs?'Across the last '+dashPlural(summary.runs,'run'):'No checks yet')+dashMetric('Average response',summary.average===null?'–':dashLatency(summary.average),'clock','Web application, across recorded checks')+dashMetric('Failure rate',summary.errorRate,'flag',dashPlural(summary.failures,'failed check')+' recorded')+dashMetric('Services down',String(summary.down.length),'bell',summary.down.length?summary.down.map(r=>r.service).join(', '):'All checked services are up')+'</div><div class="split">'+dashHealthChart()+dashServicesPanel()+'</div>'+incidents;
+ return '<div class="metric-grid">'+dashMetric('Checks passed',summary.uptime,'pulse',summary.runs?'Across the last '+dashPlural(summary.runs,'run'):'No checks yet')+dashMetric('Average response',summary.average===null?'–':dashLatency(summary.average),'clock','Web application, across recorded checks')+dashMetric('Failure rate',summary.errorRate,'flag',dashPlural(summary.failures,'failed check')+' recorded')+dashMetric('Services down',String(summary.down.length),'bell',summary.down.length?summary.down.map(r=>r.service).join(', '):'All checked services are up')+'</div><div class="split">'+dashHealthChart()+dashServicesPanel()+'</div><div class="split">'+dashHardwareChart()+dashServerPanel()+'</div>'+incidents;
+}
+
+/* ---------- Admin: activity log ---------- */
+// type: [label, tone, filter]. Red ('flag') marks what may be suspicious; admin actions are dark.
+const dashActivityTypes:Record<string,[string,string,string]>={
+ 'signin':['Signed in','ok','Sign-ins'],
+ 'signin-failed':['Failed sign-in','flag','Sign-ins'],
+ 'signin-blocked':['Blocked sign-in','flag','Sign-ins'],
+ 'signin-waiting':['Sign-in before approval','muted','Sign-ins'],
+ 'signout':['Signed out','muted','Sign-ins'],
+ 'register':['Account created','ok','Accounts'],
+ 'password-changed':['Password changed','watch','Accounts'],
+ 'profile-updated':['Profile updated','muted','Accounts'],
+ 'order-placed':['Order placed','info','Orders'],
+ 'order-paid':['Payment completed','ok','Orders'],
+ 'order-updated':['Order updated','muted','Orders'],
+ 'order-cancelled':['Order cancelled','watch','Orders'],
+ 'listing-added':['Listing added','info','Listings'],
+ 'listing-edited':['Listing edited','muted','Listings'],
+ 'price-changed':['Price changed','watch','Listings'],
+ 'listing-paused':['Listing paused','muted','Listings'],
+ 'listing-resumed':['Listing resumed','muted','Listings'],
+ 'listing-removed':['Listing removed','watch','Listings'],
+ 'rating':['Order rated','muted','Reports'],
+ 'report-filed':['Report filed','watch','Reports'],
+ 'account-suspended':['Account suspended','admin','Admin'],
+ 'account-reactivated':['Account reactivated','admin','Admin'],
+ 'password-reset':['Password reset','admin','Admin'],
+ 'report-upheld':['Report upheld','admin','Admin'],
+ 'report-dismissed':['Report dismissed','admin','Admin'],
+ 'report-reopened':['Report reopened','admin','Admin'],
+ 'warning-given':['Warning given','admin','Admin'],
+ 'warning-withdrawn':['Warning withdrawn','admin','Admin'],
+ 'org-terminated':['Organization terminated','admin','Admin'],
+ 'application-approved':['Application approved','admin','Admin'],
+ 'application-declined':['Application declined','admin','Admin'],
+};
+const dashActivityInfo=(type:string):[string,string,string]=>dashActivityTypes[type]||[type,'muted','Other'];
+const dashFlagged=(e:DashboardActivity)=>dashActivityInfo(e.type)[1]==='flag';
+const dashActivityPill=(type:string)=>{const [label,tone]=dashActivityInfo(type);return '<span class="status act-'+tone+'">'+label+'</span>';};
+const dashLocalDate=(iso:string)=>dashIsoDate(new Date(iso));
+const dashTimeOnly=(iso:string)=>new Date(iso).toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit'});
+const dashFlaggedToday=()=>dashboardActivity.filter(e=>dashFlagged(e)&&dashLocalDate(e.time)===dashToday).length;
+const dashRepeat=(count:number)=>count>1?'<span class="repeat-count">×'+count+'</span>':'';
+interface DashActivityGroup{first:DashboardActivity;last:DashboardActivity;count:number}
+// Back-to-back repeats of one event by one account show as a single row with a count.
+function dashGroupActivity(events:DashboardActivity[]):DashActivityGroup[]{
+ const groups:DashActivityGroup[]=[];
+ events.forEach(e=>{const g=groups[groups.length-1];if(g&&g.first.actor===e.actor&&g.first.type===e.type&&g.first.detail===e.detail){g.count++;g.last=e;}else groups.push({first:e,last:e,count:1});});
+ return groups;
+}
+const dashActivitySorted=()=>dashboardActivity.slice().sort((a,b)=>b.time.localeCompare(a.time));
+function dashActivityList():DashboardActivity[]{
+ const f=dashState.filter;
+ return dashActivitySorted().filter(e=>{
+  const [label,,group]=dashActivityInfo(e.type);
+  return dashMatching([e.actor,dashAccountByEmail(e.actor)?.name||'',label,e.detail].join(' '))&&(f==='All'||(f==='Flagged'?dashFlagged(e):group===f));
+ });
+}
+function dashActivityView():string{
+ const today=dashboardActivity.filter(e=>dashLocalDate(e.time)===dashToday);
+ const n=(test:(e:DashboardActivity)=>boolean)=>String(today.filter(test).length);
+ const metrics='<div class="metric-grid">'+dashMetric('Events today',String(today.length),'eye','')+dashMetric('Failed sign-ins today',n(e=>e.type==='signin-failed'),'lock','')+dashMetric('Blocked sign-ins today',n(e=>e.type==='signin-blocked'),'flag','')+dashMetric('Admin actions today',n(e=>dashActivityInfo(e.type)[2]==='Admin'),'shield','')+'</div>';
+ const events=dashActivityList();
+ const rows=dashGroupActivity(events).map(g=>{
+  const e=g.first;const who=dashAccountByEmail(e.actor);
+  const when=g.count>1?dashTimeOnly(g.last.time)+' – '+dashTimeOnly(e.time):dashTimeOnly(e.time);
+  const person=who?'<div class="table-product"><span class="avatar '+dashAvatarClass(who.role)+'">'+dashInitials(who.name)+'</span><div><strong>'+de(who.name)+'</strong><small>'+de(who.email)+'</small></div></div>':'<div class="table-product"><span class="avatar unknown-avatar">?</span><div><strong>'+de(e.actor)+'</strong><small>No account</small></div></div>';
+  return '<tr'+(dashFlagged(e)?' class="flagged-row"':'')+'><td><strong>'+when+'</strong><small class="cell-note">'+dd(dashLocalDate(e.time))+'</small></td><td>'+person+'</td><td>'+dashActivityPill(e.type)+dashRepeat(g.count)+'</td><td class="wrap">'+de(e.detail)+'</td><td><div class="row-actions">'+(who?'<button class="control small" data-account="'+de(who.email)+'">View</button>':'')+'</div></td></tr>';
+ }).join('');
+ const table=events.length?'<table class="activity-table"><thead><tr><th scope="col">Time</th><th scope="col">Account</th><th scope="col">Activity</th><th scope="col">Details</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>'+rows+'</tbody></table>':dashEmpty(dashboardActivity.length?'No matching activity':'No activity yet',dashboardActivity.length?'Try another search or filter.':'Sign-ins, orders and changes appear here.');
+ return metrics+'<section class="panel">'+dashPanelHead('Activity','')+dashFilters(['All','Flagged','Sign-ins','Accounts','Orders','Listings','Reports','Admin'],dashPlural(events.length,'event'),'Search activity')+'<div class="table-wrap">'+table+'</div></section>';
+}
+// The latest events by or about one account, for its pop-up.
+function dashAccountActivity(email:string):string{
+ const groups=dashGroupActivity(dashActivitySorted().filter(e=>e.actor===email||e.target===email)).slice(0,6);
+ if(!groups.length)return '';
+ return '<h3 class="detail-section">Recent activity</h3><div class="activity-list">'+groups.map(g=>'<div class="activity-row'+(dashFlagged(g.first)?' flagged':'')+'">'+dashActivityPill(g.first.type)+dashRepeat(g.count)+'<span class="activity-detail">'+de(g.first.detail)+'</span><small>'+dtime(g.first.time)+'</small></div>').join('')+'</div>';
 }
 
 /* ---------- Organization: one farmer organization's own workspace ---------- */
@@ -516,7 +672,7 @@ function dashOrgOverview():string{
  const metrics='<div class="metric-grid">'+dashMetric('Order value',dp(p.value),'wallet',p.previousValue?'Compared with the '+span:'Placed with your organization',valueTrend,valueDown)+dashMetric('Orders received',String(p.orders),'bag',p.previousOrders?'Compared with the '+span:dashState.period==='week'?'Last 7 days':'Last 4 weeks',orderTrend,orderDown)+dashMetric('Orders to fulfil',String(open.length),'clock','Waiting on your next step')+dashMetric('Active listings',String(crops.filter(c=>dashIsBuyable(c)).length),'box',dashPlural(crops.length,'listing')+' in total')+'</div>';
  const queue='<section class="panel">'+dashPanelHead('Needs your action','Orders waiting on your next step','<button class="text-button" data-go="orders">All orders '+di('arrow')+'</button>')+'<div class="queue">'+(open.length?open.slice(0,4).map(o=>'<div class="queue-row"><img src="'+dashImg(o.image)+'" alt=""><div><strong>'+de(o.crop)+' · '+de(o.quantity)+'</strong><small>'+dashOrderNo(o.id)+' · '+de(o.customer)+' · '+dp(o.total)+'</small><div class="queue-actions">'+ds(o.status)+'<button class="control small primary" data-advance="'+o.id+'">'+dashNextStep[o.status][1]+'</button></div></div></div>').join(''):dashEmpty('All caught up','No orders are waiting on you.'))+'</div></section>';
  const stock='<section class="panel">'+dashPanelHead('Stock watch','Lowest stock first','<button class="text-button" data-go="listings">Manage '+di('arrow')+'</button>')+'<div class="stock-list">'+(crops.length?crops.slice().sort((a,b)=>a.stock-b.stock).slice(0,4).map(c=>'<div class="stock-row"><img src="'+dashImg(c.image)+'" alt=""><div><div class="stock-row-top"><strong>'+de(c.name)+'</strong>'+ds(dashCropStatus(c))+'</div><div class="meter" role="img" aria-label="'+c.stock+' '+de(c.unit)+' available"><i style="width:'+Math.min(100,Math.round(c.stock/150*100))+'%"></i></div><small>'+c.stock+' '+de(c.unit)+' available</small></div></div>').join(''):dashEmpty('No listings yet','Add your first crop listing.'))+'</div></section>';
- return metrics+'<div class="split">'+dashChart(p,'Placed order totals for your organization','Orders placed with your organization')+queue+'</div><div class="split">'+dashOrderTable('recent')+stock+'</div>';
+ return dashWarningCallout()+metrics+'<div class="split">'+dashChart(p,'Placed order totals for your organization','Orders placed with your organization')+queue+'</div><div class="split">'+dashOrderTable('recent')+stock+'</div>';
 }
 function dashListingCrops():DashboardCrop[]{return dashRoleCrops().filter(c=>dashMatching(c.name+' '+c.organization+' '+c.category));}
 function dashListingTile(c:DashboardCrop):string{
@@ -534,14 +690,16 @@ function dashFeedbackRow(f:DashboardFeedback):string{
  return '<article class="feedback-row"><header>'+dashStars(f.rating)+'<small>'+dd(f.date)+'</small></header><p>'+(f.comment?'“'+de(f.comment)+'”':'No comment left.')+'</p><small>'+de(f.customer)+(f.order?' · order '+dashOrderNo(f.order):'')+'</small></article>';
 }
 function dashOrgFeedback():string{
- const c=dashCredit(dashOrgName);
+ const r=dashRatingOf(dashOrgName);
+ const s=dashStanding(dashOrgName);
  const feedback=dashOrgFeedbackList();
- const reports=dashboardReports.filter(r=>r.organization===dashOrgName).sort((a,b)=>b.date.localeCompare(a.date));
- const metrics='<div class="metric-grid">'+dashMetric('Credit score',c.score===null?'New':c.score+'<small class="metric-unit">/100</small>','shield',c.score===null?'Appears after your first rating':c.band+' standing with buyers')+dashMetric('Average rating',c.reviews?c.rating.toFixed(1)+' ★':'–','star','From '+dashPlural(c.reviews,'buyer review'))+dashMetric('Reports under review',String(c.open),'clock','Not counted until an administrator decides')+dashMetric('Upheld reports',String(c.upheld),'flag','−'+dashReportPenalty+' points each')+'</div>';
- const list='<section class="panel">'+dashPanelHead('Buyer feedback','Newest first','<span class="filter-summary">'+dashPlural(feedback.length,'review')+'</span>')+'<div class="feedback-list">'+(feedback.length?feedback.map(dashFeedbackRow).join(''):dashEmpty(c.reviews?'No matching feedback':'No ratings yet',c.reviews?'Try a different search.':'Buyers can rate their orders once you complete them.'))+'</div></section>';
- const explainer='<section class="panel">'+dashPanelHead('How your credit score works','')+dashScoreExplainer(dashOrgName)+'<p class="score-help">Buyers rate completed orders from 1 to 5 stars. Reports go to AniBayan administrators first: only upheld reports lower your score, and dismissed reports never count.</p></section>';
- const table=reports.length?'<table><thead><tr><th scope="col">Report</th><th scope="col">Reason</th><th scope="col">Details</th><th scope="col">Status</th></tr></thead><tbody>'+reports.map(r=>'<tr><td><strong>'+r.id+'</strong><small class="cell-note">'+dfull(r.date)+'</small></td><td>'+de(r.reason)+'</td><td class="wrap">'+de(r.details)+'</td><td>'+ds(r.status)+'</td></tr>').join('')+'</tbody></table>':dashEmpty('No reports','Buyers haven’t reported a problem with your organization.');
- return metrics+'<div class="split">'+list+explainer+'</div><section class="panel">'+dashPanelHead('Reports about your organization','Reviewed by AniBayan administrators')+'<div class="table-wrap">'+table+'</div></section>';
+ const reports=dashboardReports.filter(x=>x.organization===dashOrgName).sort((a,b)=>b.date.localeCompare(a.date));
+ const count=(status:string)=>reports.filter(x=>x.status===status).length;
+ const metrics='<div class="metric-grid">'+dashMetric('Average rating',r.reviews?r.rating.toFixed(1)+' ★':'–','star','From '+dashPlural(r.reviews,'buyer review'))+dashMetric('Reports under review',String(count('Open')),'clock','')+dashMetric('Upheld reports',String(count('Upheld')),'flag','')+dashMetric('Warnings',s.terminated?'Terminated':s.count+'<small class="metric-unit">/'+dashWarningLimit+'</small>','shield','')+'</div>';
+ const list='<section class="panel">'+dashPanelHead('Buyer feedback','Newest first','<span class="filter-summary">'+dashPlural(feedback.length,'review')+'</span>')+'<div class="feedback-list">'+(feedback.length?feedback.map(dashFeedbackRow).join(''):dashEmpty(r.reviews?'No matching feedback':'No ratings yet',r.reviews?'Try a different search.':'Buyers can rate their orders once you complete them.'))+'</div></section>';
+ const warnings='<section class="panel">'+dashPanelHead('Warnings from AniBayan',s.label)+'<div class="warning-box">'+dashWarningMeter(dashOrgName)+'</div>'+(s.count?dashWarningRows(dashOrgName,'feedback-list',false):'')+'</section>';
+ const table=reports.length?'<table><thead><tr><th scope="col">Report</th><th scope="col">Reason</th><th scope="col">Details</th><th scope="col">Status</th></tr></thead><tbody>'+reports.map(x=>'<tr><td><strong>'+x.id+'</strong><small class="cell-note">'+dfull(x.date)+'</small></td><td>'+de(x.reason)+'</td><td class="wrap">'+de(x.details)+'</td><td>'+ds(x.status)+'</td></tr>').join('')+'</tbody></table>':dashEmpty('No reports','Buyers haven’t reported a problem with your organization.');
+ return metrics+'<div class="split">'+list+warnings+'</div><section class="panel">'+dashPanelHead('Reports about your organization','Reviewed by AniBayan administrators')+'<div class="table-wrap">'+table+'</div></section>';
 }
 const dashMyMembers=()=>dashboardMembers.filter(m=>m.organization===dashOrgName);
 function dashMembers():string{
@@ -564,7 +722,7 @@ const dashShopSorts:Record<string,[string,(a:DashboardCrop,b:DashboardCrop)=>num
  fresh:['Freshest harvest first',(a,b)=>dashFreshness(a).age-dashFreshness(b).age],
  'price-asc':['Price: low to high',(a,b)=>a.price-b.price],
  'price-desc':['Price: high to low',(a,b)=>b.price-a.price],
- score:['Highest credit score',(a,b)=>(dashCredit(b.organization).score??-1)-(dashCredit(a.organization).score??-1)],
+ rating:['Highest rated',(a,b)=>dashRatingOf(b.organization).rating-dashRatingOf(a.organization).rating],
  shelf:['Longest shelf life left',(a,b)=>dashFreshness(b).left-dashFreshness(a).left],
 };
 const dashHarvestWindows:string[][]=[['any','Any harvest date'],['3','Harvested in the last 3 days'],['7','Harvested in the last 7 days'],['30','Harvested in the last 30 days']];
@@ -643,7 +801,7 @@ function dashCartView():string{
  const subtotal=(org:string)=>entries.filter(e=>e.crop.organization===org).reduce((sum,e)=>sum+e.line.quantity*e.crop.price,0);
  const total=orgs.reduce((sum,org)=>sum+subtotal(org),0);
  const problems=entries.filter(e=>dashCartProblem(e)).length;
- const list='<section class="panel">'+dashPanelHead('Items',dashPlural(entries.length,'harvest')+' from '+dashPlural(orgs.length,'organization'),'<button class="text-button" data-cart-clear>Clear cart</button>')+'<div class="cart-list">'+orgs.map(org=>'<div class="cart-group"><div class="cart-group-head"><strong>'+de(org)+'</strong>'+dashScoreBadge(org)+'</div>'+entries.filter(e=>e.crop.organization===org).map(row).join('')+'</div>').join('')+'</div></section>';
+ const list='<section class="panel">'+dashPanelHead('Items',dashPlural(entries.length,'harvest')+' from '+dashPlural(orgs.length,'organization'),'<button class="text-button" data-cart-clear>Clear cart</button>')+'<div class="cart-list">'+orgs.map(org=>'<div class="cart-group"><div class="cart-group-head"><strong>'+de(org)+'</strong></div>'+entries.filter(e=>e.crop.organization===org).map(row).join('')+'</div>').join('')+'</div></section>';
  const summary='<section class="panel cart-summary">'+dashPanelHead('Order summary','')+'<dl class="summary-lines">'+orgs.map(org=>'<div><dt>'+de(org)+'</dt><dd>'+dp(subtotal(org))+'</dd></div>').join('')+'<div class="summary-total"><dt>Total</dt><dd>'+dp(total)+'</dd></div></dl><p class="summary-note">'+(orgs.length>1?'You’ll place '+orgs.length+' orders, one with each organization.':'Your order goes straight to '+de(orgs[0])+'.')+' Delivery is arranged with each organization.</p>'+(problems?'<p class="cart-problem summary-problem">Remove or update '+dashPlural(problems,'item')+' before checking out.</p>':'')+'<div class="summary-actions"><button class="control primary" data-checkout'+(problems?' disabled':'')+'>Check out '+di('arrow')+'</button></div></section>';
  return '<div class="split cart-split">'+list+summary+'</div>';
 }
@@ -653,7 +811,7 @@ function dashSavedView():string{
 }
 function dashOrganizationGrid():string{
  const orgs=dashboardOrganizations.filter(o=>o.status==='Active'&&dashMatching(o.name+' '+o.region+' '+o.crop));
- return orgs.length?'<div class="org-grid">'+orgs.map(o=>'<article class="org-card"><img src="'+dashImg(o.image)+'" alt="'+de(o.name)+'"><div><h2>'+de(o.name)+'</h2><p>'+de(o.region)+' · '+de(o.crop)+'</p><p class="org-score">'+dashScoreBadge(o.name)+dashRatingText(o.name)+'</p><footer><span class="filter-summary">'+dashPlural(dashListingCount(o.name),'listing')+'</span><button class="control" data-organization="'+de(o.name)+'">View community '+di('up')+'</button></footer></div></article>').join('')+'</div>':'<section class="panel">'+dashEmpty('No matching communities','Try a different place or name.')+'</section>';
+ return orgs.length?'<div class="org-grid">'+orgs.map(o=>'<article class="org-card"><img src="'+dashImg(o.image)+'" alt="'+de(o.name)+'"><div><h2>'+de(o.name)+'</h2><p>'+de(o.region)+' · '+de(o.crop)+'</p><p class="org-rating">'+dashRatingText(o.name)+'</p><footer><span class="filter-summary">'+dashPlural(dashListingCount(o.name),'listing')+'</span><button class="control" data-organization="'+de(o.name)+'">View community '+di('up')+'</button></footer></div></article>').join('')+'</div>':'<section class="panel">'+dashEmpty('No matching communities','Try a different place or name.')+'</section>';
 }
 function dashActiveOrder():string{
  const order=dashRoleOrders().find(o=>!['Completed','Cancelled'].includes(o.status));
@@ -675,27 +833,29 @@ function dashSettings():string{
  let account='';
  if(isAdminDashboard)account='<section class="panel settings-panel"><h2>Administrator account</h2>'+facts([['Name',me.name],['Email',me.email],['Role','Platform administrator'],['Administrator since',dmonth(me.joined)]])+'<div class="detail-actions">'+common+'</div></section>';
  else if(isOrgDashboard){
-  const o=dashOrgProfile();const credit=dashCredit(o.name);
-  account='<section class="panel settings-panel"><h2>'+de(o.name)+'</h2><p>'+ds('Active')+' &nbsp;'+de(o.verified)+'</p>'+(o.description?'<p>'+de(o.description)+'</p>':'')+facts([['Location',o.region],['Main crops',o.crops],['Representative',o.representative],['Contact email',o.email],['Contact number',o.phone||'Not added yet'],['Credit score',credit.score===null?'New · no ratings yet':credit.score+'/100 · '+credit.band]])+'<div class="detail-actions">'+common+'<a class="control" href="consumer.html?grower='+encodeURIComponent(o.name)+'#growers">View storefront '+di('up')+'</a><button class="control primary" data-edit-org-profile>'+di('edit')+'Edit profile</button></div></section>';
+  const o=dashOrgProfile();
+  account='<section class="panel settings-panel"><h2>'+de(o.name)+'</h2><p>'+ds('Active')+' &nbsp;'+de(o.verified)+'</p>'+(o.description?'<p>'+de(o.description)+'</p>':'')+facts([['Location',o.region],['Main crops',o.crops],['Representative',o.representative],['Contact email',o.email],['Contact number',o.phone||'Not added yet'],['Warnings',dashStanding(o.name).label]])+'<div class="detail-actions">'+common+'<a class="control" href="consumer.html?grower='+encodeURIComponent(o.name)+'#growers">View storefront '+di('up')+'</a><button class="control primary" data-edit-org-profile>'+di('edit')+'Edit profile</button></div></section>';
  }else account='<section class="panel settings-panel"><h2>Your account</h2>'+facts([['Name',me.name],['Email',me.email],['Mobile number',me.phone||'Not added yet'],['Member since',dmonth(me.joined)],['Delivery address',me.address||'Not added yet']])+'<div class="detail-actions">'+common+'<button class="control primary" data-edit-profile>'+di('edit')+'Edit delivery details</button></div></section>';
  return '<div class="settings-grid">'+account+appearance+'</div>';
 }
 function dashHelp():string{
- const rows=isAdminDashboard?[['Suspend, reactivate or reset accounts','accounts','Accounts'],['Uphold or dismiss reports from buyers','reports','User reports'],['Approve or decline organization applications','applications','Applications'],['Check that AniBayan’s services are up','health','Site health']]
-  :isOrgDashboard?[['Confirm and prepare incoming orders','orders','Incoming orders'],['Add, edit or pause crop listings','listings','My listings'],['See your ratings and credit score','feedback','Ratings & feedback'],['Add or confirm member farmers','members','Member farmers'],['Update your organization profile','settings','Organization profile']]
+ const rows=isAdminDashboard?[['Suspend, reactivate or reset accounts','accounts','Accounts'],['Watch sign-ins and other activity','activity','Activity log'],['Uphold or dismiss buyer reports, and warn organizations','reports','User reports'],['Approve or decline organization applications','applications','Applications'],['Check that AniBayan’s services are up','health','Site health']]
+  :isOrgDashboard?[['Confirm and prepare incoming orders','orders','Incoming orders'],['Add, edit or pause crop listings','listings','My listings'],['See your ratings and any warnings','feedback','Ratings & feedback'],['Add or confirm member farmers','members','Member farmers'],['Update your organization profile','settings','Organization profile']]
   :isGuest?[['Browse and filter harvests','shop','Shop'],['Meet the growing communities','growers','Growers']]
   :[['Browse and filter harvests','shop','Shop'],['Check out your cart','cart','Cart'],['Follow, pay, rate or report your orders','orders','My orders'],['Update your delivery details','settings','My profile']];
  return '<section class="panel settings-panel"><h2>Here to help you grow.</h2><p>Where to go for each task.</p>'+rows.map(r=>'<div class="settings-row"><span>'+r[0]+'</span><button class="control" data-go="'+r[1]+'">'+r[2]+' '+di('arrow')+'</button></div>').join('')+(isGuest?'<div class="settings-row"><span>Order harvests, save favourites and rate growers</span><a class="control primary" href="login.html" data-sign-in>Sign in '+di('arrow')+'</a></div>':'')+'</section>';
 }
 // Sidebar badges: open reports and pending applications for admins, orders needing attention otherwise, cart lines for buyers.
 function dashNavCounts():Record<string,number>{
- if(isAdminDashboard)return {reports:dashOpenReports(),applications:dashPendingApplications()};
+ if(isAdminDashboard)return {activity:dashFlaggedToday(),reports:dashOpenReports(),applications:dashPendingApplications()};
  const orders=dashRoleOrders();
  if(isOrgDashboard)return {orders:orders.filter(o=>o.status==='Pending').length,members:dashMyMembers().filter(m=>m.status==='Pending').length};
  return {orders:orders.filter(o=>!['Completed','Cancelled'].includes(o.status)).length,cart:dashCart().length};
 }
 let dashStorageWarned=false;
 function dashRender():void{
+ // A table's search box is redrawn with the table; keep the cursor in it, even when a health check finishes mid-typing.
+ const typing=document.activeElement instanceof HTMLInputElement&&document.activeElement.dataset.tableSearch!==undefined?[document.activeElement.selectionStart??0,document.activeElement.selectionEnd??0]:null;
  const search=document.getElementById('dashboard-search') as HTMLInputElement;
  if(search.value!==dashState.query)search.value=dashState.query;
  document.querySelectorAll<HTMLElement>('[data-nav]').forEach(a=>{if(a.dataset.nav===dashState.view)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
@@ -711,6 +871,7 @@ function dashRender():void{
  else if(view==='reports')content=dashReportsView();
  else if(view==='applications')content=dashApplicationsView();
  else if(view==='health')content=dashHealthView();
+ else if(view==='activity')content=dashActivityView();
  else if(view==='orders')content=dashOrderTable('all');
  else if(view==='listings')content=dashListingGrid();
  else if(view==='feedback')content=dashOrgFeedback();
@@ -723,6 +884,8 @@ function dashRender():void{
  else if(view==='settings')content=dashSettings();
  else content=dashHelp();
  document.getElementById('dashboard-content')!.innerHTML=(blocked.length?'':dashHeading())+content+'<footer class="design-note"><span>AniBayan · '+dashRole.workspace+'</span><span>'+(dashMe()?'Signed in as '+de(dashMe()!.email):'Browsing as a guest')+'</span></footer>';
+ const box=typing?document.querySelector<HTMLInputElement>('[data-table-search]'):null;
+ if(box&&typing){box.focus({preventScroll:true});box.setSelectionRange(typing[0],typing[1]);}
  if(!dashSaveStore()&&!dashStorageWarned){dashStorageWarned=true;dashToast('This browser couldn’t save your latest change. Its storage may be full or turned off.');}
 }
 function dashNavigate(view:string):void{if(location.hash.slice(1)===view)dashReadHash();else location.hash=view;}
@@ -767,7 +930,7 @@ function dashProductDetails(id:string):void{
  const buyable=dashIsBuyable(crop);
  const inCart=dashCart().find(l=>l.crop===crop.id);
  const buy=!buyable?'':isGuest?'<div class="qty-add"><p>Sign in with a buyer account to order this harvest.</p><a class="control primary" href="login.html" data-sign-in-buyer>Sign in to order '+di('arrow')+'</a></div>':'<div class="qty-add"><label for="detail-qty">Quantity ('+de(crop.unit)+')</label><input type="number" id="detail-qty" min="1" max="'+crop.stock+'" step="1" value="1" inputmode="numeric"><button class="control primary" data-add-cart="'+crop.id+'" data-qty-from="detail-qty">'+di('cart')+'Add to cart</button></div>';
- dashOpen('<p class="detail-kicker">Harvest listing</p><h2 id="detail-title">'+de(crop.name)+'</h2><p class="detail-subtitle">'+de(crop.organization)+' · '+de(dashRegion(crop.organization))+'</p>'+hero(de(crop.category)+' · '+(buyable?crop.stock+' '+de(crop.unit)+' available':'Not available right now'))+'<dl class="detail-facts">'+harvest+dashFact('Grower credit score',dashScoreBadge(crop.organization))+dashFact('Buyer rating',dashRatingText(crop.organization))+'</dl><p class="detail-note">The organization enters the harvest date when it lists a crop. Shelf life is its estimate for produce stored as recommended, so plan to use it before the best-before date.'+(inCart?' Your cart has '+inCart.quantity+' '+de(crop.unit)+'.':'')+'</p>'+buy+'<div class="detail-actions"><button class="control" data-organization="'+de(crop.organization)+'">About the grower</button>'+(isGuest?'':'<button class="control" data-save="'+crop.id+'" aria-pressed="'+saved+'">'+di('heart')+(saved?'Saved':'Save harvest')+'</button>')+(inCart?'<button class="control" data-go="cart">View cart '+di('arrow')+'</button>':'')+'</div>');
+ dashOpen('<p class="detail-kicker">Harvest listing</p><h2 id="detail-title">'+de(crop.name)+'</h2><p class="detail-subtitle">'+de(crop.organization)+' · '+de(dashRegion(crop.organization))+'</p>'+hero(de(crop.category)+' · '+(buyable?crop.stock+' '+de(crop.unit)+' available':'Not available right now'))+'<dl class="detail-facts">'+harvest+dashFact('Buyer rating',dashRatingText(crop.organization))+'</dl><p class="detail-note">The organization enters the harvest date when it lists a crop. Shelf life is its estimate for produce stored as recommended, so plan to use it before the best-before date.'+(inCart?' Your cart has '+inCart.quantity+' '+de(crop.unit)+'.':'')+'</p>'+buy+'<div class="detail-actions"><button class="control" data-organization="'+de(crop.organization)+'">About the grower</button>'+(isGuest?'':'<button class="control" data-save="'+crop.id+'" aria-pressed="'+saved+'">'+di('heart')+(saved?'Saved':'Save harvest')+'</button>')+(inCart?'<button class="control" data-go="cart">View cart '+di('arrow')+'</button>':'')+'</div>');
 }
 function dashGrowerDetails(name:string):void{
  const org=dashboardOrganizations.find(o=>o.name===name&&o.status==='Active');
@@ -776,7 +939,7 @@ function dashGrowerDetails(name:string):void{
  const toRate=orders.find(o=>o.status==='Completed'&&!dashRated(o.id));
  const toReport=orders.find(o=>!dashMyReport(o.id));
  const feedback=dashboardFeedback.filter(f=>f.organization===org.name).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,3);
- dashOpen('<p class="detail-kicker">Growing community</p><h2 id="detail-title">'+de(org.name)+'</h2><p class="detail-subtitle">'+de(org.region)+' · '+de(org.crop)+' · '+dashPlural(dashListingCount(org.name),'listing')+'</p>'+(org.description?'<p class="detail-lead">'+de(org.description)+'</p>':'')+dashScoreExplainer(org.name)+(feedback.length?'<h3 class="detail-section">Recent buyer feedback</h3><div class="feedback-list compact">'+feedback.map(dashFeedbackRow).join('')+'</div>':'')+'<p class="detail-note">Credit score = average buyer rating × 20, minus '+dashReportPenalty+' points for each report upheld by AniBayan administrators.'+(orders.length||isGuest?'':' You can rate or report a community after ordering from it.')+'</p><div class="detail-actions">'+(toReport?'<button class="control" data-report-order="'+toReport.id+'">'+di('flag')+'Report a problem</button>':'')+(toRate?'<button class="control" data-rate="'+toRate.id+'">'+di('star')+'Rate your order</button>':'')+'<button class="control primary" data-shop-region="'+de(org.region)+'">Shop this community '+di('arrow')+'</button></div>');
+ dashOpen('<p class="detail-kicker">Growing community</p><h2 id="detail-title">'+de(org.name)+'</h2><p class="detail-subtitle">'+de(org.region)+' · '+de(org.crop)+' · '+dashPlural(dashListingCount(org.name),'listing')+'</p>'+(org.description?'<p class="detail-lead">'+de(org.description)+'</p>':'')+'<h3 class="detail-section">Buyer ratings</h3><p class="org-rating">'+dashRatingText(org.name)+'</p>'+(feedback.length?'<div class="feedback-list compact">'+feedback.map(dashFeedbackRow).join('')+'</div>':'')+(orders.length||isGuest?'':'<p class="detail-note">You can rate or report a community after ordering from it.</p>')+'<div class="detail-actions">'+(toReport?'<button class="control" data-report-order="'+toReport.id+'">'+di('flag')+'Report a problem</button>':'')+(toRate?'<button class="control" data-rate="'+toRate.id+'">'+di('star')+'Rate your order</button>':'')+'<button class="control primary" data-shop-region="'+de(org.region)+'">Shop this community '+di('arrow')+'</button></div>');
 }
 function dashAccountDetails(email:string):void{
  const a=dashAccountByEmail(email);
@@ -785,8 +948,7 @@ function dashAccountDetails(email:string):void{
  const org=a.organization?dashboardOrganizations.find(o=>o.name===a.organization):undefined;
  const toggle=!self&&a.role!=='Administrator'&&(a.status==='Active'||a.status==='Suspended')?(a.status==='Suspended'?'<button class="control primary" data-suspend="'+de(a.email)+'">'+di('check')+'Reactivate account</button>':'<button class="control danger" data-suspend="'+de(a.email)+'">'+di('lock')+'Suspend account</button>'):'';
  const review=a.status==='Pending'&&org?'<button class="control primary" data-organization="'+de(org.name)+'">Review application</button>':'';
- const note=a.status==='Pending'?'This representative account activates when the organization application is approved.':self?'This is your own account. Change your password under Settings.':a.role==='Administrator'?'Other administrator accounts can be reset but not suspended.':'Suspended accounts are signed out and can’t sign in, order or sell.';
- dashOpen('<p class="detail-kicker">'+(a.role==='Consumer'?'Buyer':a.role)+' account</p><h2 id="detail-title">'+de(a.name)+'</h2><p class="detail-subtitle">'+de(a.email)+'</p><dl class="detail-facts">'+dashFact('Role',a.role==='Consumer'?'Buyer':a.role)+dashFact('Status',ds(a.status))+dashFact('Joined',dfull(a.joined))+dashFact('Last active',dfull(a.lastActive))+(a.organization?dashFact('Organization',de(a.organization)):'')+(a.phone?dashFact('Mobile number',de(a.phone)):'')+'</dl>'+(a.note?'<p class="detail-note">'+de(a.note)+'</p>':'')+'<p class="detail-note">'+note+'</p><div class="detail-actions">'+(self?'':'<button class="control" data-reset-password="'+de(a.email)+'">'+di('key')+'Reset password</button>')+toggle+review+'</div>');
+ dashOpen('<p class="detail-kicker">'+(a.role==='Consumer'?'Buyer':a.role)+' account</p><h2 id="detail-title">'+de(a.name)+'</h2><p class="detail-subtitle">'+de(a.email)+'</p><dl class="detail-facts">'+dashFact('Role',a.role==='Consumer'?'Buyer':a.role)+dashFact('Status',ds(a.status))+dashFact('Joined',dfull(a.joined))+dashFact('Last active',dfull(a.lastActive))+(a.organization?dashFact('Organization',de(a.organization)):'')+(a.phone?dashFact('Mobile number',de(a.phone)):'')+(a.note?dashFact('Note',de(a.note)):'')+'</dl>'+dashAccountActivity(a.email)+'<div class="detail-actions">'+(self?'':'<button class="control" data-reset-password="'+de(a.email)+'">'+di('key')+'Reset password</button>')+toggle+review+'</div>');
 }
 // Sets a new temporary password and shows it once so the administrator can pass it on.
 function dashResetPassword(email:string):void{
@@ -795,25 +957,32 @@ function dashResetPassword(email:string):void{
  const chars='abcdefghjkmnpqrstuvwxyz23456789';const random=new Uint32Array(8);crypto.getRandomValues(random);
  const temporary='ab-'+Array.from(random,value=>chars[value%chars.length]).join('');
  a.password=temporary;
+ dashLog('password-reset',dashMeEmail,a.name,a.email);
  dashRender();
- dashOpen('<p class="detail-kicker">Password reset</p><h2 id="detail-title">Temporary password for '+de(a.name)+'</h2><p class="detail-subtitle">Their old password no longer works. Share this one privately; they can change it under their profile after signing in.</p><div class="temp-password"><code id="temp-password">'+temporary+'</code><button class="control small" data-copy="temp-password">Copy</button></div><div class="detail-actions"><button class="control" data-account="'+de(a.email)+'">Back to account</button><button class="control primary" data-close-dialog>Done</button></div>');
+ dashOpen('<p class="detail-kicker">Password reset</p><h2 id="detail-title">Temporary password for '+de(a.name)+'</h2><div class="temp-password"><code id="temp-password">'+temporary+'</code><button class="control small" data-copy="temp-password">Copy</button></div><div class="detail-actions"><button class="control" data-account="'+de(a.email)+'">Back to account</button><button class="control primary" data-close-dialog>Done</button></div>');
 }
 function dashReportDetails(id:string):void{
  const r=dashboardReports.find(x=>x.id===id);
  if(!r)return;
- const c=dashCredit(r.organization);
  const open=r.status==='Open';
+ const s=dashStanding(r.organization);
  const reporter=dashboardAccounts.find(a=>a.name===r.customer);
- const effect=open?(c.score===null?'Applies after the first rating':Math.max(0,c.score-dashReportPenalty)+'/100 (−'+dashReportPenalty+')'):r.status==='Upheld'?'−'+dashReportPenalty+' points':'None';
- const actions=open?'<button class="control" data-decide="Dismissed" data-report-id="'+r.id+'">Dismiss report</button><button class="control danger" data-decide="Upheld" data-report-id="'+r.id+'">'+di('flag')+'Uphold report</button>':'<button class="control" data-decide="Open" data-report-id="'+r.id+'">Reopen report</button><button class="control primary" data-close-dialog>Close</button>';
- dashOpen('<p class="detail-kicker">User report · '+r.id+'</p><h2 id="detail-title">'+de(r.reason)+'</h2><p class="detail-subtitle">'+de(r.customer)+' about '+de(r.organization)+' · '+dfull(r.date)+'</p><blockquote class="report-quote">'+de(r.details)+'</blockquote><dl class="detail-facts">'+dashFact('Status',ds(r.status))+dashFact('Related order',r.order?dashOrderNo(r.order):'Not specified')+dashFact('Credit score now',dashScoreBadge(r.organization))+dashFact(open?'If upheld':'Effect on score',effect)+(reporter?dashFact('Reporter account',ds(reporter.status)):'')+'</dl><p class="detail-note">'+(open?'Uphold the report when the evidence supports it, or dismiss it.':'This report was '+r.status.toLowerCase()+'. Reopen it to change the decision.')+'</p><div class="detail-actions">'+actions+'</div>');
+ const effect=open?dashNextOffence(r.organization):r.status==='Upheld'?'Counts as one of its warnings':'No warning';
+ const uphold=s.final?'<button class="control danger" data-terminate="'+de(r.organization)+'" data-terminate-report="'+r.id+'">'+di('lock')+'Uphold and terminate</button>':'<button class="control danger" data-decide="Upheld" data-report-id="'+r.id+'">'+di('flag')+'Uphold report</button>';
+ const actions=open?'<button class="control" data-decide="Dismissed" data-report-id="'+r.id+'">Dismiss report</button>'+uphold:'<button class="control" data-decide="Open" data-report-id="'+r.id+'">Reopen report</button><button class="control primary" data-close-dialog>Close</button>';
+ dashOpen('<p class="detail-kicker">User report · '+r.id+'</p><h2 id="detail-title">'+de(r.reason)+'</h2><p class="detail-subtitle">'+de(r.customer)+' about '+de(r.organization)+' · '+dfull(r.date)+'</p><blockquote class="report-quote">'+de(r.details)+'</blockquote><dl class="detail-facts">'+dashFact('Status',ds(r.status))+dashFact('Related order',r.order?dashOrderNo(r.order):'Not specified')+dashFact('Organization warnings',dashStandingBadge(r.organization)+' <button class="text-button" data-organization="'+de(r.organization)+'">View</button>')+dashFact(open?'If upheld':'Effect',effect)+(reporter?dashFact('Reporter account',ds(reporter.status)):'')+'</dl><div class="detail-actions">'+actions+'</div>');
 }
 function dashApplicationDetails(name:string):void{
  const o=dashboardOrganizations.find(x=>x.name===name);
  if(!o)return;
  const pending=o.status==='Pending review';
+ const selling=o.status==='Active'||o.status==='Terminated';
+ const s=dashStanding(o.name);
  const rep=dashboardAccounts.find(a=>a.organization===o.name);
- dashOpen('<p class="detail-kicker">Organization application</p><h2 id="detail-title">'+de(o.name)+'</h2><p class="detail-subtitle">'+de(o.region)+' · submitted '+dfull(o.applied)+'</p><div class="detail-hero"><img src="'+dashImg(o.image)+'" alt="'+de(o.name)+'"><div><h3>'+de(o.crop)+'</h3><p>'+dashPlural(o.members,'member farmer')+' · '+ds(dashAppStatus(o))+'</p></div></div><dl class="detail-facts">'+dashFact('Representative',de(o.representative)+(rep?'<small class="fact-note">'+de(rep.email)+'</small>':''))+dashFact('Submitted documents',o.documents.map(de).join(', '))+(o.phone?dashFact('Contact number',de(o.phone)):'')+(o.approved?dashFact('Approved on',dfull(o.approved)):'')+'</dl><p class="detail-note">'+(pending?'Approving opens the organization’s storefront and activates its representative account. Declining keeps both closed.':'This application was '+dashAppStatus(o).toLowerCase()+'.')+'</p><div class="detail-actions">'+(pending?'<button class="control danger" data-review="Declined" data-review-name="'+de(o.name)+'">Decline</button><button class="control primary" data-review="Active" data-review-name="'+de(o.name)+'">'+di('check')+'Approve organization</button>':'<button class="control primary" data-close-dialog>Close</button>')+'</div>');
+ const warnings=selling?'<h3 class="detail-section">Warnings</h3><div class="warning-summary">'+dashStandingBadge(o.name)+dashWarningMeter(o.name)+'</div>'+(s.count?dashWarningRows(o.name,'feedback-list compact',!s.terminated):''):'';
+ const actions=pending?'<button class="control danger" data-review="Declined" data-review-name="'+de(o.name)+'">Decline</button><button class="control primary" data-review="Active" data-review-name="'+de(o.name)+'">'+di('check')+'Approve organization</button>'
+  :(o.status==='Active'?(s.final?'<button class="control danger" data-terminate="'+de(o.name)+'">'+di('lock')+'Terminate organization</button>':'<button class="control danger" data-warn="'+de(o.name)+'">'+di('flag')+'Give a warning</button>'):'')+'<button class="control primary" data-close-dialog>Close</button>';
+ dashOpen('<p class="detail-kicker">'+(selling?'Organization':'Organization application')+'</p><h2 id="detail-title">'+de(o.name)+'</h2><p class="detail-subtitle">'+de(o.region)+' · submitted '+dfull(o.applied)+'</p><div class="detail-hero"><img src="'+dashImg(o.image)+'" alt="'+de(o.name)+'"><div><h3>'+de(o.crop)+'</h3><p>'+dashPlural(o.members,'member farmer')+' · '+ds(dashAppStatus(o))+'</p></div></div><dl class="detail-facts">'+dashFact('Representative',de(o.representative)+(rep?'<small class="fact-note">'+de(rep.email)+'</small>':''))+dashFact('Submitted documents',o.documents.map(de).join(', '))+(o.phone?dashFact('Contact number',de(o.phone)):'')+(o.approved?dashFact('Approved on',dfull(o.approved)):'')+(o.terminated?dashFact('Terminated on',dfull(o.terminated)):'')+(o.terminatedFor?dashFact('Final offence',de(o.terminatedFor)):'')+'</dl>'+warnings+'<div class="detail-actions">'+actions+'</div>');
 }
 function dashConfirmReset():void{
  dashOpen('<p class="detail-kicker">Data</p><h2 id="detail-title">Reset all AniBayan data?</h2><p class="detail-subtitle">Accounts, listings, orders, ratings and reports go back to the starting data, and you’re signed out on every AniBayan page in this browser.</p><div class="detail-actions"><button class="control" data-close-dialog>Cancel</button><button class="control danger" data-confirm-reset>Reset data</button></div>');
@@ -824,7 +993,41 @@ function dashPaymentDialog(ids:string[]):void{
  if(!orders.length)return;
  const total=orders.reduce((sum,o)=>sum+o.total,0);
  const method=orders[0].method||'GCash';
- dashOpen('<p class="detail-kicker">PayMongo · test mode</p><h2 id="detail-title">Pay '+dp(total)+' with '+de(method)+'</h2><p class="detail-subtitle">'+orders.map(o=>dashOrderNo(o.id)+' · '+de(o.organization)).join('<br>')+'</p><div class="pay-box">'+di('shield')+'<p>AniBayan’s PayMongo account runs in test mode, so completing this payment marks the order paid without charging any money.</p></div><div class="detail-actions"><button class="control" data-pay-later>Pay later</button><button class="control primary" data-pay="'+orders.map(o=>o.id).join(',')+'">'+di('check')+'Complete payment</button></div>');
+ dashOpen('<p class="detail-kicker">PayMongo · test mode</p><h2 id="detail-title">Pay '+dp(total)+' with '+de(method)+'</h2><p class="detail-subtitle">'+orders.map(o=>dashOrderNo(o.id)+' · '+de(o.organization)).join('<br>')+'</p>'+(method==='GCash'?'':'<div class="pay-box">'+di('shield')+'<p>Test card <b>4343 4343 4343 4345</b> · any future date · any CVC</p></div>')+'<div class="detail-actions"><button class="control" data-pay-later>Pay later</button><button class="control primary" data-pay="'+orders.map(o=>o.id).join(',')+'">'+di('wallet')+'Pay '+dp(total)+'</button></div>');
+}
+// Opens PayMongo's checkout for the orders. The secret key stays on the server (routes/api.php).
+async function dashStartPayment(ids:string[],button:HTMLButtonElement):Promise<void>{
+ const orders=ids.map(id=>dashboardOrders.find(o=>o.id===id)).filter((o):o is DashboardOrder=>!!o&&o.payment==='Unpaid');
+ if(!orders.length)return;
+ const label=button.innerHTML;button.disabled=true;button.textContent='Opening PayMongo…';
+ try{
+  const response=await fetch('../api/payments',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({method:orders[0].method,buyer:{name:dashAccount().name,email:dashAccount().email,phone:orders[0].phone||dashAccount().phone||null,address:orders[0].address||dashAccount().address||null},orders:orders.map(o=>({id:o.id,total:o.total,organization:o.organization}))})});
+  const data=await response.json().catch(()=>({})) as {session?:string;checkoutUrl?:string;message?:string};
+  if(!response.ok||!data.session||!data.checkoutUrl)throw new Error(data.message||'PayMongo didn’t answer ('+response.status+').');
+  orders.forEach(o=>{o.checkout=data.session;});
+  dashSaveStore();
+  location.href=data.checkoutUrl;
+ }catch(error){button.disabled=false;button.innerHTML=label;dashToast(error instanceof Error?error.message:'PayMongo couldn’t be reached.');}
+}
+// When PayMongo sends the buyer back, and on every later visit, asks the server whether each open checkout was paid.
+async function dashCheckPayments():Promise<void>{
+ const params=new URLSearchParams(location.search);const outcome=params.get('payment');
+ if(outcome){params.delete('payment');history.replaceState(null,'',location.pathname+(params.toString()?'?'+params:'')+location.hash);}
+ const sessions=[...new Set(dashRoleOrders().filter(o=>o.checkout&&o.payment==='Unpaid').map(o=>o.checkout!))];
+ const paid:DashboardOrder[]=[];
+ for(const session of sessions){
+  try{
+   const response=await fetch('../api/payments/'+encodeURIComponent(session),{headers:{Accept:'application/json'},cache:'no-store'});
+   if(!response.ok)continue;
+   const result=await response.json() as {paid:boolean;status:string;payment:string|null};
+   const orders=dashboardOrders.filter(o=>o.checkout===session);
+   if(result.paid)orders.forEach(o=>{o.payment='Paid';o.paymentRef=result.payment||undefined;o.checkout=undefined;dashLog('order-paid',dashMeEmail,dashOrderNo(o.id)+' · '+dp(o.total)+' · '+(o.method||'PayMongo'));paid.push(o);});
+   else if(result.status!=='active'||outcome==='cancelled')orders.forEach(o=>{o.checkout=undefined;});
+  }catch{/* offline: checked again on the next visit */}
+ }
+ if(sessions.length)dashRender();
+ if(paid.length)dashToast('Payment received for '+paid.map(o=>dashOrderNo(o.id)).join(', ')+'.');
+ else if(outcome==='cancelled')dashToast('Payment cancelled.');
 }
 
 /* ---------- Dialog forms ---------- */
@@ -888,7 +1091,10 @@ async function dashSubmitListing(form:HTMLFormElement):Promise<void>{
  }
  const fields={name,category,image,price,unit:value('unit')||'kg',stock,harvested,shelfLife};
  if(editing){
+  const oldPrice=editing.price;
   Object.assign(editing,fields);
+  if(editing.price!==oldPrice)dashLog('price-changed',dashMeEmail,editing.name+' · '+dp(oldPrice)+' → '+dp(editing.price)+' /'+editing.unit);
+  else dashLog('listing-edited',dashMeEmail,editing.name);
   if(editing.stock===0&&editing.status==='Active')editing.status='Unavailable';
   dashDialog.close();dashRender();
   dashToast('Changes to '+editing.name+' saved.');
@@ -899,6 +1105,7 @@ async function dashSubmitListing(form:HTMLFormElement):Promise<void>{
  dashboardCrops.unshift(crop);
  dashDialog.close();
  dashNavigate('listings');
+ dashLog('listing-added',dashMeEmail,crop.name+' · '+dp(crop.price)+' /'+crop.unit);
  dashToast(crop.name+' is listed. Buyers see it was harvested '+dd(harvested)+'.');
 }
 function dashConfirmRemoveListing(id:string):void{
@@ -955,6 +1162,7 @@ function dashSubmitOrgProfile(form:HTMLFormElement):void{
  const org=dashMyOrg();
  if(!org)return;
  Object.assign(org,{crop:value('crop'),region:value('province')+', '+value('region'),phone:value('phone'),description:value('description')});
+ dashLog('profile-updated',dashMeEmail,'Organization profile');
  dashDialog.close();dashRender();
  dashToast('Organization profile saved.');
 }
@@ -974,6 +1182,7 @@ function dashSubmitProfile(form:HTMLFormElement):void{
  if(address.length<10)errors.address='Enter your full delivery address.';
  if(!dashShowErrors(form,errors))return;
  Object.assign(dashAccount(),{phone,address});
+ dashLog('profile-updated',dashMeEmail,'Delivery details');
  dashDialog.close();dashRender();
  dashToast('Delivery details saved.');
 }
@@ -996,6 +1205,7 @@ function dashSubmitPassword(form:HTMLFormElement):void{
  if(confirm!==password)errors.confirm='The two new passwords don’t match.';
  if(!dashShowErrors(form,errors))return;
  me.password=password;
+ dashLog('password-changed',dashMeEmail);
  dashDialog.close();dashRender();
  dashToast('Password changed.');
 }
@@ -1036,6 +1246,7 @@ function dashSubmitCheckout(form:HTMLFormElement):void{
   placed.push({id:'AB-2026-'+next++,customer:dashConsumerName,organization:org,crop:items.length===1?items[0].name:items[0].name+' + '+(items.length-1)+' more',image:lines[0].crop.image,quantity:items.length===1?items[0].quantity+' '+items[0].unit:dashPlural(items.length,'item'),total:items.reduce((sum,i)=>sum+i.quantity*i.price,0),date:dashToday,status:'Pending',payment:'Unpaid',items,address,phone,method,note});
  });
  dashboardOrders.unshift(...placed);
+ placed.forEach(o=>dashLog('order-placed',dashMeEmail,dashOrderNo(o.id)+' · '+dp(o.total)+' · '+o.organization));
  dashCart().splice(0);
  if(data.get('remember'))Object.assign(dashAccount(),{address,phone});
  const numbers=placed.map(o=>dashOrderNo(o.id)).join(', ');
@@ -1049,7 +1260,7 @@ function dashFeedbackForm(orderId:string):void{
  const o=dashRoleOrders().find(x=>x.id===orderId);
  if(!o||dashRated(o.id))return;
  const stars=[1,2,3,4,5].map(n=>'<input type="radio" name="rating" id="rating-'+n+'" value="'+n+'"><label for="rating-'+n+'" title="'+n+' – '+dashRatingWords[n]+'">★<span class="sr-only">'+dashPlural(n,'star')+', '+dashRatingWords[n]+'</span></label>').join('');
- dashOpen('<p class="detail-kicker">Rate your order · '+dashOrderNo(o.id)+'</p><h2 id="detail-title">How was your order?</h2><p class="detail-subtitle">'+de(o.crop)+' · '+de(o.quantity)+' from '+de(o.organization)+'</p><form class="dash-form" id="feedback-form" data-order="'+o.id+'" novalidate><div class="form-grid single"><div class="form-field"><span class="form-label" id="rating-label">Your rating'+dashRequired+'</span><div class="star-input" role="radiogroup" aria-labelledby="rating-label" aria-describedby="rating-caption error-rating">'+stars+'</div><small class="form-hint" id="rating-caption">Choose 1 to 5 stars.</small><small class="field-error" id="error-rating" data-error-for="rating"></small></div>'+dashField('comment','Comment (optional)','<textarea rows="3" maxlength="300" placeholder="What did you like? What could be better?"></textarea>')+'</div><p class="detail-note">Your rating becomes part of '+de(o.organization)+'’s credit score.</p><div class="detail-actions"><button type="button" class="control" data-close-dialog>Cancel</button><button type="submit" class="control primary">'+di('star')+'Submit rating</button></div></form>');
+ dashOpen('<p class="detail-kicker">Rate your order · '+dashOrderNo(o.id)+'</p><h2 id="detail-title">How was your order?</h2><p class="detail-subtitle">'+de(o.crop)+' · '+de(o.quantity)+' from '+de(o.organization)+'</p><form class="dash-form" id="feedback-form" data-order="'+o.id+'" novalidate><div class="form-grid single"><div class="form-field"><span class="form-label" id="rating-label">Your rating'+dashRequired+'</span><div class="star-input" role="radiogroup" aria-labelledby="rating-label" aria-describedby="rating-caption error-rating">'+stars+'</div><small class="form-hint" id="rating-caption">Choose 1 to 5 stars.</small><small class="field-error" id="error-rating" data-error-for="rating"></small></div>'+dashField('comment','Comment (optional)','<textarea rows="3" maxlength="300" placeholder="What did you like? What could be better?"></textarea>')+'</div><div class="detail-actions"><button type="button" class="control" data-close-dialog>Cancel</button><button type="submit" class="control primary">'+di('star')+'Submit rating</button></div></form>');
  dashFocusField('#rating-1');
 }
 function dashSubmitFeedback(form:HTMLFormElement):void{
@@ -1059,9 +1270,10 @@ function dashSubmitFeedback(form:HTMLFormElement):void{
  const order=dashboardOrders.find(o=>o.id===form.dataset.order);
  if(!order)return;
  const next=Math.max(0,...dashboardFeedback.map(f=>Number(f.id.slice(3))||0))+1;
+ dashLog('rating',dashMeEmail,rating+'★ · '+order.organization);
  dashboardFeedback.unshift({id:'FB-'+next,organization:order.organization,customer:dashConsumerName,rating,comment:String(data.get('comment')??'').trim(),date:dashToday,order:order.id});
  dashDialog.close();dashRender();
- dashToast('Thanks for rating! '+order.organization+'’s credit score is now '+dashCredit(order.organization).score+'.');
+ dashToast('Thanks for rating '+order.organization+'!');
 }
 const dashReportReasons=['Short or wrong quantity','Poor quality or spoiled','Harvest date not as listed','Late or no fulfillment','Payment or refund problem','Other'];
 function dashReportForm(orderId:string):void{
@@ -1070,7 +1282,7 @@ function dashReportForm(orderId:string):void{
  dashOpen('<p class="detail-kicker">Report a problem · '+dashOrderNo(o.id)+'</p><h2 id="detail-title">What went wrong?</h2><p class="detail-subtitle">'+de(o.crop)+' · '+de(o.quantity)+' from '+de(o.organization)+'</p><form class="dash-form" id="report-form" data-order="'+o.id+'" novalidate><div class="form-grid single">'
   +dashField('reason','Reason'+dashRequired,'<select required><option value="">Choose a reason…</option>'+dashReportReasons.map(r=>'<option>'+de(r)+'</option>').join('')+'</select>')
   +dashField('details','Details'+dashRequired,'<textarea rows="4" required maxlength="500" placeholder="What did you receive, and when?"></textarea>','At least 20 characters.')
-  +'</div><p class="detail-note">AniBayan administrators review every report. Only upheld reports lower the organization’s credit score.</p><div class="detail-actions"><button type="button" class="control" data-close-dialog>Cancel</button><button type="submit" class="control primary">'+di('flag')+'Send report</button></div></form>');
+  +'</div><p class="detail-note">AniBayan administrators review every report.</p><div class="detail-actions"><button type="button" class="control" data-close-dialog>Cancel</button><button type="submit" class="control primary">'+di('flag')+'Send report</button></div></form>');
  dashFocusField('#field-reason');
 }
 function dashSubmitReport(form:HTMLFormElement):void{
@@ -1084,8 +1296,61 @@ function dashSubmitReport(form:HTMLFormElement):void{
  if(!order)return;
  const next=Math.max(0,...dashboardReports.map(r=>Number(r.id.slice(3))||0))+1;
  dashboardReports.push({id:'RP-'+String(next).padStart(3,'0'),organization:order.organization,customer:dashConsumerName,reason,details,date:dashToday,status:'Open',order:order.id});
+ dashLog('report-filed',dashMeEmail,'RP-'+String(next).padStart(3,'0')+' · '+order.organization);
  dashDialog.close();dashRender();
- dashToast('Report sent. Administrators review it before it affects '+order.organization+'’s credit score.');
+ dashToast('Report sent. An AniBayan administrator will review it.');
+}
+
+const dashRepEmail=(org:string)=>dashboardAccounts.find(a=>a.organization===org&&a.role==='Representative')?.email||'';
+// Administrators warn an organization directly; at its final warning the next step is termination.
+function dashWarningForm(name:string):void{
+ const s=dashStanding(name);
+ if(s.terminated)return;
+ if(s.final){dashTerminateDialog(name);return;}
+ const last=s.count+1>=dashWarningLimit;
+ dashOpen('<p class="detail-kicker">Warn organization · '+dashNextOffence(name)+'</p><h2 id="detail-title">Give '+de(name)+' a warning</h2><form class="dash-form" id="warning-form" data-organization-name="'+de(name)+'" novalidate><div class="form-grid single">'
+  +dashField('reason','Reason'+dashRequired,'<input required maxlength="120" placeholder="For example: abusive messages to a buyer">')
+  +dashField('details','Details (optional)','<textarea rows="3" maxlength="500" placeholder="What happened, and when?"></textarea>')
+  +'</div><div class="detail-actions"><button type="button" class="control" data-close-dialog>Cancel</button><button type="submit" class="control danger">'+di('flag')+(last?'Give final warning':'Give warning')+'</button></div></form>');
+ dashFocusField('#field-reason');
+}
+function dashSubmitWarning(form:HTMLFormElement):void{
+ const data=new FormData(form);
+ const reason=String(data.get('reason')??'').trim(),details=String(data.get('details')??'').trim();
+ if(!dashShowErrors(form,reason.length>=5?{}:{reason:'Give a reason of at least 5 characters.'}))return;
+ const name=form.dataset.organizationName||'';
+ const next=Math.max(0,...dashboardWarnings.map(w=>Number(w.id.slice(3))||0))+1;
+ dashboardWarnings.push({id:'WN-'+String(next).padStart(3,'0'),organization:name,reason,details,date:dashToday,by:dashAccount().name});
+ dashLog('warning-given',dashMeEmail,name+' · '+reason,dashRepEmail(name));
+ dashRender();dashApplicationDetails(name);
+ dashToast('Warning given. '+dashStandingSentence(name));
+}
+// Asks before terminating. With a report, upholding that report is the offence that ends it.
+function dashTerminateDialog(name:string,reportId=''):void{
+ const s=dashStanding(name);
+ if(s.terminated)return;
+ dashOpen('<p class="detail-kicker">Terminate organization</p><h2 id="detail-title">Terminate '+de(name)+'?</h2><p class="detail-subtitle">This can’t be undone.</p><form class="dash-form" id="terminate-form" data-organization-name="'+de(name)+'" data-report="'+reportId+'" novalidate>'
+  +(reportId?'':'<div class="form-grid single">'+dashField('reason','Reason'+dashRequired,'<input required maxlength="120" placeholder="What did the organization do this time?">')+'</div>')
+  +'<div class="detail-actions"><button type="button" class="control" data-close-dialog>Cancel</button><button type="submit" class="control danger">'+di('lock')+(reportId?'Uphold and terminate':'Terminate organization')+'</button></div></form>');
+ if(!reportId)dashFocusField('#field-reason');
+}
+function dashSubmitTerminate(form:HTMLFormElement):void{
+ const name=form.dataset.organizationName||'';
+ const org=dashboardOrganizations.find(o=>o.name===name);
+ if(!org)return;
+ const report=form.dataset.report?dashboardReports.find(r=>r.id===form.dataset.report):undefined;
+ let reason='';
+ if(report){report.status='Upheld';report.decided=dashToday;reason=report.reason+' (report '+report.id+')';}
+ else{
+  reason=String(new FormData(form).get('reason')??'').trim();
+  if(!dashShowErrors(form,reason.length>=5?{}:{reason:'Give a reason of at least 5 characters.'}))return;
+ }
+ if(report)dashLog('report-upheld',dashMeEmail,report.id+' · '+name);
+ dashLog('org-terminated',dashMeEmail,name+' · '+reason,dashRepEmail(name));
+ org.status='Terminated';org.terminated=dashToday;org.terminatedFor=reason;
+ dashboardAccounts.filter(a=>a.organization===name&&a.role==='Representative').forEach(a=>{a.status='Terminated';a.note=name+' was terminated by '+dashAccount().name+' on '+dfull(dashToday)+'.';});
+ dashRender();dashApplicationDetails(name);
+ dashToast(name+' is terminated. Its listings left the shop and its representative is signed out.');
 }
 
 let dashToastTimeout:number|undefined;
@@ -1093,6 +1358,7 @@ function dashToast(message:string):void{const el=document.getElementById('dashbo
 function dashExportRows():[string,(string|number)[][]]{
  const view=dashState.view;
  if(isAdminDashboard){
+  if(view==='activity')return ['activity-log',[['Time','Email','Name','Activity','Details'],...dashActivityList().map(e=>[e.time,e.actor,dashAccountByEmail(e.actor)?.name||'',dashActivityInfo(e.type)[0],e.detail])]];
   if(view==='reports')return ['user-reports',[['Report ID','Organization','Reported by','Reason','Details','Order','Filed','Status'],...dashReportList().map(r=>[r.id,r.organization,r.customer,r.reason,r.details,r.order||'',r.date,r.status])]];
   if(view==='applications')return ['organization-applications',[['Organization','Region','Main crops','Representative','Members','Documents','Submitted','Status'],...dashApplicationList().map(o=>[o.name,o.region,o.crop,o.representative,o.members,o.documents.join('; '),o.applied,dashAppStatus(o)])]];
   if(view==='health')return ['health-checks',[['Checked at','Service','Result','Response time (ms)','Error'],...dashboardHealthLog.slice().reverse().flatMap(run=>run.results.map(r=>[run.time,r.service,r.ok?'Passed':'Failed',r.latency,r.error||'']))]];
@@ -1134,6 +1400,7 @@ function dashStart():void{
  if(isConsumerDashboard&&params.get('q')){dashState.query=params.get('q')!.replace(/-/g,' ');dashRender();}
  if(isConsumerDashboard&&params.get('grower'))dashGrowerDetails(params.get('grower')!);
  if(isAdminDashboard)void dashRunHealthChecks();
+ if(dashBuyer)void dashCheckPayments();
  // Keep every open AniBayan page in step: another page saved new data, reset it, or signed in or out.
  window.addEventListener('storage',event=>{
   if(event.key===dashSessionKey||(event.key===dashStoreKey&&event.newValue===null)||event.key===null){location.reload();return;}
@@ -1151,6 +1418,7 @@ function dashStart():void{
  document.addEventListener('click',dashHandleClick);
  document.addEventListener('input',event=>{
   const input=event.target as HTMLInputElement;
+  if(input.dataset.tableSearch!==undefined){dashState.query=input.value;dashRender();return;}
   const key=input.dataset.shop as keyof DashShopFilters|undefined;
   if(key){dashState.shop[key]=input.value;dashRefreshShop();return;}
   const form=input.form;
@@ -1181,6 +1449,8 @@ function dashStart():void{
   if(form.id==='listing-form')void dashSubmitListing(form);
   else if(form.id==='feedback-form')dashSubmitFeedback(form);
   else if(form.id==='report-form')dashSubmitReport(form);
+  else if(form.id==='warning-form')dashSubmitWarning(form);
+  else if(form.id==='terminate-form')dashSubmitTerminate(form);
   else if(form.id==='checkout-form')dashSubmitCheckout(form);
   else if(form.id==='profile-form')dashSubmitProfile(form);
   else if(form.id==='org-profile-form')dashSubmitOrgProfile(form);
@@ -1194,7 +1464,7 @@ function dashHandleClick(event:MouseEvent):void{
  if(!el.closest('.notification-wrap'))dashSetPopover('notification-panel','show-notifications',false);
  if(!el.closest('.workspace-switch'))dashSetPopover('workspace-menu','workspace-toggle',false);
  if(el.closest('#sidebar-backdrop'))document.body.classList.remove('sidebar-open');
- if(el.closest('[data-sign-out]')){dashClearSession();return;}
+ if(el.closest('[data-sign-out]')){if(dashMeEmail){dashLog('signout',dashMeEmail);dashSaveStore();}dashClearSession();return;}
  if(el.closest('[data-sign-in]')){event.preventDefault();dashGoToSignIn('signin');return;}
  if(el.closest('[data-sign-in-buyer]')){event.preventDefault();dashGoToSignIn('buyer');return;}
  const target=el.closest<HTMLElement>('button,[data-go]');if(!target)return;
@@ -1203,12 +1473,15 @@ function dashHandleClick(event:MouseEvent):void{
  if(data.advance||data.decline||data.cancelOrder){
   const order=dashboardOrders.find(o=>o.id===(data.advance||data.decline||data.cancelOrder))!;
   dashSetOrderStatus(order,data.advance?dashNextStep[order.status][0]:'Cancelled');
+  if(order.status==='Cancelled')dashLog('order-cancelled',dashMeEmail,dashOrderNo(order.id)+(data.decline?' · declined by '+order.organization:''));
+  else dashLog('order-updated',dashMeEmail,dashOrderNo(order.id)+' → '+order.status);
   dashRender();if(dashDialog.open)dashOrderDetails(order.id);
   dashToast('Order '+dashOrderNo(order.id)+' '+(data.cancelOrder?'cancelled.':'marked '+order.status.toLowerCase()+'.'));return;
  }
  if(data.toggleListing){
   const crop=dashboardCrops.find(c=>c.id===data.toggleListing)!;
-  crop.status=crop.status==='Active'?'Unavailable':'Active';dashRender();
+  crop.status=crop.status==='Active'?'Unavailable':'Active';
+  dashLog(crop.status==='Active'?'listing-resumed':'listing-paused',dashMeEmail,crop.name);dashRender();
   if(dashDialog.open)dashProductDetails(crop.id);
   dashToast(crop.name+(crop.status==='Active'?' is visible to buyers again.':' is paused. Buyers can’t order it until you resume it.'));return;
  }
@@ -1218,6 +1491,7 @@ function dashHandleClick(event:MouseEvent):void{
   const index=dashboardCrops.findIndex(c=>c.id===data.confirmRemove);
   if(index<0)return;
   const [crop]=dashboardCrops.splice(index,1);
+  dashLog('listing-removed',dashMeEmail,crop.name);
   Object.values(dashboardCarts).forEach(cart=>{const i=cart.findIndex(l=>l.crop===crop.id);if(i>=0)cart.splice(i,1);});
   dashDialog.close();dashRender();
   dashToast(crop.name+' was removed from your listings.');return;
@@ -1244,21 +1518,31 @@ function dashHandleClick(event:MouseEvent):void{
   if(data.review==='Active')org.approved=dashToday;
   const representative=dashboardAccounts.find(a=>a.organization===org.name&&a.status==='Pending');
   if(representative)representative.status=data.review==='Active'?'Active':'Declined';
+  dashLog(data.review==='Active'?'application-approved':'application-declined',dashMeEmail,org.name,representative?.email||'');
   dashDialog.close();dashRender();
   dashToast(org.name+(data.review==='Active'?' approved. '+(representative?representative.name+' can now sign in.':''):' declined.'));return;
  }
  if(data.decide&&data.reportId){
   const report=dashboardReports.find(r=>r.id===data.reportId)!;
   report.status=data.decide;
+  report.decided=report.status==='Open'?undefined:dashToday;
+  dashLog(report.status==='Upheld'?'report-upheld':report.status==='Dismissed'?'report-dismissed':'report-reopened',dashMeEmail,report.id+' · '+report.organization);
   dashRender();dashReportDetails(report.id);
-  const score=dashCredit(report.organization).score;
-  dashToast(report.id+(report.status==='Open'?' reopened. ':' '+report.status.toLowerCase()+'. ')+report.organization+(score===null?' has no credit score yet.':'’s credit score is now '+score+'.'));return;
+  dashToast(report.id+(report.status==='Open'?' reopened. ':' '+report.status.toLowerCase()+'. ')+dashStandingSentence(report.organization));return;
+ }
+ if(data.warn){dashWarningForm(data.warn);return;}
+ if(data.terminate){dashTerminateDialog(data.terminate,data.terminateReport||'');return;}
+ if(data.withdrawWarning){
+  const index=dashboardWarnings.findIndex(w=>w.id===data.withdrawWarning);
+  if(index>=0){const [w]=dashboardWarnings.splice(index,1);dashLog('warning-withdrawn',dashMeEmail,w.organization+' · '+w.reason,dashRepEmail(w.organization));dashRender();dashApplicationDetails(w.organization);dashToast('Warning withdrawn. '+dashStandingSentence(w.organization));}
+  return;
  }
  if(data.reportId){dashReportDetails(data.reportId);return;}
  if(data.suspend){
   const account=dashAccountByEmail(data.suspend)!;
   account.status=account.status==='Suspended'?'Active':'Suspended';
   account.note=account.status==='Suspended'?'Suspended by '+dashAccount().name+' on '+dfull(dashToday)+'.':undefined;
+  dashLog(account.status==='Suspended'?'account-suspended':'account-reactivated',dashMeEmail,account.name,account.email);
   dashRender();dashAccountDetails(account.email);
   dashToast(account.name+(account.status==='Suspended'?' is suspended and signed out of AniBayan.':' is reactivated.'));return;
  }
@@ -1273,11 +1557,7 @@ function dashHandleClick(event:MouseEvent):void{
  if(data.reportOrder){if(dashRequireBuyer())dashReportForm(data.reportOrder);return;}
  if(data.payOrder){dashPaymentDialog([data.payOrder]);return;}
  if(data.pay){
-  const paid=data.pay.split(',').map(id=>dashboardOrders.find(o=>o.id===id)).filter((o):o is DashboardOrder=>!!o);
-  paid.forEach(o=>{o.payment='Paid';});
-  dashDialog.close();
-  dashNavigate('orders');
-  dashToast('Payment complete for '+paid.map(o=>dashOrderNo(o.id)).join(', ')+'.');return;
+  void dashStartPayment(data.pay.split(','),target as HTMLButtonElement);return;
  }
  if(data.payLater!==undefined){dashDialog.close();dashNavigate('orders');dashToast('Your order is waiting for payment. Use Pay now in My orders when you’re ready.');return;}
  if(data.addListing!==undefined){dashListingForm();return;}
@@ -1316,7 +1596,7 @@ function dashHandleClick(event:MouseEvent):void{
  if(data.product){dashProductDetails(data.product);return;}
  if(data.organization){if(isAdminDashboard)dashApplicationDetails(data.organization);else dashGrowerDetails(data.organization);return;}
  if(data.filter){dashState.filter=data.filter;dashRender();return;}
- if(data.chart){dashState.chart=data.chart;dashRender();return;}
+ if(data.chart){if(data.chartGroup==='hardware')dashState.hardwareChart=data.chart;else dashState.chart=data.chart;dashRender();return;}
  if(data.bar!==undefined){dashState.bar=Number(data.bar);dashRender();return;}
  if(data.save){
   if(!dashRequireBuyer())return;

@@ -28,13 +28,13 @@ New buyers can sign up and shop right away. New organizations apply on the sign-
 | `login.html` | Everyone | Sign in, create a buyer account, or apply as a farmer organization |
 | `consumer.html` | Buyers (guests can browse) | Shop with filters, cart and checkout, orders, saved harvests, growers, payments, profile |
 | `organization.html` | Organization representatives | Incoming orders, crop listings, ratings and feedback, member farmers, payments, profile |
-| `admin.html` | Administrators | Account management, user reports, organization applications and site health only |
+| `admin.html` | Administrators | Account management, activity log, user reports, organization applications and site health only |
 
 ## What works
 
 - **Buyers:**
   - Filter the shop, add to cart, and check out (one order per organization).
-  - Pay by cash on delivery, or by card or GCash through PayMongo test mode (no money is charged).
+  - Pay by cash on delivery, or by card or GCash on PayMongo's test checkout (no money is charged; test card 4343 4343 4343 4345). An order turns Paid only after PayMongo confirms the payment.
   - Cancel pending orders, rate completed ones, and report problems.
   - Save harvests and edit delivery details.
 - **Organizations:**
@@ -44,20 +44,25 @@ New buyers can sign up and shop right away. New organizations apply on the sign-
   - Charts and trends come from real orders.
 - **Administrators:**
   - Suspend or reactivate accounts, and reset passwords (a temporary password is shown once).
+  - Activity log: sign-ins (failed and blocked ones in red), orders, listing and price changes, reports and every administrator action, with back-to-back repeats shown once with a count. Each account's pop-up lists its recent activity.
   - Uphold, dismiss or reopen user reports.
+  - Warn organizations that break the rules, and terminate one after its final warning.
   - Approve or decline organization applications.
-  - Run live site-health checks against the server.
+  - Run live site-health checks against the server, with graphs of the server's CPU, memory and storage (read by the Laravel route `/server-health`).
 - **Everyone:** change password, remembered display preferences, CSV export of every table.
 
-## Organization credit score
+## Organization warnings
 
 - Buyers rate completed orders from 1 to 5 stars, and can report a problem with any of their orders.
-- **Credit score (0–100) = average rating × 20, minus 10 points for each report an administrator upholds.** Reports under review and dismissed reports don't count. An organization with no ratings yet shows as "New".
-- Bands: 90 and above Excellent, 75–89 Good, 60–74 Fair, below 60 At risk.
+- **Every report an administrator upholds is a warning.** Administrators can also warn an organization directly (for example, abusive messages or misleading listings), with a reason the organization sees.
+- **3 warnings, then termination.** The third is the final warning. The next upheld report or warning terminates the organization, after the administrator confirms: its listings leave the shop and its representative can no longer sign in. Termination can't be undone.
+- Reopening an upheld report withdraws its warning. Administrators can withdraw a warning they gave until the organization is terminated.
+- The limit is `dashWarningLimit` in `src/dashboards.ts`.
+- Administrators see every organization's warnings under User reports. Organizations see theirs under Ratings & feedback, and get a notice on their overview.
 
 ## Shop filters
 
-Crop type, price per unit (minimum and maximum), harvest time (last 3, 7 or 30 days) and location, with sorting by freshest harvest, price, credit score or shelf life left. The shop only lists crops that are active, in stock and still within their shelf life.
+Crop type, price per unit (minimum and maximum), harvest time (last 3, 7 or 30 days) and location, with sorting by freshest harvest, price, rating or shelf life left. The shop only lists crops that are active, in stock and still within their shelf life, from organizations that aren't terminated.
 
 ## Harvest date on listings
 

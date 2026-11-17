@@ -41,7 +41,7 @@ function dashReplaceRecord<T>(target:Record<string,T>,source:unknown):void{
  Object.assign(target,source);
 }
 function dashSnapshot():string{
- return JSON.stringify({orders:dashboardOrders,crops:dashboardCrops,organizations:dashboardOrganizations,accounts:dashboardAccounts,feedback:dashboardFeedback,reports:dashboardReports,members:dashboardMembers,saved:dashboardSaved,carts:dashboardCarts,healthLog:dashboardHealthLog});
+ return JSON.stringify({orders:dashboardOrders,crops:dashboardCrops,organizations:dashboardOrganizations,accounts:dashboardAccounts,feedback:dashboardFeedback,reports:dashboardReports,warnings:dashboardWarnings,activity:dashboardActivity,members:dashboardMembers,saved:dashboardSaved,carts:dashboardCarts,healthLog:dashboardHealthLog});
 }
 // Replaces the starting data with the copy saved by any AniBayan page, if there is one.
 function dashLoadStore():void{
@@ -51,7 +51,7 @@ function dashLoadStore():void{
  try{
   const data=JSON.parse(raw);
   dashReplaceList(dashboardOrders,data.orders);dashReplaceList(dashboardCrops,data.crops);dashReplaceList(dashboardOrganizations,data.organizations);
-  dashReplaceList(dashboardAccounts,data.accounts);dashReplaceList(dashboardFeedback,data.feedback);dashReplaceList(dashboardReports,data.reports);
+  dashReplaceList(dashboardAccounts,data.accounts);dashReplaceList(dashboardFeedback,data.feedback);dashReplaceList(dashboardReports,data.reports);dashReplaceList(dashboardWarnings,data.warnings);dashReplaceList(dashboardActivity,data.activity);
   dashReplaceList(dashboardMembers,data.members);dashReplaceList(dashboardHealthLog,data.healthLog);
   dashReplaceRecord(dashboardSaved,data.saved);dashReplaceRecord(dashboardCarts,data.carts);
   dashLastSaved=raw;
@@ -65,6 +65,11 @@ function dashSaveStore():boolean{
  try{localStorage.setItem(dashStoreKey,json);}catch{return false;}
  dashLastSaved=json;
  return true;
+}
+// Adds one event to the administrators' activity log, newest first. The caller saves.
+function dashLog(type:string,actor:string,detail='',target=''):void{
+ dashboardActivity.unshift(target?{time:new Date().toISOString(),actor,type,detail,target}:{time:new Date().toISOString(),actor,type,detail});
+ if(dashboardActivity.length>1000)dashboardActivity.length=1000;
 }
 function dashResetStore():void{try{localStorage.removeItem(dashStoreKey);localStorage.removeItem(dashSessionKey);}catch{/* nothing stored */}}
 function dashSessionEmail():string{try{return localStorage.getItem(dashSessionKey)||'';}catch{return '';}}
