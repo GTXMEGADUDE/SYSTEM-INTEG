@@ -10,10 +10,10 @@ class ExampleTest extends TestCase
     /**
      * A basic test example.
      */
-    public function test_the_home_page_redirects_to_the_book_collection(): void
+    public function test_the_home_page_redirects_to_anibayan(): void
     {
         $response = $this->get('/');
 
-        $response->assertRedirect('/books');
+        $response->assertRedirect('/anibayan/');
     }
 }

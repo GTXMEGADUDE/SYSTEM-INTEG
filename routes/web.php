@@ -1,9 +1,6 @@
 <?php
 
-use App\Http\Controllers\BookController;
 use Illuminate\Support\Facades\Route;
 
-Route::redirect('/', '/books');
-
-Route::resource('books', BookController::class)
-    ->only(['index', 'create', 'store', 'edit', 'update', 'destroy']);
+// AniBayan's pages are static files in public/anibayan/.
+Route::redirect('/', '/anibayan/');
