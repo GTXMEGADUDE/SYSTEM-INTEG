@@ -24,6 +24,12 @@ class PaymentController extends Controller
             'orders.*.id' => ['required', 'string', 'regex:/^AB-\d{4}-\d+$/'],
             'orders.*.total' => ['required', 'numeric', 'min:20', 'max:1000000'],
             'orders.*.organization' => ['required', 'string', 'max:120'],
+            'orders.*.items' => ['required', 'array', 'min:1', 'max:50'],
+            'orders.*.items.*.name' => ['required', 'string', 'max:120'],
+            'orders.*.items.*.quantity' => ['required', 'integer', 'min:1', 'max:100000'],
+            'orders.*.items.*.unit' => ['required', 'string', 'max:20'],
+            'orders.*.items.*.price' => ['required', 'numeric', 'min:0.01', 'max:1000000'],
+            'orders.*.items.*.image' => ['nullable', 'string', 'max:120'],
             'buyer.name' => ['required', 'string', 'max:120'],
             'buyer.email' => ['required', 'email', 'max:160'],
             'buyer.phone' => ['nullable', 'string', 'max:20'],
@@ -43,12 +49,15 @@ class PaymentController extends Controller
         }
         $response = $this->client()->post(self::API, ['data' => ['attributes' => [
             'billing' => $billing,
-            'line_items' => array_map(fn ($o) => [
+            // One line per crop, with its photo; PayMongo shows the price per unit times the quantity.
+            'line_items' => collect($data['orders'])->flatMap(fn ($o) => array_map(fn ($item) => array_filter([
                 'currency' => 'PHP',
-                'amount' => (int) round($o['total'] * 100),
-                'name' => 'AniBayan order #'.substr($o['id'], 8).' · '.$o['organization'],
-                'quantity' => 1,
-            ], $data['orders']),
+                'amount' => (int) round($item['price'] * 100),
+                'name' => $item['name'],
+                'description' => $o['organization'].' · per '.$item['unit'],
+                'quantity' => (int) $item['quantity'],
+                'images' => $this->image($item['image'] ?? null),
+            ]), $o['items']))->all(),
             'payment_method_types' => [self::METHODS[$data['method']]],
             'description' => 'AniBayan '.(count($numbers) > 1 ? 'orders ' : 'order ').implode(', ', $numbers),
             'reference_number' => implode(',', array_column($data['orders'], 'id')),
@@ -90,6 +99,18 @@ class PaymentController extends Controller
             'method' => $payment['attributes']['source']['type'] ?? null,
             'orders' => array_values(array_filter(explode(',', (string) ($attributes['reference_number'] ?? '')))),
         ])->header('Cache-Control', 'no-store');
+    }
+
+    // A photo from public/anibayan/assets as a public https address. Photos a grower uploaded live only in their
+    // browser, so those items go without one.
+    private function image(?string $file): ?array
+    {
+        if (! $file || ! preg_match('/^[\w-]+\.(jpe?g|png|webp)$/i', $file) || ! is_file(public_path('anibayan/assets/'.$file))) {
+            return null;
+        }
+        $base = str_starts_with(url('/'), 'https://') ? url('anibayan/assets') : config('services.paymongo.images');
+
+        return $base ? [rtrim($base, '/').'/'.$file] : null;
     }
 
     private function client(): ?PendingRequest

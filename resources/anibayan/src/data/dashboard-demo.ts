@@ -10,9 +10,13 @@ interface DashboardOrder { id:string; customer:string; organization:string; crop
 interface DashboardCrop { id:string; name:string; organization:string; image:string; price:number; unit:string; category:string; stock:number; status:string; harvested:string; shelfLife:number }
 // status: 'Active' (approved and selling), 'Pending review' (application waiting for an administrator), 'Declined', or
 // 'Terminated' (removed after its final warning; terminated is the date and terminatedFor the offence that ended it).
-interface DashboardOrganization { name:string; region:string; crop:string; image:string; listings:number; status:string; representative:string; applied:string; members:number; documents:string[]; approved?:string; phone?:string; description?:string; terminated?:string; terminatedFor?:string }
+// A profile's picture and banner: uploaded photos stored as data URLs. bannerX/bannerY: the banner's focal point in %.
+interface DashboardLook { avatar?:string; banner?:string; bannerX?:number; bannerY?:number }
+// What a buyer's profile shows to others. Every option is on until the buyer turns it off.
+interface DashboardPrivacy { profile:boolean; reviews:boolean; city:boolean; growers:boolean }
+interface DashboardOrganization extends DashboardLook { name:string; region:string; crop:string; image:string; listings:number; status:string; representative:string; applied:string; members:number; documents:string[]; approved?:string; phone?:string; description?:string; terminated?:string; terminatedFor?:string }
 // Starting accounts use dashDemoPassword until their password is changed or reset.
-interface DashboardAccount { name:string; email:string; role:string; organization?:string; joined:string; lastActive:string; status:string; note?:string; phone?:string; address?:string; password?:string }
+interface DashboardAccount extends DashboardLook { name:string; email:string; role:string; organization?:string; joined:string; lastActive:string; status:string; note?:string; phone?:string; address?:string; password?:string; privacy?:Partial<DashboardPrivacy> }
 // Buyer feedback: 1–5 stars for a completed order, with an optional comment.
 interface DashboardFeedback { id:string; organization:string; customer:string; rating:number; comment:string; date:string; order?:string }
 // status: 'Open' (waiting for an administrator), 'Upheld' (counts as a warning against the organization) or 'Dismissed'.

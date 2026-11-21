@@ -31,6 +31,9 @@ return [
     'paymongo' => [
         'public' => env('PAYMONGO_PUBLIC_KEY'),
         'secret' => env('PAYMONGO_SECRET_KEY'),
+        // PayMongo's checkout only shows photos from a public https address. A site served over https uses its own
+        // copies; otherwise (127.0.0.1) the copies in the GitHub repo are used.
+        'images' => env('PAYMONGO_IMAGE_URL', 'https://raw.githubusercontent.com/GTXMEGADUDE/SYSTEM-INTEG/main/public/anibayan/assets'),
     ],
 
     'slack' => [

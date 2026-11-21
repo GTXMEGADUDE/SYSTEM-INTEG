@@ -307,7 +307,8 @@ const dashRoot = document.getElementById('dashboard-app');
 const dashDialog = document.getElementById('detail-dialog');
 const dashShopDefaults = { type: 'All', min: '', max: '', harvest: 'any', location: 'All', sort: 'fresh' };
 // bar: the highlighted chart bar; anything past the end selects the newest one.
-const dashState = { view: 'overview', query: '', filter: 'All', nextFilter: '', period: 'week', chart: 'value', hardwareChart: 'cpu', bar: 99, shop: { ...dashShopDefaults } };
+// profile: the organization or person shown by the profile view (#org=… or #user=…).
+const dashState = { view: 'overview', query: '', filter: 'All', nextFilter: '', period: 'week', chart: 'value', hardwareChart: 'cpu', bar: 99, shop: { ...dashShopDefaults }, profile: { kind: 'org', slug: '' } };
 const dashPaths = {
     grid: 'M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z',
     bag: 'M5 7h14l2 14H3L5 7Z M8 8V6a4 4 0 0 1 8 0v2',
@@ -342,6 +343,11 @@ const dashPaths = {
     edit: 'M4 20h4L19 9l-4-4L4 16v4Z M13 7l4 4',
     logout: 'M15 4h4v16h-4 M10 8l-4 4 4 4 M6 12h10',
     key: 'M15 7a4 4 0 1 1-3.9 5H3v4h3v-2h2v2h3.1A4 4 0 0 1 15 7Z',
+    image: 'M4 5h16v14H4z M4 15l4-4 4 4 3-3 5 5 M15 9h.01',
+    camera: 'M4 8h3l2-3h6l2 3h3v11H4z M15.5 13a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0Z',
+    move: 'M12 3v18 M3 12h18 M9 6l3-3 3 3 M9 18l3 3 3-3 M6 9l-3 3 3 3 M18 9l3 3-3 3',
+    close: 'M6 6l12 12 M18 6 6 18',
+    verified: 'm12 2 2.4 2.2 3.2-.4.8 3.1 2.8 1.6-1.3 3 1.3 3-2.8 1.6-.8 3.1-3.2-.4L12 22l-2.4-2.2-3.2.4-.8-3.1L2.8 15.5l1.3-3-1.3-3 2.8-1.6.8-3.1 3.2.4L12 2Z m-3.5 10 2.5 2.5 4.5-5',
 };
 const di = (name) => '<svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="' + (dashPaths[name] || dashPaths.grid) + '"/></svg>';
 const dp = (value) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 }).format(value);
@@ -428,6 +434,226 @@ const dashRegion = (org) => dashboardOrganizations.find(o => o.name === org)?.re
 const dashOpenReports = () => dashboardReports.filter(r => r.status === 'Open').length;
 const dashPendingApplications = () => dashboardOrganizations.filter(o => o.status === 'Pending review').length;
 const dashListingCount = (org) => dashboardCrops.filter(c => c.organization === org && dashIsBuyable(c)).length;
+/* ---------- Profiles: pictures, banners, links and buyer privacy ---------- */
+// Profile addresses use the name: #org=benguet-highland-growers, #user=alex-reyes.
+const dashSlug = (name) => name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+const dashAccountByName = (name) => dashboardAccounts.find(a => a.name === name);
+const dashLookKind = (role) => role === 'Administrator' ? 'admin' : role === 'Representative' ? 'organization' : 'consumer';
+// Approved and terminated organizations are public; pending and declined ones only to administrators and their own representative.
+const dashOrgVisible = (o) => o.status === 'Active' || o.status === 'Terminated' || isAdminDashboard || o.name === dashOrgName;
+function dashOrgLink(name) {
+    const o = dashboardOrganizations.find(x => x.name === name);
+    return o && dashOrgVisible(o) ? '<a class="profile-link" href="#org=' + dashSlug(name) + '" data-profile-link>' + de(name) + '</a>' : de(name);
+}
+// Buyers and representatives have profiles; administrators don't.
+function dashUserLink(name) {
+    const a = dashAccountByName(name);
+    return a && a.role !== 'Administrator' ? '<a class="profile-link" href="#user=' + dashSlug(name) + '" data-profile-link>' + de(name) + '</a>' : de(name);
+}
+// The round picture: the uploaded photo, otherwise initials.
+function dashAvatar(look, name, kind, size = '') {
+    return '<span class="avatar ' + kind + '-avatar' + (size ? ' ' + size : '') + '">' + (look?.avatar ? '<img src="' + de(look.avatar) + '" alt="">' : de(dashInitials(name))) + '</span>';
+}
+const dashPrivacyDefaults = { profile: true, reviews: true, city: true, growers: true };
+const dashPrivacy = (a) => ({ ...dashPrivacyDefaults, ...(a.privacy || {}) });
+// "12 Mabini Street, Barangay San Isidro, Quezon City, Metro Manila" → "Quezon City, Metro Manila".
+function dashCity(address) { const parts = (address || '').split(',').map(p => p.trim()).filter(Boolean); return parts.length >= 3 ? parts.slice(-2).join(', ') : ''; }
+// A banner without an uploaded photo: the organization's own photo, or a green gradient picked from the buyer's name.
+function dashBannerStyle(look, fallback) {
+    return 'background-image:' + (look.banner ? 'url(&quot;' + de(look.banner) + '&quot;)' : fallback) + ';background-position:' + (look.bannerX ?? 50) + '% ' + (look.bannerY ?? 50) + '%';
+}
+function dashUserBanner(name) {
+    const hue = 95 + [...name].reduce((sum, c) => sum + c.charCodeAt(0), 0) % 60;
+    return 'linear-gradient(125deg,hsl(' + hue + ' 42% 24%),hsl(' + (hue + 25) + ' 45% 36%) 55%,hsl(' + (hue - 30) + ' 60% 62%))';
+}
+// target: "org:<name>" or "user:<email>"; data-look carries it to the photo buttons.
+function dashLookOf(target) {
+    const at = target.indexOf(':');
+    const kind = target.slice(0, at), key = target.slice(at + 1);
+    return kind === 'org' ? dashboardOrganizations.find(o => o.name === key) : kind === 'user' ? dashAccountByEmail(key) : undefined;
+}
+// Only the owner changes a profile's photos: the buyer on their own page, or the organization's representative.
+function dashCanEdit(target) {
+    const at = target.indexOf(':');
+    const kind = target.slice(0, at), key = target.slice(at + 1);
+    if (kind === 'org')
+        return isOrgDashboard && key === dashOrgName && !dashBlocked().length;
+    return isConsumerDashboard && !!dashMeEmail && key.toLowerCase() === dashMeEmail.toLowerCase();
+}
+// The banner, picture and name at the top of a profile. The owner gets the photo buttons.
+function dashProfileCard(p) {
+    const editable = dashCanEdit(p.target);
+    const picker = (kind, content, cls, label) => '<label class="' + cls + '" tabindex="0" role="button"' + (label ? ' aria-label="' + label + '"' : '') + '>' + content + '<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" data-upload="' + kind + '" data-look="' + de(p.target) + '" hidden></label>';
+    const tools = editable ? '<div class="banner-tools">' + picker('banner', di('image') + '<span>' + (p.look.banner ? 'Change banner' : 'Add banner') + '</span>', 'banner-button', '') + (p.look.banner ? '<button class="banner-button" data-reposition="' + de(p.target) + '">' + di('move') + '<span>Reposition</span></button><button class="banner-button" data-remove-photo="banner" data-look="' + de(p.target) + '">' + di('close') + '<span>Remove</span></button>' : '') + '</div><div class="banner-actions" hidden><button class="banner-button" data-reposition-cancel>Cancel</button><button class="banner-button primary" data-reposition-save>' + di('check') + 'Save position</button></div>' : '';
+    const photo = editable ? picker('avatar', di('camera'), 'avatar-button', 'Change picture') + (p.look.avatar ? '<button class="avatar-button remove" data-remove-photo="avatar" data-look="' + de(p.target) + '" aria-label="Remove picture">' + di('close') + '</button>' : '') : '';
+    return '<section class="panel profile-card"><div class="profile-banner" data-banner="' + de(p.target) + '" style="' + dashBannerStyle(p.look, p.fallback) + '">' + tools + '</div><div class="profile-id"><div class="profile-avatar">' + dashAvatar(p.look, p.name, p.kind, 'avatar-xl') + photo + '</div><div class="profile-name"><' + p.heading + '>' + de(p.name) + '</' + p.heading + '><p>' + p.line + '</p>' + (p.badges ? '<div class="profile-badges">' + p.badges + '</div>' : '') + '</div>' + (p.actions ? '<div class="profile-actions">' + p.actions + '</div>' : '') + '</div>' + (p.about ? '<p class="profile-about">' + p.about + '</p>' : '') + '</section>';
+}
+function dashOrgCard(o, heading, actions) {
+    const r = dashRatingOf(o.name);
+    const badges = (o.status === 'Active' ? '<span class="status verified">' + di('verified') + 'Verified</span>' : ds(o.status)) + (r.reviews ? dashRatingText(o.name) : '');
+    return dashProfileCard({ look: o, target: 'org:' + o.name, name: o.name, kind: 'organization', fallback: 'url(&quot;' + de(dashImg(o.image)) + '&quot;)', line: de(o.region) + ' · ' + de(o.crop) + (o.approved ? ' · Since ' + dmonth(o.approved) : ''), badges, actions, about: o.description ? de(o.description) : '', heading });
+}
+function dashUserCard(a, heading, actions, showCity) {
+    const p = dashPrivacy(a);
+    const city = showCity ? dashCity(a.address) : '';
+    const line = (a.role === 'Consumer' ? 'Buyer' : 'Representative · ' + dashOrgLink(a.organization || '')) + ' · Joined ' + dmonth(a.joined) + (city ? ' · ' + de(city) : '');
+    const badges = (a.role === 'Consumer' && !p.profile ? '<span class="status private">' + di('lock') + 'Private</span>' : '') + (a.status !== 'Active' && isAdminDashboard ? ds(a.status) : '');
+    return dashProfileCard({ look: a, target: 'user:' + a.email, name: a.name, kind: dashLookKind(a.role), fallback: dashUserBanner(a.name), line, badges, actions, about: '', heading });
+}
+const dashProfileMissing = () => '<section class="panel">' + dashEmpty('This profile isn’t available.', '') + '<div class="empty-action"><button class="control" data-go="' + dashRole.nav[0][0] + '">' + di('arrow') + 'Back</button></div></section>';
+function dashReviewRow(f, by) {
+    const a = by === 'customer' ? dashAccountByName(f.customer) : undefined;
+    const o = by === 'organization' ? dashboardOrganizations.find(x => x.name === f.organization) : undefined;
+    const who = by === 'customer' ? dashAvatar(a, f.customer, dashLookKind(a?.role || 'Consumer'), 'avatar-sm') + dashUserLink(f.customer) : dashAvatar(o, f.organization, 'organization', 'avatar-sm') + dashOrgLink(f.organization);
+    return '<article class="feedback-row review-row"><header><span class="review-who">' + who + '</span><span class="review-meta">' + dashStars(f.rating) + '<small>' + dd(f.date) + '</small></span></header><p>' + (f.comment ? '“' + de(f.comment) + '”' : 'No comment left.') + '</p></article>';
+}
+function dashOrgProfileView(slug) {
+    const o = dashboardOrganizations.find(x => dashSlug(x.name) === slug && dashOrgVisible(x));
+    if (!o)
+        return dashProfileMissing();
+    const own = isOrgDashboard && o.name === dashOrgName;
+    const r = dashRatingOf(o.name);
+    const crops = dashboardCrops.filter(c => c.organization === o.name && dashIsBuyable(c));
+    const members = dashboardMembers.filter(m => m.organization === o.name).length || o.members;
+    const completed = dashboardOrders.filter(x => x.organization === o.name && x.status === 'Completed').length;
+    const mine = dashRoleOrders().filter(x => x.organization === o.name);
+    const toRate = isConsumerDashboard ? mine.find(x => x.status === 'Completed' && !dashRated(x.id)) : undefined;
+    const toReport = isConsumerDashboard ? mine.find(x => !dashMyReport(x.id)) : undefined;
+    const actions = own ? '<button class="control" data-edit-org-profile>' + di('edit') + 'Edit profile</button>'
+        : isAdminDashboard ? '<button class="control" data-organization="' + de(o.name) + '">' + di('shield') + 'Review organization</button>'
+            : (toReport ? '<button class="control" data-report-order="' + toReport.id + '">' + di('flag') + 'Report a problem</button>' : '') + (toRate ? '<button class="control primary" data-rate="' + toRate.id + '">' + di('star') + 'Rate your order</button>' : '');
+    const reviews = dashboardFeedback.filter(f => f.organization === o.name).sort((a, b) => b.date.localeCompare(a.date));
+    const metrics = '<div class="metric-grid">' + dashMetric('Harvests listed', String(crops.length), 'box', '') + dashMetric('Buyer rating', r.reviews ? r.rating.toFixed(1) + ' ★' : '–', 'star', '') + dashMetric('Orders completed', String(completed), 'check', '') + dashMetric('Member farmers', String(members), 'people', '') + '</div>';
+    const harvests = crops.length ? '<div class="product-grid">' + crops.sort(dashShopSorts.fresh[1]).map(c => dashConsumerTile(c, isConsumerDashboard)).join('') + '</div>' : '<section class="panel">' + dashEmpty('No harvests listed right now.', '') + '</section>';
+    const feedback = '<section class="panel">' + dashPanelHead('Buyer reviews', '', '<span class="filter-summary">' + dashPlural(reviews.length, 'review') + '</span>') + '<div class="feedback-list">' + (reviews.length ? reviews.map(f => dashReviewRow(f, 'customer')).join('') : dashEmpty('No reviews yet.', '')) + '</div></section>';
+    return dashOrgCard(o, 'h1', actions) + metrics + '<h2 class="section-title">Harvests</h2>' + harvests + feedback;
+}
+function dashUserProfileView(slug) {
+    const a = dashboardAccounts.find(x => dashSlug(x.name) === slug && x.role !== 'Administrator');
+    if (!a)
+        return dashProfileMissing();
+    const own = !!dashMeEmail && a.email.toLowerCase() === dashMeEmail.toLowerCase();
+    const p = dashPrivacy(a);
+    // The buyer and administrators see everything; others see what the buyer's privacy settings allow.
+    const shows = (key) => a.role !== 'Consumer' || own || isAdminDashboard || (p.profile && p[key]);
+    const actions = own ? '<button class="control" data-go="settings">' + di('settings') + 'Edit profile</button>' : isAdminDashboard ? '<button class="control" data-account="' + de(a.email) + '">' + di('shield') + 'Manage account</button>' : '';
+    const card = dashUserCard(a, 'h1', actions, shows('city'));
+    if (a.role !== 'Consumer')
+        return card;
+    if (!shows('profile'))
+        return card + '<section class="panel private-panel">' + di('lock') + '<h2>Private profile</h2></section>';
+    const orders = dashboardOrders.filter(o => o.customer === a.name);
+    const reviews = dashboardFeedback.filter(f => f.customer === a.name).sort((x, y) => y.date.localeCompare(x.date));
+    const growers = [...new Set(orders.filter(o => o.status !== 'Cancelled').map(o => o.organization))].map(name => dashboardOrganizations.find(o => o.name === name)).filter((o) => !!o && dashOrgVisible(o));
+    const metrics = '<div class="metric-grid three">' + dashMetric('Orders completed', String(orders.filter(o => o.status === 'Completed').length), 'check', '') + (shows('reviews') ? dashMetric('Reviews', String(reviews.length), 'star', '') : '') + (shows('growers') ? dashMetric('Growers', String(growers.length), 'leaf', '') : '') + '</div>';
+    const reviewPanel = shows('reviews') ? '<section class="panel">' + dashPanelHead('Reviews', '', '<span class="filter-summary">' + dashPlural(reviews.length, 'review') + '</span>') + '<div class="feedback-list">' + (reviews.length ? reviews.map(f => dashReviewRow(f, 'organization')).join('') : dashEmpty('No reviews yet.', '')) + '</div></section>' : '';
+    const growerPanel = shows('growers') ? '<section class="panel">' + dashPanelHead('Growers', '') + '<div class="grower-list">' + (growers.length ? growers.map(o => '<a class="grower-chip" href="#org=' + dashSlug(o.name) + '" data-profile-link>' + dashAvatar(o, o.name, 'organization') + '<span><strong>' + de(o.name) + '</strong><small>' + de(o.region) + '</small></span></a>').join('') : dashEmpty('No growers yet.', '')) + '</div></section>' : '';
+    return card + metrics + (reviewPanel && growerPanel ? '<div class="split">' + reviewPanel + growerPanel + '</div>' : reviewPanel + growerPanel);
+}
+/* ---------- Uploading, removing and repositioning profile photos ---------- */
+async function dashUploadLook(input) {
+    const file = input.files?.[0];
+    const kind = input.dataset.upload === 'banner' ? 'banner' : 'avatar';
+    const target = input.dataset.look || '';
+    input.value = '';
+    const look = dashLookOf(target);
+    if (!file || !look || !dashCanEdit(target))
+        return;
+    if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type)) {
+        dashToast('Choose a JPG, PNG, WebP or GIF picture.');
+        return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+        dashToast('Choose a picture smaller than 10 MB.');
+        return;
+    }
+    let photo = '';
+    try {
+        photo = await dashReadPhoto(file, kind === 'avatar' ? 320 : 1600, kind === 'avatar');
+    }
+    catch {
+        dashToast('This picture couldn’t be read. Try another one.');
+        return;
+    }
+    const before = { avatar: look.avatar, banner: look.banner, bannerX: look.bannerX, bannerY: look.bannerY };
+    if (kind === 'avatar')
+        look.avatar = photo;
+    else
+        Object.assign(look, { banner: photo, bannerX: 50, bannerY: 50 });
+    // Unset fields go back to undefined, which the saved copy leaves out.
+    if (!dashSaveStore()) {
+        Object.assign(look, before);
+        dashToast('This browser has no room left for that picture. Try a smaller one.');
+        return;
+    }
+    dashLog('profile-updated', dashMeEmail, kind === 'avatar' ? 'Profile picture' : 'Profile banner');
+    dashRender();
+    if (kind === 'banner')
+        void dashStartReposition(target);
+    else
+        dashToast('Profile picture updated.');
+}
+let dashRepositioning = null;
+const dashBannerEl = (target) => document.querySelector('.profile-banner[data-banner="' + CSS.escape(target) + '"]');
+async function dashStartReposition(target) {
+    const look = dashLookOf(target);
+    if (!look?.banner || !dashCanEdit(target))
+        return;
+    const image = new Image();
+    image.src = look.banner;
+    try {
+        await image.decode();
+    }
+    catch {
+        dashToast('The banner couldn’t be loaded.');
+        return;
+    }
+    dashRepositioning = { target, x: look.bannerX ?? 50, y: look.bannerY ?? 50, width: image.naturalWidth, height: image.naturalHeight };
+    dashShowReposition();
+    dashBannerEl(target)?.focus({ preventScroll: true });
+}
+// Puts the banner in repositioning mode again after a redraw.
+function dashShowReposition() {
+    const r = dashRepositioning;
+    const el = r ? dashBannerEl(r.target) : null;
+    if (!r || !el)
+        return;
+    el.classList.add('is-positioning');
+    el.tabIndex = 0;
+    el.setAttribute('aria-label', 'Banner position');
+    el.style.backgroundPosition = r.x + '% ' + r.y + '%';
+    el.querySelector('.banner-tools').hidden = true;
+    el.querySelector('.banner-actions').hidden = false;
+}
+// Dragging moves the photo with the pointer: CSS percentages are a share of the part of the photo that doesn't fit.
+function dashMoveBanner(dx, dy, from) {
+    const r = dashRepositioning;
+    const el = r ? dashBannerEl(r.target) : null;
+    if (!r || !el)
+        return;
+    const box = el.getBoundingClientRect();
+    const scale = Math.max(box.width / r.width, box.height / r.height);
+    const extraX = r.width * scale - box.width, extraY = r.height * scale - box.height;
+    const clamp = (v) => Math.round(Math.max(0, Math.min(100, v)) * 10) / 10;
+    r.x = extraX > 0.5 ? clamp(from.x - dx / extraX * 100) : from.x;
+    r.y = extraY > 0.5 ? clamp(from.y - dy / extraY * 100) : from.y;
+    el.style.backgroundPosition = r.x + '% ' + r.y + '%';
+}
+function dashFinishReposition(save) {
+    const r = dashRepositioning;
+    dashRepositioning = null;
+    if (r && save) {
+        const look = dashLookOf(r.target);
+        if (look && dashCanEdit(r.target)) {
+            look.bannerX = r.x;
+            look.bannerY = r.y;
+            dashLog('profile-updated', dashMeEmail, 'Banner position');
+        }
+    }
+    dashRender();
+    if (r && save)
+        dashToast('Banner position saved.');
+}
 /* ---------- The signed-in buyer's saved harvests and cart ---------- */
 const dashSavedList = () => dashMeEmail ? dashboardSaved[dashMeEmail] || (dashboardSaved[dashMeEmail] = []) : [];
 const dashIsSaved = (id) => dashSavedList().includes(id);
@@ -574,7 +800,7 @@ const dashRoles = {
         user: dashUserName, userRole: 'Organization representative', initials: dashInitials(dashUserName),
         search: 'Search your orders, listings, feedback…',
         cardIcon: 'leaf', cardTitle: dashOrgName, cardText: dashOrgAtLoad ? dashOrgAtLoad.region + ' · ' + dashOrgAtLoad.crops : '',
-        shortcut: ['View public storefront', 'consumer.html?grower=' + encodeURIComponent(dashOrgName) + '#growers', 'store'],
+        shortcut: ['View public storefront', 'consumer.html#org=' + dashSlug(dashOrgName), 'store'],
         titles: { overview: [dashOrgName, 'Orders, listings and members for your organization.'], orders: ['Incoming orders', 'Confirm, prepare and complete orders from your buyers.'], listings: ['My listings', 'The crops your organization offers. Buyers see each harvest date and shelf life.'], feedback: ['Ratings & feedback', 'What buyers say about your organization, and any warnings from AniBayan.'], members: ['Member farmers', 'The growers who supply your organization.'], payments: ['Payments', 'Payment status for your organization’s orders.'], settings: ['Organization profile', 'How your organization appears on AniBayan.'], help: dashHelpTitle },
     },
     consumer: {
@@ -659,10 +885,15 @@ function dashNotifications() {
         notes.push(['You have ' + dashPlural(dashCart().length, 'harvest') + ' in your cart.', 'cart', 'Go to checkout']);
     return notes;
 }
+// The signed-in person's picture in the sidebar, header and account menu; representatives show their organization's.
+function dashShellAvatar() {
+    const look = isOrgDashboard ? dashMyOrg() : dashMe();
+    return '<span class="avatar ' + dashboardRole + '-avatar" data-me-avatar>' + (look?.avatar ? '<img src="' + de(look.avatar) + '" alt="">' : dashRole.initials) + '</span>';
+}
 function dashShell() {
     const link = (item) => '<a href="#' + item[0] + '" data-nav="' + item[0] + '" title="' + de(item[2]) + '">' + di(item[1]) + '<span>' + de(item[2]) + '</span><span class="nav-count" data-nav-count="' + item[0] + '" hidden></span></a>';
     const me = dashMe();
-    const avatar = '<span class="avatar ' + dashboardRole + '-avatar">' + dashRole.initials + '</span>';
+    const avatar = dashShellAvatar();
     const menu = me
         ? '<p>Signed in as</p><div class="workspace-account">' + avatar + '<span><strong>' + de(me.name) + '</strong><small>' + de(me.email) + '</small></span></div>' + (dashRole.settingsNav ? '<a href="#' + dashRole.settingsNav[0] + '">' + di(dashRole.settingsNav[1]) + '<span>' + dashRole.settingsNav[2] + '</span></a>' : '') + '<a href="index.html">' + di('home') + '<span>Homepage</span></a><a class="workspace-home" href="login.html" data-sign-out>' + di('logout') + '<span>Sign out</span></a>'
         : '<p>Browsing as a guest</p><a href="login.html" data-sign-in>' + di('user') + '<span>Sign in</span></a><a href="login.html#register">' + di('plus') + '<span>Create an account</span></a><a class="workspace-home" href="index.html">' + di('home') + '<span>Homepage</span></a>';
@@ -774,7 +1005,6 @@ function dashOrderTable(mode) {
     return '<section class="panel">' + head + filters + '<div class="table-wrap">' + table + '</div>' + (mode === 'recent' ? '' : '<div class="table-footer"><span>Showing ' + orders.length + ' of ' + dashPlural(dashRoleOrders().length, 'order') + '</span></div>') + '</section>';
 }
 /* ---------- Admin: accounts, user reports, organization applications and site health ---------- */
-const dashAvatarClass = (role) => role === 'Administrator' ? 'admin-avatar' : role === 'Representative' ? 'organization-avatar' : 'consumer-avatar';
 const dashAppStatus = (org) => org.status === 'Active' ? 'Approved' : org.status;
 function dashAccountList() {
     const f = dashState.filter === 'Buyer' ? 'Consumer' : dashState.filter;
@@ -831,7 +1061,7 @@ function dashAccountsView() {
     const count = (test) => dashboardAccounts.filter(test).length;
     const accounts = dashAccountList();
     const metrics = '<div class="metric-grid">' + dashMetric('Total accounts', String(dashboardAccounts.length), 'people', '<b>' + count(a => dashAge(a.joined) < 7) + ' new</b> this week') + dashMetric('Buyers', String(count(a => a.role === 'Consumer')), 'user', 'Buyer accounts') + dashMetric('Representatives', String(count(a => a.role === 'Representative')), 'leaf', count(a => a.status === 'Pending') + ' waiting on an application') + dashMetric('Suspended', String(count(a => a.status === 'Suspended')), 'lock', 'Can’t sign in, order or sell') + '</div>';
-    const rows = accounts.map(a => '<tr><td><div class="table-product"><span class="avatar ' + dashAvatarClass(a.role) + '">' + dashInitials(a.name) + '</span><div><strong>' + de(a.name) + '</strong><small>' + de(a.email) + '</small></div></div></td><td>' + (a.role === 'Consumer' ? 'Buyer' : a.role) + (a.organization ? '<small class="cell-note">' + de(a.organization) + '</small>' : '') + '</td><td>' + dfull(a.joined) + '</td><td>' + dd(a.lastActive) + '</td><td>' + ds(a.status) + '</td><td><div class="row-actions"><button class="control small" data-account="' + de(a.email) + '">Manage</button></div></td></tr>').join('');
+    const rows = accounts.map(a => '<tr><td><div class="table-product">' + dashAvatar(a, a.name, dashLookKind(a.role)) + '<div><strong>' + de(a.name) + '</strong><small>' + de(a.email) + '</small></div></div></td><td>' + (a.role === 'Consumer' ? 'Buyer' : a.role) + (a.organization ? '<small class="cell-note">' + de(a.organization) + '</small>' : '') + '</td><td>' + dfull(a.joined) + '</td><td>' + dd(a.lastActive) + '</td><td>' + ds(a.status) + '</td><td><div class="row-actions"><button class="control small" data-account="' + de(a.email) + '">Manage</button></div></td></tr>').join('');
     const table = accounts.length ? '<table><thead><tr><th scope="col">Account</th><th scope="col">Role</th><th scope="col">Joined</th><th scope="col">Last active</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>' + rows + '</tbody></table>' : dashEmpty('No matching accounts', 'Try a different name, email, role or status.');
     return metrics + '<section class="panel">' + dashPanelHead('Accounts', '') + dashFilters(['All', 'Buyer', 'Representative', 'Administrator', 'Pending', 'Suspended'], dashPlural(accounts.length, 'account'), 'Search accounts') + '<div class="table-wrap">' + table + '</div></section>';
 }
@@ -961,7 +1191,7 @@ function dashActivityView() {
         const e = g.first;
         const who = dashAccountByEmail(e.actor);
         const when = g.count > 1 ? dashTimeOnly(g.last.time) + ' – ' + dashTimeOnly(e.time) : dashTimeOnly(e.time);
-        const person = who ? '<div class="table-product"><span class="avatar ' + dashAvatarClass(who.role) + '">' + dashInitials(who.name) + '</span><div><strong>' + de(who.name) + '</strong><small>' + de(who.email) + '</small></div></div>' : '<div class="table-product"><span class="avatar unknown-avatar">?</span><div><strong>' + de(e.actor) + '</strong><small>No account</small></div></div>';
+        const person = who ? '<div class="table-product">' + dashAvatar(who, who.name, dashLookKind(who.role)) + '<div><strong>' + de(who.name) + '</strong><small>' + de(who.email) + '</small></div></div>' : '<div class="table-product"><span class="avatar unknown-avatar">?</span><div><strong>' + de(e.actor) + '</strong><small>No account</small></div></div>';
         return '<tr' + (dashFlagged(e) ? ' class="flagged-row"' : '') + '><td><strong>' + when + '</strong><small class="cell-note">' + dd(dashLocalDate(e.time)) + '</small></td><td>' + person + '</td><td>' + dashActivityPill(e.type) + dashRepeat(g.count) + '</td><td class="wrap">' + de(e.detail) + '</td><td><div class="row-actions">' + (who ? '<button class="control small" data-account="' + de(who.email) + '">View</button>' : '') + '</div></td></tr>';
     }).join('');
     const table = events.length ? '<table class="activity-table"><thead><tr><th scope="col">Time</th><th scope="col">Account</th><th scope="col">Activity</th><th scope="col">Details</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>' + rows + '</tbody></table>' : dashEmpty(dashboardActivity.length ? 'No matching activity' : 'No activity yet', dashboardActivity.length ? 'Try another search or filter.' : 'Sign-ins, orders and changes appear here.');
@@ -1002,7 +1232,7 @@ function dashOrgFeedbackList() {
     return dashboardFeedback.filter(f => f.organization === dashOrgName && dashMatching(f.customer + ' ' + f.comment + ' ' + f.rating)).sort((a, b) => b.date.localeCompare(a.date));
 }
 function dashFeedbackRow(f) {
-    return '<article class="feedback-row"><header>' + dashStars(f.rating) + '<small>' + dd(f.date) + '</small></header><p>' + (f.comment ? '“' + de(f.comment) + '”' : 'No comment left.') + '</p><small>' + de(f.customer) + (f.order ? ' · order ' + dashOrderNo(f.order) : '') + '</small></article>';
+    return '<article class="feedback-row"><header>' + dashStars(f.rating) + '<small>' + dd(f.date) + '</small></header><p>' + (f.comment ? '“' + de(f.comment) + '”' : 'No comment left.') + '</p><small>' + dashUserLink(f.customer) + (f.order ? ' · order ' + dashOrderNo(f.order) : '') + '</small></article>';
 }
 function dashOrgFeedback() {
     const r = dashRatingOf(dashOrgName);
@@ -1028,7 +1258,7 @@ function dashMembers() {
 function dashOrgPayments() {
     const orders = dashRoleOrders().filter(o => o.status !== 'Cancelled');
     const sum = (payment) => orders.filter(o => o.payment === payment).reduce((total, o) => total + o.total, 0);
-    return '<div class="metric-grid three">' + dashMetric('Paid orders', dp(sum('Paid')), 'check', dashPlural(orders.filter(o => o.payment === 'Paid').length, 'order') + ' paid') + dashMetric('Awaiting payment', dp(sum('Unpaid')), 'clock', dashPlural(orders.filter(o => o.payment === 'Unpaid').length, 'order') + ' unpaid') + dashMetric('Open orders', String(orders.filter(o => o.status !== 'Completed').length), 'bag', 'Not yet completed') + '</div><p class="sample-callout">Cash-on-delivery orders are marked paid when you complete them. Card and GCash orders are paid by the buyer at checkout.</p>' + dashOrderTable('payments');
+    return '<div class="metric-grid three">' + dashMetric('Paid orders', dp(sum('Paid')), 'check', dashPlural(orders.filter(o => o.payment === 'Paid').length, 'order') + ' paid') + dashMetric('Awaiting payment', dp(sum('Unpaid')), 'clock', dashPlural(orders.filter(o => o.payment === 'Unpaid').length, 'order') + ' unpaid') + dashMetric('Open orders', String(orders.filter(o => o.status !== 'Completed').length), 'bag', 'Not yet completed') + '</div>' + dashOrderTable('payments');
 }
 /* ---------- Consumer: shop, cart, saved harvests and growers ---------- */
 const dashShopCrops = () => dashboardCrops.filter(dashIsBuyable);
@@ -1054,21 +1284,30 @@ function dashShopList() {
         && (s.location === 'All' || dashRegion(c.organization) === s.location))
         .sort((dashShopSorts[s.sort] || dashShopSorts.fresh)[1]);
 }
-function dashConsumerTile(c) {
+// actions: the save, details and cart buttons, for the buyer pages only (profiles also show tiles to organizations and admins).
+function dashConsumerTile(c, actions = true) {
     const saved = dashIsSaved(c.id);
     const buyable = dashIsBuyable(c);
     const badge = buyable ? dashFreshBadge(c) : ds(c.stock === 0 ? 'Out of stock' : c.status !== 'Active' ? 'Paused' : 'Past shelf life');
-    return '<article class="product-tile"><img src="' + dashImg(c.image) + '" alt="' + de(c.name) + '"><div class="product-tile-copy"><div class="product-tile-head"><h2>' + de(c.name) + '</h2><button class="save-button" data-save="' + c.id + '" aria-pressed="' + saved + '" aria-label="' + (saved ? 'Unsave ' : 'Save ') + de(c.name) + '">' + di('heart') + '</button></div><p>' + de(c.organization) + ' · ' + dashRatingText(c.organization) + '<br>' + de(c.category) + ' · ' + de(dashRegion(c.organization)) + '</p><div class="product-price"><strong>' + dp(c.price) + '</strong> / ' + de(c.unit) + '</div>' + dashHarvestLine(c) + '<div class="product-bottom">' + badge + '<span class="row-actions"><button class="control small" data-product="' + c.id + '">Details</button>' + (buyable ? '<button class="control small primary" data-add-cart="' + c.id + '">' + di('cart') + 'Add to cart</button>' : '') + '</span></div></div></article>';
+    return '<article class="product-tile"><div class="product-media"><img src="' + dashImg(c.image) + '" alt="' + de(c.name) + '">' + badge + '</div><div class="product-tile-copy"><div class="product-tile-head"><h2>' + de(c.name) + '</h2>' + (actions ? '<button class="save-button" data-save="' + c.id + '" aria-pressed="' + saved + '" aria-label="' + (saved ? 'Unsave ' : 'Save ') + de(c.name) + '">' + di('heart') + '</button>' : '') + '</div><p>' + de(c.organization) + ' · ' + dashRatingText(c.organization) + '<br>' + de(c.category) + ' · ' + de(dashRegion(c.organization)) + '</p><div class="product-price"><strong>' + dp(c.price) + '</strong> / ' + de(c.unit) + '</div>' + dashHarvestLine(c) + (actions ? '<div class="product-bottom"><span class="row-actions"><button class="control small" data-product="' + c.id + '">Details</button>' + (buyable ? '<button class="control small primary" data-add-cart="' + c.id + '">' + di('cart') + 'Add to cart</button>' : '') + '</span></div>' : '') + '</div></article>';
 }
 const dashShopSummary = (shown) => shown + ' of ' + dashPlural(dashShopCrops().length, 'harvest');
 function dashShopGrid(crops) {
     if (crops.length)
-        return '<div class="product-grid">' + crops.map(dashConsumerTile).join('') + '</div>';
+        return '<div class="product-grid">' + crops.map(c => dashConsumerTile(c)).join('') + '</div>';
     const [min, max] = dashPriceBounds();
     const reversed = min !== null && max !== null && min > max;
     const unavailable = dashState.query.trim() ? dashboardCrops.filter(c => !dashIsBuyable(c) && dashMatching(c.name + ' ' + c.organization + ' ' + c.category)) : [];
     const description = reversed ? 'Swap the two prices or clear one of them.' : unavailable.length ? unavailable.map(c => c.name + ' is ' + (c.stock === 0 ? 'out of stock' : c.status !== 'Active' ? 'paused by its grower' : 'past its shelf life')).join('. ') + ' right now.' : 'Try a wider price range, another crop type, harvest time or location.';
     return '<section class="panel">' + dashEmpty(reversed ? 'The minimum price is higher than the maximum.' : 'No harvests match these filters.', de(description)) + '<div class="empty-action"><button class="control" data-shop-reset>Clear filters</button></div></section>';
+}
+// The banner over the shop: what's on offer and quick crop-type buttons.
+function dashShopHero() {
+    const crops = dashShopCrops();
+    if (!crops.length)
+        return '';
+    const types = [...new Set(crops.map(c => c.category))].sort();
+    return '<section class="shop-hero"><div class="shop-hero-copy"><h2>Fresh from the field this week.</h2><p class="shop-hero-stats"><span><b>' + crops.length + '</b> harvests</span><span><b>' + new Set(crops.map(c => c.organization)).size + '</b> growing communities</span><span>from <b>' + dp(Math.min(...crops.map(c => c.price))) + '</b></span></p><div class="shop-hero-chips">' + types.map(t => '<button class="hero-chip" data-shop-type="' + de(t) + '" aria-pressed="' + (dashState.shop.type === t) + '">' + de(t) + '</button>').join('') + '</div></div></section>';
 }
 function dashShop() {
     const s = dashState.shop;
@@ -1078,7 +1317,7 @@ function dashShop() {
     const types = [...new Set(dashboardCrops.map(c => c.category))].sort();
     const regions = [...new Set(dashboardOrganizations.filter(o => o.status === 'Active').map(o => o.region))].sort();
     const price = (key, label, bound) => '<input type="number" min="0" step="1" inputmode="numeric" data-shop="' + key + '" value="' + de(s[key]) + '" placeholder="' + label + ' ' + bound + '" aria-label="' + (key === 'min' ? 'Minimum' : 'Maximum') + ' price in pesos">';
-    return '<section class="panel shop-filters" aria-label="Filter harvests"><div class="shop-filter-grid">'
+    return dashShopHero() + '<section class="panel shop-filters" aria-label="Filter harvests"><div class="shop-filter-grid">'
         + '<label class="shop-field"><span>Crop type</span><select data-shop="type">' + opt('All', 'All crop types', s.type) + types.map(t => opt(t, t, s.type)).join('') + '</select></label>'
         + '<div class="shop-field" role="group" aria-labelledby="shop-price-label"><span id="shop-price-label">Price per unit (₱)</span><div class="price-inputs">' + price('min', 'Min', prices.length ? Math.min(...prices) : 0) + '<span aria-hidden="true">–</span>' + price('max', 'Max', prices.length ? Math.max(...prices) : 0) + '</div></div>'
         + '<label class="shop-field"><span>Harvest time</span><select data-shop="harvest">' + dashHarvestWindows.map(w => opt(w[0], w[1], s.harvest)).join('') + '</select></label>'
@@ -1136,11 +1375,11 @@ function dashCartView() {
 }
 function dashSavedView() {
     const crops = dashboardCrops.filter(c => dashIsSaved(c.id) && dashMatching(c.name + ' ' + c.organization + ' ' + c.category));
-    return '<div class="filters bare"><button class="text-button" data-go="shop">Browse the shop ' + di('arrow') + '</button><span class="filter-summary">' + dashPlural(dashSavedList().length, 'saved harvest') + '</span></div>' + (crops.length ? '<div class="product-grid">' + crops.map(dashConsumerTile).join('') + '</div>' : '<section class="panel">' + dashEmpty('No saved harvests here yet.', 'Save a harvest from the shop to see it here.') + '</section>');
+    return '<div class="filters bare"><button class="text-button" data-go="shop">Browse the shop ' + di('arrow') + '</button><span class="filter-summary">' + dashPlural(dashSavedList().length, 'saved harvest') + '</span></div>' + (crops.length ? '<div class="product-grid">' + crops.map(c => dashConsumerTile(c)).join('') + '</div>' : '<section class="panel">' + dashEmpty('No saved harvests here yet.', 'Save a harvest from the shop to see it here.') + '</section>');
 }
 function dashOrganizationGrid() {
     const orgs = dashboardOrganizations.filter(o => o.status === 'Active' && dashMatching(o.name + ' ' + o.region + ' ' + o.crop));
-    return orgs.length ? '<div class="org-grid">' + orgs.map(o => '<article class="org-card"><img src="' + dashImg(o.image) + '" alt="' + de(o.name) + '"><div><h2>' + de(o.name) + '</h2><p>' + de(o.region) + ' · ' + de(o.crop) + '</p><p class="org-rating">' + dashRatingText(o.name) + '</p><footer><span class="filter-summary">' + dashPlural(dashListingCount(o.name), 'listing') + '</span><button class="control" data-organization="' + de(o.name) + '">View community ' + di('up') + '</button></footer></div></article>').join('') + '</div>' : '<section class="panel">' + dashEmpty('No matching communities', 'Try a different place or name.') + '</section>';
+    return orgs.length ? '<div class="org-grid">' + orgs.map(o => '<article class="org-card"><img src="' + dashImg(o.image) + '" alt="' + de(o.name) + '"><div><h2>' + de(o.name) + '</h2><p>' + de(o.region) + ' · ' + de(o.crop) + '</p><p class="org-rating">' + dashRatingText(o.name) + '</p><footer><span class="filter-summary">' + dashPlural(dashListingCount(o.name), 'listing') + '</span><a class="control" href="#org=' + dashSlug(o.name) + '" data-profile-link>View community ' + di('up') + '</a></footer></div></article>').join('') + '</div>' : '<section class="panel">' + dashEmpty('No matching communities', 'Try a different place or name.') + '</section>';
 }
 function dashActiveOrder() {
     const order = dashRoleOrders().find(o => !['Completed', 'Cancelled'].includes(o.status));
@@ -1165,10 +1404,18 @@ function dashSettings() {
         account = '<section class="panel settings-panel"><h2>Administrator account</h2>' + facts([['Name', me.name], ['Email', me.email], ['Role', 'Platform administrator'], ['Administrator since', dmonth(me.joined)]]) + '<div class="detail-actions">' + common + '</div></section>';
     else if (isOrgDashboard) {
         const o = dashOrgProfile();
-        account = '<section class="panel settings-panel"><h2>' + de(o.name) + '</h2><p>' + ds('Active') + ' &nbsp;' + de(o.verified) + '</p>' + (o.description ? '<p>' + de(o.description) + '</p>' : '') + facts([['Location', o.region], ['Main crops', o.crops], ['Representative', o.representative], ['Contact email', o.email], ['Contact number', o.phone || 'Not added yet'], ['Warnings', dashStanding(o.name).label]]) + '<div class="detail-actions">' + common + '<a class="control" href="consumer.html?grower=' + encodeURIComponent(o.name) + '#growers">View storefront ' + di('up') + '</a><button class="control primary" data-edit-org-profile>' + di('edit') + 'Edit profile</button></div></section>';
+        account = '<section class="panel settings-panel"><h2>' + de(o.name) + '</h2><p>' + ds('Active') + ' &nbsp;' + de(o.verified) + '</p>' + (o.description ? '<p>' + de(o.description) + '</p>' : '') + facts([['Location', o.region], ['Main crops', o.crops], ['Representative', o.representative], ['Contact email', o.email], ['Contact number', o.phone || 'Not added yet'], ['Warnings', dashStanding(o.name).label]]) + '<div class="detail-actions">' + common + '<a class="control" href="consumer.html#org=' + dashSlug(o.name) + '">View storefront ' + di('up') + '</a><button class="control primary" data-edit-org-profile>' + di('edit') + 'Edit profile</button></div></section>';
+        const org = dashMyOrg();
+        if (org)
+            return dashOrgCard(org, 'h2', '<a class="control" href="#org=' + dashSlug(org.name) + '" data-profile-link>' + di('user') + 'View profile</a>') + '<div class="settings-grid">' + account + appearance + '</div>';
     }
-    else
+    else {
         account = '<section class="panel settings-panel"><h2>Your account</h2>' + facts([['Name', me.name], ['Email', me.email], ['Mobile number', me.phone || 'Not added yet'], ['Member since', dmonth(me.joined)], ['Delivery address', me.address || 'Not added yet']]) + '<div class="detail-actions">' + common + '<button class="control primary" data-edit-profile>' + di('edit') + 'Edit delivery details</button></div></section>';
+        const p = dashPrivacy(me);
+        const toggle = (key, label) => '<div class="settings-row"><label for="privacy-' + key + '">' + label + '</label><input type="checkbox" id="privacy-' + key + '" data-privacy="' + key + '"' + (p[key] ? ' checked' : '') + (key !== 'profile' && !p.profile ? ' disabled' : '') + '></div>';
+        const privacy = '<section class="panel settings-panel"><h2>Privacy</h2>' + toggle('profile', 'Public profile') + toggle('reviews', 'Show my reviews') + toggle('city', 'Show my city') + toggle('growers', 'Show the growers I buy from') + '</section>';
+        return dashUserCard(me, 'h2', '<a class="control" href="#user=' + dashSlug(me.name) + '" data-profile-link>' + di('user') + 'View profile</a>', true) + '<div class="settings-grid">' + account + privacy + appearance + '</div>';
+    }
     return '<div class="settings-grid">' + account + appearance + '</div>';
 }
 function dashHelp() {
@@ -1194,10 +1441,14 @@ function dashRender() {
     const search = document.getElementById('dashboard-search');
     if (search.value !== dashState.query)
         search.value = dashState.query;
-    document.querySelectorAll('[data-nav]').forEach(a => { if (a.dataset.nav === dashState.view)
+    // A grower's profile belongs under Growers; your own profile under your profile settings.
+    const p = dashState.profile;
+    const navView = dashState.view !== 'profile' ? dashState.view : p.kind === 'org' ? (isOrgDashboard && dashMyOrg() && dashSlug(dashOrgName) === p.slug ? 'settings' : 'growers') : (dashMe() && dashSlug(dashMe().name) === p.slug ? 'settings' : '');
+    document.querySelectorAll('[data-nav]').forEach(a => { if (a.dataset.nav === navView)
         a.setAttribute('aria-current', 'page');
     else
         a.removeAttribute('aria-current'); });
+    document.querySelectorAll('[data-me-avatar]').forEach(el => { el.outerHTML = dashShellAvatar(); });
     const counts = dashNavCounts();
     document.querySelectorAll('[data-nav-count]').forEach(el => { const count = counts[el.dataset.navCount] || 0; el.textContent = String(count); el.hidden = count === 0; });
     dashRenderNotifications();
@@ -1238,14 +1489,17 @@ function dashRender() {
         content = isOrgDashboard ? dashOrgPayments() : dashOrderTable('payments');
     else if (view === 'settings')
         content = dashSettings();
+    else if (view === 'profile')
+        content = p.kind === 'org' ? dashOrgProfileView(p.slug) : dashUserProfileView(p.slug);
     else
         content = dashHelp();
-    document.getElementById('dashboard-content').innerHTML = (blocked.length ? '' : dashHeading()) + content + '<footer class="design-note"><span>AniBayan · ' + dashRole.workspace + '</span><span>' + (dashMe() ? 'Signed in as ' + de(dashMe().email) : 'Browsing as a guest') + '</span></footer>';
+    document.getElementById('dashboard-content').innerHTML = (blocked.length || view === 'profile' ? '' : dashHeading()) + content + '<footer class="design-note"><span>AniBayan · ' + dashRole.workspace + '</span><span>' + (dashMe() ? 'Signed in as ' + de(dashMe().email) : 'Browsing as a guest') + '</span></footer>';
     const box = typing ? document.querySelector('[data-table-search]') : null;
     if (box && typing) {
         box.focus({ preventScroll: true });
         box.setSelectionRange(typing[0], typing[1]);
     }
+    dashShowReposition();
     if (!dashSaveStore() && !dashStorageWarned) {
         dashStorageWarned = true;
         dashToast('This browser couldn’t save your latest change. Its storage may be full or turned off.');
@@ -1284,7 +1538,7 @@ function dashOrderDetails(id) {
     const items = order.items ? '<h3 class="detail-section">Items</h3><dl class="summary-lines">' + order.items.map(i => '<div><dt>' + de(i.name) + ' · ' + i.quantity + ' ' + de(i.unit) + '</dt><dd>' + dp(i.quantity * i.price) + '</dd></div>').join('') + '<div class="summary-total"><dt>Total</dt><dd>' + dp(order.total) + '</dd></div></dl>' : '';
     const delivery = order.address ? dashFact('Deliver to', de(order.address)) + dashFact('Contact number', de(order.phone || '')) + dashFact('Payment method', de(order.method || '')) + (order.note ? dashFact('Note', de(order.note)) : '') : '';
     const timeline = order.status === 'Cancelled' ? '<p class="detail-note">This order was cancelled and will not be fulfilled.</p>' : '<ol class="timeline">' + ['Order placed', 'Confirmed by grower', 'Harvest being prepared', 'Order completed'].map((s, i) => '<li class="' + (i > current ? 'future' : '') + '"><strong>' + s + '</strong><p>' + (i > current ? 'Not reached yet' : i === current ? 'Current status' : 'Completed step') + '</p></li>').join('') + '</ol>';
-    dashOpen('<p class="detail-kicker">' + (isOrgDashboard ? 'Incoming order' : 'Your order') + '</p><h2 id="detail-title">' + order.id + '</h2><p class="detail-subtitle">' + de(order.organization) + '</p><div class="detail-hero"><img src="' + dashImg(order.image) + '" alt="' + de(order.crop) + '"><div><h3>' + de(order.crop) + '</h3><p>' + de(order.quantity) + ' · ' + dp(order.total) + '</p></div></div><dl class="detail-facts">' + dashFact('Order status', ds(order.status)) + dashFact('Payment', ds(order.payment)) + dashFact('Placed on', dfull(order.date)) + dashFact('Buyer', de(order.customer)) + delivery + '</dl>' + items + timeline + notes + '<div class="detail-actions">' + actions + '</div>');
+    dashOpen('<p class="detail-kicker">' + (isOrgDashboard ? 'Incoming order' : 'Your order') + '</p><h2 id="detail-title">' + order.id + '</h2><p class="detail-subtitle">' + dashOrgLink(order.organization) + '</p><div class="detail-hero"><img src="' + dashImg(order.image) + '" alt="' + de(order.crop) + '"><div><h3>' + de(order.crop) + '</h3><p>' + de(order.quantity) + ' · ' + dp(order.total) + '</p></div></div><dl class="detail-facts">' + dashFact('Order status', ds(order.status)) + dashFact('Payment', ds(order.payment)) + dashFact('Placed on', dfull(order.date)) + dashFact('Buyer', dashUserLink(order.customer)) + delivery + '</dl>' + items + timeline + notes + '<div class="detail-actions">' + actions + '</div>');
 }
 function dashProductDetails(id) {
     const crop = dashboardCrops.find(c => c.id === id);
@@ -1294,24 +1548,20 @@ function dashProductDetails(id) {
     const harvest = dashFact('Harvested', dfull(crop.harvested) + ' · ' + dashAgeText(f.age)) + dashFact('Shelf life', dashPlural(crop.shelfLife, 'day') + ' after harvest') + dashFact('Best before', dfull(dashAddDays(crop.harvested, crop.shelfLife))) + dashFact('Freshness', dashFreshBadge(crop));
     const hero = (note) => '<div class="detail-hero"><img src="' + dashImg(crop.image) + '" alt="' + de(crop.name) + '"><div><h3>' + dp(crop.price) + ' / ' + de(crop.unit) + '</h3><p>' + note + '</p></div></div>';
     if (isOrgDashboard) {
-        dashOpen('<p class="detail-kicker">Product listing · ' + crop.id + '</p><h2 id="detail-title">' + de(crop.name) + '</h2><p class="detail-subtitle">' + de(crop.organization) + '</p>' + hero(de(crop.category)) + '<dl class="detail-facts">' + dashFact('Available quantity', crop.stock + ' ' + de(crop.unit)) + dashFact('Listing status', ds(dashCropStatus(crop))) + harvest + '</dl><p class="detail-note">Buyers see the harvest date, shelf life and best-before date on this listing.</p><div class="detail-actions"><button class="control" data-toggle-listing="' + crop.id + '"' + (crop.stock === 0 ? ' disabled' : '') + '>' + (crop.status === 'Active' ? 'Pause listing' : 'Resume listing') + '</button><button class="control primary" data-edit-listing="' + crop.id + '">' + di('edit') + 'Edit listing</button></div>');
+        dashOpen('<p class="detail-kicker">Product listing · ' + crop.id + '</p><h2 id="detail-title">' + de(crop.name) + '</h2><p class="detail-subtitle">' + dashOrgLink(crop.organization) + '</p>' + hero(de(crop.category)) + '<dl class="detail-facts">' + dashFact('Available quantity', crop.stock + ' ' + de(crop.unit)) + dashFact('Listing status', ds(dashCropStatus(crop))) + harvest + '</dl><p class="detail-note">Buyers see the harvest date, shelf life and best-before date on this listing.</p><div class="detail-actions"><button class="control" data-toggle-listing="' + crop.id + '"' + (crop.stock === 0 ? ' disabled' : '') + '>' + (crop.status === 'Active' ? 'Pause listing' : 'Resume listing') + '</button><button class="control primary" data-edit-listing="' + crop.id + '">' + di('edit') + 'Edit listing</button></div>');
         return;
     }
     const saved = dashIsSaved(crop.id);
     const buyable = dashIsBuyable(crop);
     const inCart = dashCart().find(l => l.crop === crop.id);
     const buy = !buyable ? '' : isGuest ? '<div class="qty-add"><p>Sign in with a buyer account to order this harvest.</p><a class="control primary" href="login.html" data-sign-in-buyer>Sign in to order ' + di('arrow') + '</a></div>' : '<div class="qty-add"><label for="detail-qty">Quantity (' + de(crop.unit) + ')</label><input type="number" id="detail-qty" min="1" max="' + crop.stock + '" step="1" value="1" inputmode="numeric"><button class="control primary" data-add-cart="' + crop.id + '" data-qty-from="detail-qty">' + di('cart') + 'Add to cart</button></div>';
-    dashOpen('<p class="detail-kicker">Harvest listing</p><h2 id="detail-title">' + de(crop.name) + '</h2><p class="detail-subtitle">' + de(crop.organization) + ' · ' + de(dashRegion(crop.organization)) + '</p>' + hero(de(crop.category) + ' · ' + (buyable ? crop.stock + ' ' + de(crop.unit) + ' available' : 'Not available right now')) + '<dl class="detail-facts">' + harvest + dashFact('Buyer rating', dashRatingText(crop.organization)) + '</dl><p class="detail-note">The organization enters the harvest date when it lists a crop. Shelf life is its estimate for produce stored as recommended, so plan to use it before the best-before date.' + (inCart ? ' Your cart has ' + inCart.quantity + ' ' + de(crop.unit) + '.' : '') + '</p>' + buy + '<div class="detail-actions"><button class="control" data-organization="' + de(crop.organization) + '">About the grower</button>' + (isGuest ? '' : '<button class="control" data-save="' + crop.id + '" aria-pressed="' + saved + '">' + di('heart') + (saved ? 'Saved' : 'Save harvest') + '</button>') + (inCart ? '<button class="control" data-go="cart">View cart ' + di('arrow') + '</button>' : '') + '</div>');
+    dashOpen('<p class="detail-kicker">Harvest listing</p><h2 id="detail-title">' + de(crop.name) + '</h2><p class="detail-subtitle">' + dashOrgLink(crop.organization) + ' · ' + de(dashRegion(crop.organization)) + '</p>' + hero(de(crop.category) + ' · ' + (buyable ? crop.stock + ' ' + de(crop.unit) + ' available' : 'Not available right now')) + '<dl class="detail-facts">' + harvest + dashFact('Buyer rating', dashRatingText(crop.organization)) + '</dl><p class="detail-note">The organization enters the harvest date when it lists a crop. Shelf life is its estimate for produce stored as recommended, so plan to use it before the best-before date.' + (inCart ? ' Your cart has ' + inCart.quantity + ' ' + de(crop.unit) + '.' : '') + '</p>' + buy + '<div class="detail-actions"><a class="control" href="#org=' + dashSlug(crop.organization) + '" data-profile-link>About the grower</a>' + (isGuest ? '' : '<button class="control" data-save="' + crop.id + '" aria-pressed="' + saved + '">' + di('heart') + (saved ? 'Saved' : 'Save harvest') + '</button>') + (inCart ? '<button class="control" data-go="cart">View cart ' + di('arrow') + '</button>' : '') + '</div>');
 }
-function dashGrowerDetails(name) {
-    const org = dashboardOrganizations.find(o => o.name === name && o.status === 'Active');
-    if (!org)
-        return;
-    const orders = dashRoleOrders().filter(o => o.organization === org.name);
-    const toRate = orders.find(o => o.status === 'Completed' && !dashRated(o.id));
-    const toReport = orders.find(o => !dashMyReport(o.id));
-    const feedback = dashboardFeedback.filter(f => f.organization === org.name).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3);
-    dashOpen('<p class="detail-kicker">Growing community</p><h2 id="detail-title">' + de(org.name) + '</h2><p class="detail-subtitle">' + de(org.region) + ' · ' + de(org.crop) + ' · ' + dashPlural(dashListingCount(org.name), 'listing') + '</p>' + (org.description ? '<p class="detail-lead">' + de(org.description) + '</p>' : '') + '<h3 class="detail-section">Buyer ratings</h3><p class="org-rating">' + dashRatingText(org.name) + '</p>' + (feedback.length ? '<div class="feedback-list compact">' + feedback.map(dashFeedbackRow).join('') + '</div>' : '') + (orders.length || isGuest ? '' : '<p class="detail-note">You can rate or report a community after ordering from it.</p>') + '<div class="detail-actions">' + (toReport ? '<button class="control" data-report-order="' + toReport.id + '">' + di('flag') + 'Report a problem</button>' : '') + (toRate ? '<button class="control" data-rate="' + toRate.id + '">' + di('star') + 'Rate your order</button>' : '') + '<button class="control primary" data-shop-region="' + de(org.region) + '">Shop this community ' + di('arrow') + '</button></div>');
+// Opens an organization's profile page, closing any open pop-up first.
+function dashOpenOrgProfile(name) {
+    if (dashDialog.open)
+        dashDialog.close();
+    location.hash = 'org=' + dashSlug(name);
 }
 function dashAccountDetails(email) {
     const a = dashAccountByEmail(email);
@@ -1321,7 +1571,7 @@ function dashAccountDetails(email) {
     const org = a.organization ? dashboardOrganizations.find(o => o.name === a.organization) : undefined;
     const toggle = !self && a.role !== 'Administrator' && (a.status === 'Active' || a.status === 'Suspended') ? (a.status === 'Suspended' ? '<button class="control primary" data-suspend="' + de(a.email) + '">' + di('check') + 'Reactivate account</button>' : '<button class="control danger" data-suspend="' + de(a.email) + '">' + di('lock') + 'Suspend account</button>') : '';
     const review = a.status === 'Pending' && org ? '<button class="control primary" data-organization="' + de(org.name) + '">Review application</button>' : '';
-    dashOpen('<p class="detail-kicker">' + (a.role === 'Consumer' ? 'Buyer' : a.role) + ' account</p><h2 id="detail-title">' + de(a.name) + '</h2><p class="detail-subtitle">' + de(a.email) + '</p><dl class="detail-facts">' + dashFact('Role', a.role === 'Consumer' ? 'Buyer' : a.role) + dashFact('Status', ds(a.status)) + dashFact('Joined', dfull(a.joined)) + dashFact('Last active', dfull(a.lastActive)) + (a.organization ? dashFact('Organization', de(a.organization)) : '') + (a.phone ? dashFact('Mobile number', de(a.phone)) : '') + (a.note ? dashFact('Note', de(a.note)) : '') + '</dl>' + dashAccountActivity(a.email) + '<div class="detail-actions">' + (self ? '' : '<button class="control" data-reset-password="' + de(a.email) + '">' + di('key') + 'Reset password</button>') + toggle + review + '</div>');
+    dashOpen('<p class="detail-kicker">' + (a.role === 'Consumer' ? 'Buyer' : a.role) + ' account</p><h2 id="detail-title">' + de(a.name) + '</h2><p class="detail-subtitle">' + de(a.email) + '</p><dl class="detail-facts">' + dashFact('Role', a.role === 'Consumer' ? 'Buyer' : a.role) + dashFact('Status', ds(a.status)) + dashFact('Joined', dfull(a.joined)) + dashFact('Last active', dfull(a.lastActive)) + (a.organization ? dashFact('Organization', de(a.organization)) : '') + (a.phone ? dashFact('Mobile number', de(a.phone)) : '') + (a.note ? dashFact('Note', de(a.note)) : '') + '</dl>' + dashAccountActivity(a.email) + '<div class="detail-actions">' + (a.role === 'Administrator' ? '' : '<a class="control" href="#user=' + dashSlug(a.name) + '" data-profile-link>' + di('user') + 'View profile</a>') + (self ? '' : '<button class="control" data-reset-password="' + de(a.email) + '">' + di('key') + 'Reset password</button>') + toggle + review + '</div>');
 }
 // Sets a new temporary password and shows it once so the administrator can pass it on.
 function dashResetPassword(email) {
@@ -1374,6 +1624,12 @@ function dashPaymentDialog(ids) {
     const method = orders[0].method || 'GCash';
     dashOpen('<p class="detail-kicker">PayMongo · test mode</p><h2 id="detail-title">Pay ' + dp(total) + ' with ' + de(method) + '</h2><p class="detail-subtitle">' + orders.map(o => dashOrderNo(o.id) + ' · ' + de(o.organization)).join('<br>') + '</p>' + (method === 'GCash' ? '' : '<div class="pay-box">' + di('shield') + '<p>Test card <b>4343 4343 4343 4345</b> · any future date · any CVC</p></div>') + '<div class="detail-actions"><button class="control" data-pay-later>Pay later</button><button class="control primary" data-pay="' + orders.map(o => o.id).join(',') + '">' + di('wallet') + 'Pay ' + dp(total) + '</button></div>');
 }
+// The crops PayMongo lists on its checkout page. Uploaded photos stay in this browser, so only stock photos are sent.
+function dashPaymentItems(o) {
+    const photo = (src) => src && !/^(data:|blob:)/.test(src) ? src : null;
+    return o.items?.length ? o.items.map(i => ({ name: i.name, quantity: i.quantity, unit: i.unit, price: i.price, image: photo(dashboardCrops.find(c => c.id === i.crop)?.image) }))
+        : [{ name: o.crop, quantity: 1, unit: 'order', price: o.total, image: photo(o.image) }];
+}
 // Opens PayMongo's checkout for the orders. The secret key stays on the server (routes/api.php).
 async function dashStartPayment(ids, button) {
     const orders = ids.map(id => dashboardOrders.find(o => o.id === id)).filter((o) => !!o && o.payment === 'Unpaid');
@@ -1383,7 +1639,7 @@ async function dashStartPayment(ids, button) {
     button.disabled = true;
     button.textContent = 'Opening PayMongo…';
     try {
-        const response = await fetch('../api/payments', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ method: orders[0].method, buyer: { name: dashAccount().name, email: dashAccount().email, phone: orders[0].phone || dashAccount().phone || null, address: orders[0].address || dashAccount().address || null }, orders: orders.map(o => ({ id: o.id, total: o.total, organization: o.organization })) }) });
+        const response = await fetch('../api/payments', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ method: orders[0].method, buyer: { name: dashAccount().name, email: dashAccount().email, phone: orders[0].phone || dashAccount().phone || null, address: orders[0].address || dashAccount().address || null }, orders: orders.map(o => ({ id: o.id, total: o.total, organization: o.organization, items: dashPaymentItems(o) })) }) });
         const data = await response.json().catch(() => ({}));
         if (!response.ok || !data.session || !data.checkoutUrl)
             throw new Error(data.message || 'PayMongo didn’t answer (' + response.status + ').');
@@ -1451,18 +1707,24 @@ function dashListingForm(editId = '') {
         + '</div><p class="form-error" id="listing-error" role="alert" hidden></p><div class="detail-actions">' + (crop ? '<button type="button" class="control danger push-left" data-remove-listing="' + crop.id + '">Remove listing</button>' : '') + '<button type="button" class="control" data-close-dialog>Cancel</button><button type="submit" class="control primary">' + (crop ? di('check') + 'Save changes' : di('plus') + 'Publish listing') + '</button></div></form>');
     dashFocusField('#field-name');
 }
-// Shrinks an uploaded photo to at most 640 px so it fits in browser storage.
-async function dashReadPhoto(file) {
+// Shrinks an uploaded photo to at most max px (listings 640, banners 1600) so it fits in browser storage.
+// square: crops the middle square first (profile pictures). Transparent parts become white.
+async function dashReadPhoto(file, max = 640, square = false) {
     const url = URL.createObjectURL(file);
     try {
         const image = new Image();
         image.src = url;
         await image.decode();
-        const scale = Math.min(1, 640 / Math.max(image.naturalWidth, image.naturalHeight));
+        const w = image.naturalWidth, h = image.naturalHeight, side = Math.min(w, h);
+        const [sx, sy, sw, sh] = square ? [(w - side) / 2, (h - side) / 2, side, side] : [0, 0, w, h];
+        const scale = Math.min(1, max / Math.max(sw, sh));
         const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-        canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+        canvas.width = Math.max(1, Math.round(sw * scale));
+        canvas.height = Math.max(1, Math.round(sh * scale));
+        const context = canvas.getContext('2d');
+        context.fillStyle = '#fff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
         return canvas.toDataURL('image/jpeg', 0.82);
     }
     finally {
@@ -1892,7 +2154,11 @@ function dashReadHash() {
         return;
     }
     const allowed = dashRole.nav.map(n => n[0]).concat(dashRole.settingsNav ? [dashRole.settingsNav[0]] : [], ['help']);
-    dashState.view = allowed.includes(requested) ? requested : dashRole.nav[0][0];
+    const profile = /^(org|user)=([a-z0-9-]+)$/.exec(requested);
+    if (profile)
+        dashState.profile = { kind: profile[1] === 'user' ? 'user' : 'org', slug: profile[2] };
+    dashState.view = profile ? 'profile' : allowed.includes(requested) ? requested : dashRole.nav[0][0];
+    dashRepositioning = null;
     dashState.filter = dashState.nextFilter || 'All';
     dashState.nextFilter = '';
     dashState.query = '';
@@ -1904,16 +2170,19 @@ function dashReadHash() {
 /* ---------- Start: sign-in check, events ---------- */
 function dashStart() {
     dashShell();
+    // Links from the homepage: consumer.html?q=rice#shop searches the shop; ?grower=Name opens that community's profile.
+    const params = new URLSearchParams(location.search);
+    const grower = isConsumerDashboard ? params.get('grower') : null;
+    if (grower) {
+        params.delete('grower');
+        history.replaceState(null, '', location.pathname + (params.toString() ? '?' + params : '') + '#org=' + dashSlug(grower));
+    }
     window.addEventListener('hashchange', dashReadHash);
     dashReadHash();
-    // Links from the homepage and storefront: consumer.html?q=rice#shop searches the shop; ?grower=Name opens that community.
-    const params = new URLSearchParams(location.search);
     if (isConsumerDashboard && params.get('q')) {
         dashState.query = params.get('q').replace(/-/g, ' ');
         dashRender();
     }
-    if (isConsumerDashboard && params.get('grower'))
-        dashGrowerDetails(params.get('grower'));
     if (isAdminDashboard)
         void dashRunHealthChecks();
     if (dashBuyer)
@@ -1936,6 +2205,34 @@ function dashStart() {
     document.getElementById('dashboard-search').addEventListener('input', event => { dashState.query = event.target.value; dashRender(); });
     document.addEventListener('keydown', event => {
         const el = event.target;
+        // Repositioning a banner: arrow keys move it (Shift for bigger steps), Enter saves, Escape cancels.
+        const r = dashRepositioning;
+        if (r && el instanceof HTMLElement && el.classList.contains('is-positioning')) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                dashFinishReposition(true);
+                return;
+            }
+            const step = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+            const d = step[event.key];
+            const size = event.shiftKey ? 30 : 10;
+            if (d) {
+                event.preventDefault();
+                dashMoveBanner(d[0] * size, d[1] * size, { x: r.x, y: r.y });
+                return;
+            }
+        }
+        if (r && event.key === 'Escape') {
+            event.preventDefault();
+            dashFinishReposition(false);
+            return;
+        }
+        // Photo pickers are labels acting as buttons.
+        if ((event.key === 'Enter' || event.key === ' ') && el instanceof HTMLLabelElement && el.getAttribute('role') === 'button') {
+            event.preventDefault();
+            el.querySelector('input')?.click();
+            return;
+        }
         if (event.key === 'Escape') {
             dashClosePopovers();
             document.body.classList.remove('sidebar-open');
@@ -1975,8 +2272,41 @@ function dashStart() {
                 shelfLife.value = String(days);
         }
     });
+    // Dragging a banner that is being repositioned.
+    document.addEventListener('pointerdown', event => {
+        const el = event.target;
+        const banner = el.closest('.profile-banner.is-positioning');
+        const r = dashRepositioning;
+        if (!banner || !r || event.button !== 0 || el.closest('button,label,input'))
+            return;
+        r.drag = { id: event.pointerId, cx: event.clientX, cy: event.clientY, x: r.x, y: r.y };
+        banner.setPointerCapture(event.pointerId);
+        banner.classList.add('is-dragging');
+        event.preventDefault();
+    });
+    document.addEventListener('pointermove', event => { const r = dashRepositioning; if (r?.drag && event.pointerId === r.drag.id)
+        dashMoveBanner(event.clientX - r.drag.cx, event.clientY - r.drag.cy, r.drag); });
+    const endDrag = (event) => { const r = dashRepositioning; if (!r?.drag || event.pointerId !== r.drag.id)
+        return; r.drag = undefined; dashBannerEl(r.target)?.classList.remove('is-dragging'); };
+    document.addEventListener('pointerup', endDrag);
+    document.addEventListener('pointercancel', endDrag);
     document.addEventListener('change', event => {
         const input = event.target;
+        if (input.dataset.upload) {
+            void dashUploadLook(input);
+            return;
+        }
+        if (input.dataset.privacy) {
+            const me = dashMe();
+            const key = input.dataset.privacy;
+            if (!me || !isConsumerDashboard || !(key in dashPrivacyDefaults))
+                return;
+            me.privacy = { ...dashPrivacy(me), [key]: input.checked };
+            dashLog('profile-updated', dashMeEmail, 'Privacy settings');
+            dashRender();
+            document.getElementById('privacy-' + key)?.focus();
+            return;
+        }
         if (input.id === 'dashboard-period') {
             dashState.period = input.value === 'month' ? 'month' : 'week';
             dashState.bar = 99;
@@ -2062,10 +2392,48 @@ function dashHandleClick(event) {
         dashGoToSignIn('buyer');
         return;
     }
+    // Profile links are plain links; a pop-up they sit in closes as the profile opens.
+    if (el.closest('[data-profile-link]') && dashDialog.open)
+        dashDialog.close();
     const target = el.closest('button,[data-go]');
     if (!target)
         return;
     const data = target.dataset;
+    if (data.reposition) {
+        void dashStartReposition(data.reposition);
+        return;
+    }
+    if (data.repositionSave !== undefined) {
+        dashFinishReposition(true);
+        return;
+    }
+    if (data.repositionCancel !== undefined) {
+        dashFinishReposition(false);
+        return;
+    }
+    if (data.removePhoto && data.look) {
+        const look = dashLookOf(data.look);
+        if (!look || !dashCanEdit(data.look))
+            return;
+        const avatar = data.removePhoto === 'avatar';
+        if (avatar)
+            delete look.avatar;
+        else {
+            delete look.banner;
+            delete look.bannerX;
+            delete look.bannerY;
+        }
+        dashRepositioning = null;
+        dashLog('profile-updated', dashMeEmail, avatar ? 'Profile picture removed' : 'Profile banner removed');
+        dashRender();
+        dashToast(avatar ? 'Picture removed.' : 'Banner removed.');
+        return;
+    }
+    if (data.shopType) {
+        dashState.shop.type = dashState.shop.type === data.shopType ? 'All' : data.shopType;
+        dashRender();
+        return;
+    }
     if (data.go) {
         dashState.nextFilter = data.goFilter || '';
         if (dashDialog.open)
@@ -2330,7 +2698,7 @@ function dashHandleClick(event) {
         if (isAdminDashboard)
             dashApplicationDetails(data.organization);
         else
-            dashGrowerDetails(data.organization);
+            dashOpenOrgProfile(data.organization);
         return;
     }
     if (data.filter) {
