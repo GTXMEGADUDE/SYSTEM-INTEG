@@ -22,16 +22,28 @@ use Illuminate\Support\Facades\DB;
 // Buyers' privacy settings are applied here, so a private profile's details never leave the server.
 class AppState
 {
+    // Counts and names shared by every organization and account in one answer (filled at the start of for()).
+    private static array $counts = [];
+
     public static function for(?User $viewer): array
     {
         $admin = $viewer?->isAdmin() ?? false;
         $ownOrg = $viewer?->isRepresentative() ? $viewer->organization_id : null;
 
-        $orgs = Organization::orderBy('id')->get()->filter(fn ($o) => $admin || $o->id === $ownOrg || in_array($o->status, ['Active', 'Terminated'], true));
-        $names = Organization::pluck('name', 'id');
+        $all = Organization::orderBy('id')->get();
+        $orgs = $all->filter(fn ($o) => $admin || $o->id === $ownOrg || in_array($o->status, ['Active', 'Terminated'], true));
+        $names = $all->pluck('name', 'id');
         $people = User::orderBy('id')->get();
         $personName = $people->pluck('name', 'id');
         $visibleOrgIds = $orgs->pluck('id')->all();
+        // Counts for every organization and buyer in a few queries, rather than a few per record.
+        self::$counts = [
+            'names' => $names,
+            'public' => $all->filter(fn ($o) => in_array($o->status, ['Active', 'Terminated'], true))->pluck('name', 'id'),
+            'members' => Member::selectRaw('organization_id, COUNT(*) AS n')->groupBy('organization_id')->pluck('n', 'organization_id'),
+            'completed' => Order::where('status', 'Completed')->selectRaw('organization_id, COUNT(*) AS n')->groupBy('organization_id')->pluck('n', 'organization_id'),
+            'buyerOrders' => Order::where('status', '!=', 'Cancelled')->get(['user_id', 'organization_id', 'status'])->groupBy('user_id'),
+        ];
 
         $orders = match (true) {
             $admin => Order::with('items')->get(),
@@ -97,12 +109,12 @@ class AppState
     // $full: the organization itself and administrators also see its documents and contact details.
     private static function organization(Organization $o, bool $full): array
     {
-        $members = Member::where('organization_id', $o->id)->count();
+        $members = (int) (self::$counts['members'][$o->id] ?? 0);
 
         return array_filter([
             'name' => $o->name, 'region' => $o->region(), 'crop' => $o->crop, 'image' => $o->image, 'listings' => 0, 'status' => $o->status,
             'representative' => $o->representative, 'applied' => $o->applied_on->toDateString(), 'members' => $members ?: $o->members_declared,
-            'completedOrders' => Order::where('organization_id', $o->id)->where('status', 'Completed')->count(),
+            'completedOrders' => (int) (self::$counts['completed'][$o->id] ?? 0),
             'documents' => $full ? ($o->documents ?? []) : [], 'approved' => $o->approved_on?->toDateString(),
             'phone' => $full ? $o->phone : null, 'description' => $o->description,
             'terminated' => $o->terminated_on?->toDateString(), 'terminatedFor' => $full ? $o->terminated_for : null,
@@ -115,7 +127,7 @@ class AppState
     private static function account(User $u, ?User $viewer): array
     {
         $look = ['avatar' => $u->avatar, 'banner' => $u->banner, 'bannerX' => $u->banner_x, 'bannerY' => $u->banner_y];
-        $base = ['name' => $u->name, 'role' => $u->role, 'organization' => $u->organization_id ? Organization::find($u->organization_id)?->name : null, 'status' => $u->status];
+        $base = ['name' => $u->name, 'role' => $u->role, 'organization' => $u->organization_id ? (self::$counts['names'][$u->organization_id] ?? null) : null, 'status' => $u->status];
         if ($viewer && ($viewer->isAdmin() || $viewer->id === $u->id)) {
             return array_filter($base + $look + [
                 'email' => $u->email, 'joined' => $u->joined_on->toDateString(), 'lastActive' => $u->last_active_on->toDateString(),
@@ -137,10 +149,11 @@ class AppState
         if (! $u->isBuyer()) {
             return [];
         }
-        $orders = Order::where('user_id', $u->id)->where('status', '!=', 'Cancelled')->get(['organization_id', 'status']);
+        $orders = self::$counts['buyerOrders'][$u->id] ?? collect();
+        $public = self::$counts['public'];
 
         return ['completedOrders' => $orders->where('status', 'Completed')->count(),
-            'growers' => $growers ? Organization::whereIn('id', $orders->pluck('organization_id')->unique())->whereIn('status', ['Active', 'Terminated'])->pluck('name')->values() : null];
+            'growers' => $growers ? $orders->pluck('organization_id')->unique()->filter(fn ($id) => isset($public[$id]))->map(fn ($id) => $public[$id])->values() : null];
     }
 
     // "12 J.P. Rizal Street, Barangay Lalud, Calapan City, Oriental Mindoro" → "Calapan City, Oriental Mindoro".
