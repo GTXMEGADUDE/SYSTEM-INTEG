@@ -13,27 +13,30 @@ interface PreviewGrower {
   longitude:number;
   latitude:number;
 }
-// Homepage community stories, separate from the live marketplace data.
+// Homepage community stories, separate from the live marketplace data. Every community is in Calapan City;
+// longitude/latitude is the centre of its barangay (Philippines JSON Maps), where its map pin goes.
 const previewGrowers:PreviewGrower[]=[
   {
-    id:'nueva-ecija',name:'Nueva Ecija Rice Growers Cooperative',region:'Nueva Ecija',
+    id:'bucayao',name:'Bucayao Rice Farmers',region:'Bucayao',
     art:'rice-foliage.png',artAlt:'Rice stalks with golden grain',cropLabel:'Rice & grains',photo:'rice-hero.png',photoAlt:'A rice-field scene',
-    landscape:'Central Luzon',storyTitle:'Rooted in rice-growing country.',
-    story:'Get to know the communities behind a familiar part of the Filipino table. Discover the people and organizations connecting a local rice harvest with everyday meals.',
-    longitude:120.90,latitude:15.71,
+    landscape:'Rice fields',storyTitle:'Rooted in rice-growing country.',
+    story:'Get to know the families behind a familiar part of the Filipino table. Bucayao’s rice fields connect a local harvest with everyday meals across Calapan.',
+    longitude:121.1868,latitude:13.3079,
   },
   {
-    id:'guimaras',name:'Guimaras Mango Farmers Association',region:'Guimaras',
+    id:'managpi',name:'Managpi Fruit Growers',region:'Managpi',
     art:'mango-cutout.png',artAlt:'Golden mangoes with fresh green leaves',cropLabel:'Mangoes & fruits',photo:'mango.jpg',photoAlt:'Golden carabao mangoes',
     landscape:'Island harvests',storyTitle:'An island chapter in every harvest.',
-    story:'Discover mango harvests and the organizations behind them. Guimaras brings a different landscape—and a little island sunshine—to the story of local food.',
-    longitude:122.60,latitude:10.60,
+    story:'Discover the mango and banana harvests of Managpi and the growers behind them—a little Mindoro sunshine in the story of local food.',
+    longitude:121.2005,latitude:13.3269,
   },
   {
-    id:'benguet',name:'Benguet Highland Vegetable Growers',region:'Benguet',
-    art:'vegetable-cutout.png',artAlt:'A woven basket of fresh vegetables',cropLabel:'Highland vegetables',photo:'grower.png',photoAlt:'A vegetable grower in a highland landscape',
-    landscape:'Highland communities',storyTitle:'Good things grow in the highlands.',
-    story:'Meet the growing communities behind familiar vegetables and explore a landscape of terraces and cooler mornings. Every harvest carries a connection to the place it comes from.',
-    longitude:120.80,latitude:16.50,
+    id:'canubing',name:'Canubing Vegetable Growers',region:'Canubing I',
+    art:'vegetable-cutout.png',artAlt:'A woven basket of fresh vegetables',cropLabel:'Vegetables & root crops',photo:'grower.png',photoAlt:'A vegetable grower at work',
+    landscape:'Vegetable gardens',storyTitle:'Good things grow close to home.',
+    story:'Meet the growers behind familiar vegetables, from fields a short trip from the city centre. Every harvest carries a connection to the barangay it comes from.',
+    longitude:121.1346,latitude:13.3600,
   },
 ];
+// The edges of assets/calapan-home.svg, so a pin's longitude/latitude becomes a position on the map.
+const previewMapEdges={west:121.0966,east:121.293,north:13.4388,south:13.2935};

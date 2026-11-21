@@ -126,7 +126,8 @@ setupHarvestGallery();
 function setupGrowingRegions():void {
   const cards=getElement('region-cards'),markers=getElement('region-markers');
   cards.innerHTML=previewGrowers.map((grower,index)=>'<article class="region-card"><div class="region-photo region-photo-'+index+'"><img src="assets/'+grower.art+'" alt="'+grower.artAlt+'"></div><div class="region-card-copy"><p class="eyebrow">'+grower.region+'</p><h3>'+grower.name+'</h3><p>'+grower.cropLabel+'</p><button class="text-link" data-region="'+grower.id+'" aria-pressed="'+(index===0)+'" aria-controls="origins">Discover the community '+icon('arrow-up')+'</button></div></article>').join('');
-  markers.innerHTML=previewGrowers.map(grower=>{const x=(21+(grower.longitude-116.8)/10.1*113)/157*100,y=(18+(20.9-grower.latitude)/16*159)/216*100;return '<button class="region-dot" data-region="'+grower.id+'" aria-label="Discover '+grower.region+'" style="left:'+x+'%;top:'+y+'%"></button>';}).join('');
+  const edges=previewMapEdges;
+  markers.innerHTML=previewGrowers.map(grower=>{const x=(grower.longitude-edges.west)/(edges.east-edges.west)*100,y=(edges.north-grower.latitude)/(edges.north-edges.south)*100;return'<button class="region-dot" data-region="'+grower.id+'" aria-label="Discover '+grower.region+'" style="left:'+x+'%;top:'+y+'%"></button>';}).join('');
   function selectRegion(id:string,scroll=false):void {
     const grower=previewGrowers.find(item=>item.id===id)!;
     getElement('region-kicker').textContent=grower.region+' · '+grower.landscape;
@@ -147,13 +148,22 @@ getElement('open-care-story').addEventListener('click',()=>landDialog.showModal(
 getElement('close-land-story').addEventListener('click',()=>landDialog.close());
 landDialog.addEventListener('click',event=>{if(event.target===landDialog){const box=landDialog.getBoundingClientRect();if(event.clientX<box.left||event.clientX>box.right||event.clientY<box.top||event.clientY>box.bottom)landDialog.close();}});
 
-// The header follows the account signed in on login.html, and the cart count is that buyer's cart.
+// The header follows the account signed in on login.html: its profile picture (a representative shows the
+// organization's, as in the dashboard) or initials, linking to its dashboard. The cart count is that buyer's cart.
 function setupAccountLinks():void {
   dashLoadStore();
   const account=dashAccountByEmail(dashSessionEmail());
   const active=account&&account.status==='Active'?account:undefined;
   const signIn=document.querySelector<HTMLAnchorElement>('.header-actions .sign-in');
-  if(signIn&&active){signIn.href=dashHomeFor(active);signIn.textContent=active.name.split(' ')[0]+'’s account';}
+  if(signIn&&active){
+    const look=active.role==='Representative'?dashboardOrganizations.find(o=>o.name===active.organization):active;
+    const initials=active.name.split(' ').map(part=>part[0]).join('').slice(0,2).toUpperCase();
+    signIn.href=dashHomeFor(active);
+    signIn.className='header-avatar';
+    signIn.title=active.name;
+    signIn.setAttribute('aria-label',active.name+'’s account');
+    signIn.innerHTML=look?.avatar?'<img src="'+de(look.avatar)+'" alt="">':de(initials);
+  }
   const lines=active&&active.role==='Consumer'?(dashboardCarts[active.email]||[]).length:0;
   getElement('cart-count').textContent=String(lines);
   getElement('open-cart').setAttribute('aria-label','Open your cart, '+dashPlural(lines,'item'));

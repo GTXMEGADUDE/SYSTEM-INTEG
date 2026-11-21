@@ -7,7 +7,7 @@ const authEmailPattern=/^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 type AuthView='signin'|'register'|'submitted';
 let authView:AuthView=location.hash==='#register'?'register':'signin';
 let authSubmitted:DashboardAccount|undefined;
-const authSamples=[['alex@example.com','Buyer'],['ramon@example.com','Benguet Highland Growers'],['admin@example.com','Platform administrator']];
+const authSamples=[['alex@example.com','Buyer'],['ramon@example.com','Canubing Vegetable Growers'],['admin@example.com','Platform administrator']];
 const authNotices:Record<string,string>={
  signin:'Sign in to continue.',
  buyer:'Sign in with a buyer account to order, save harvests and rate growers.',
@@ -53,10 +53,9 @@ function authRegisterView():string{
   +dashField('password','Password'+dashRequired,'<input type="password" required minlength="8" autocomplete="new-password">','At least 8 characters. Accounts are stored in this browser, so don’t reuse a password you use elsewhere.',true)
   +'</div><div class="form-grid org-fields"'+(organization?'':' hidden')+'><h2 class="form-section">Your organization</h2>'
   +dashField('orgName','Organization name'+dashRequired,'<input required maxlength="80">','',true)
-  +dashField('province','Province'+dashRequired,'<input required maxlength="60">')
-  +dashField('region','Region'+dashRequired,'<select required><option value="">Choose a region…</option>'+dashRegions.map(r=>'<option>'+de(r)+'</option>').join('')+'</select>')
-  +dashField('crops','Main crops'+dashRequired,'<input required maxlength="80" placeholder="e.g. Highland vegetables">')
+  +dashField('barangay','Barangay, '+dashCityName+dashRequired,'<select required>'+dashBarangayOptions('')+'</select>')
   +dashField('members','Member farmers'+dashRequired,'<input type="number" required min="1" step="1" inputmode="numeric">')
+  +dashField('crops','Main crops'+dashRequired,'<input required maxlength="80" placeholder="e.g. Rice, calamansi">','',true)
   +'<div class="form-field wide"><span class="form-label" id="documents-label">Documents you can submit'+dashRequired+'</span><div class="check-group" role="group" aria-labelledby="documents-label" aria-describedby="error-documents">'+authDocuments.map(d=>'<label class="check-row"><input type="checkbox" name="documents" value="'+de(d)+'"> '+de(d)+'</label>').join('')+'</div><small class="field-error" id="error-documents" data-error-for="documents"></small></div>'
   +'</div><button type="submit" class="control primary auth-submit" id="register-submit">'+(organization?'Submit application':'Create account')+'</button><p class="auth-switch">Already have an account? <button type="button" class="text-button" data-auth-view="signin">Sign in</button></p></form>';
 }
@@ -106,8 +105,7 @@ function authRegister(form:HTMLFormElement):void{
  if(organization){
   if(value('orgName').length<3)errors.orgName='Enter your organization’s name.';
   else if(dashboardOrganizations.some(o=>o.name.toLowerCase()===value('orgName').toLowerCase()))errors.orgName='An organization with this name is already on AniBayan.';
-  if(value('province').length<3)errors.province='Enter your province.';
-  if(!dashRegions.includes(value('region')))errors.region='Choose your region.';
+  if(!dashBarangays.includes(value('barangay')))errors.barangay='Choose your barangay.';
   if(value('crops').length<3)errors.crops='Enter your main crops.';
   const members=Number(value('members'));
   if(!Number.isInteger(members)||members<1)errors.members='Enter how many farmers are members.';
@@ -117,7 +115,7 @@ function authRegister(form:HTMLFormElement):void{
  const account:DashboardAccount={name:value('name'),email:value('email'),role:organization?'Representative':'Consumer',joined:dashToday,lastActive:dashToday,status:organization?'Pending':'Active',phone:value('phone'),password:String(data.get('password'))};
  if(organization){
   account.organization=value('orgName');
-  dashboardOrganizations.push({name:account.organization,region:value('province')+', '+value('region'),crop:value('crops'),image:'field-detail.jpg',listings:0,status:'Pending review',representative:account.name,applied:dashToday,members:Number(value('members')),documents:data.getAll('documents').map(String),phone:account.phone});
+  dashboardOrganizations.push({name:account.organization,region:value('barangay')+', '+dashCityName,crop:value('crops'),image:'field-detail.jpg',listings:0,status:'Pending review',representative:account.name,applied:dashToday,members:Number(value('members')),documents:data.getAll('documents').map(String),phone:account.phone});
  }
  dashboardAccounts.push(account);
  dashLog('register',account.email,organization?'Organization application · '+account.organization:'Buyer');

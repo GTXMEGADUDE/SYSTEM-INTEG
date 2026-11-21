@@ -15,6 +15,7 @@ The source design is `C:/Users/PC/Desktop/anibayan-figma/mockups/01-home-rebuilt
 - `assets/soil-story.png`: original generated editorial farming image of hands, soil and a seedling. Illustrative photography, not a verified AniBayan farmer portrait or a certification claim.
 - `assets/rice-foliage.png`: original generated transparent rice-leaf and panicle asset used as decorative section framing.
 - `assets/philippines-home.svg`: geographic outline derived from the previously credited Philippines JSON Maps asset. Its markers are editable HTML buttons positioned with the same longitude/latitude transform. They show approximate sample regions, not cooperative parcel boundaries.
+- `assets/calapan-home.svg` (the homepage map since AniBayan was limited to Calapan City): the 62 barangays of Calapan City, Oriental Mindoro, from [Philippines JSON Maps](https://github.com/faeldon/philippines-json-maps) `latest/geojson/municities/medres/bgysubmuns-municity-1705205000.0.01.json` (PSGC 2026-3q), drawn as SVG paths. Map pins sit at the centre of each sample community's barangay; they are not farm locations.
 - New composition references are the two Freshvegetables and Lampung Gardening images attached by the owner in this conversation. Their artwork is not embedded in the website.
 
 ## Stronger reference composition

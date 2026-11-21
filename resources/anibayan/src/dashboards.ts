@@ -185,7 +185,7 @@ const dashPendingApplications=()=>dashboardOrganizations.filter(o=>o.status==='P
 const dashListingCount=(org:string)=>dashboardCrops.filter(c=>c.organization===org&&dashIsBuyable(c)).length;
 
 /* ---------- Profiles: pictures, banners, links and buyer privacy ---------- */
-// Profile addresses use the name: #org=benguet-highland-growers, #user=alex-reyes.
+// Profile addresses use the name: #org=canubing-vegetable-growers, #user=alex-reyes.
 const dashSlug=(name:string)=>name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'');
 const dashAccountByName=(name:string)=>dashboardAccounts.find(a=>a.name===name);
 const dashLookKind=(role:string)=>role==='Administrator'?'admin':role==='Representative'?'organization':'consumer';
@@ -206,7 +206,7 @@ function dashAvatar(look:DashboardLook|undefined,name:string,kind:string,size=''
 }
 const dashPrivacyDefaults:DashboardPrivacy={profile:true,reviews:true,city:true,growers:true};
 const dashPrivacy=(a:DashboardAccount):DashboardPrivacy=>({...dashPrivacyDefaults,...(a.privacy||{})});
-// "12 Mabini Street, Barangay San Isidro, Quezon City, Metro Manila" → "Quezon City, Metro Manila".
+// "12 J.P. Rizal Street, Barangay Lalud, Calapan City, Oriental Mindoro" → "Calapan City, Oriental Mindoro".
 function dashCity(address?:string):string{const parts=(address||'').split(',').map(p=>p.trim()).filter(Boolean);return parts.length>=3?parts.slice(-2).join(', '):'';}
 // A banner without an uploaded photo: the organization's own photo, or a green gradient picked from the buyer's name.
 function dashBannerStyle(look:DashboardLook,fallback:string):string{
@@ -887,9 +887,8 @@ function dashMembers():string{
  const all=dashMyMembers();
  const members=all.filter(m=>dashMatching([m.name,m.place,m.crops,m.status].join(' ')));
  const area=all.reduce((sum,m)=>sum+m.area,0);
- const province=dashOrgProfile().region.split(', ')[0];
  const actions=(m:DashboardMember)=>'<div class="row-actions">'+(m.status==='Pending'?'<button class="control small primary" data-member-confirm="'+m.id+'">'+di('check')+'Confirm</button>':'')+'<button class="control small" data-member-remove="'+m.id+'">Remove</button></div>';
- return '<div class="metric-grid three">'+dashMetric('Member farmers',String(all.length),'people','Growers supplying your organization')+dashMetric('Farmed area',area.toFixed(1)+' ha','pin','Across all member farms')+dashMetric('Pending membership',String(all.filter(m=>m.status==='Pending').length),'clock','Awaiting your confirmation')+'</div><section class="panel">'+dashPanelHead('Members','','<span class="filter-summary">'+dashPlural(members.length,'member')+'</span>')+'<div class="table-wrap">'+(members.length?'<table><thead><tr><th scope="col">Farmer</th><th scope="col">Location</th><th scope="col">Crops</th><th scope="col">Area</th><th scope="col">Member since</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>'+members.map(m=>'<tr><td><div class="table-product"><span class="avatar organization-avatar">'+dashInitials(m.name)+'</span><strong>'+de(m.name)+'</strong></div></td><td>'+de(m.place)+', '+de(province)+'</td><td>'+de(m.crops)+'</td><td>'+m.area.toFixed(1)+' ha</td><td>'+de(m.joined)+'</td><td>'+ds(m.status)+'</td><td>'+actions(m)+'</td></tr>').join('')+'</tbody></table>':dashEmpty(all.length?'No matching members':'No member farmers yet',all.length?'Try a different name, place or crop.':'Add the farmers who supply your organization.'))+'</div></section>';
+ return '<div class="metric-grid three">'+dashMetric('Member farmers',String(all.length),'people','Growers supplying your organization')+dashMetric('Farmed area',area.toFixed(1)+' ha','pin','Across all member farms')+dashMetric('Pending membership',String(all.filter(m=>m.status==='Pending').length),'clock','Awaiting your confirmation')+'</div><section class="panel">'+dashPanelHead('Members','','<span class="filter-summary">'+dashPlural(members.length,'member')+'</span>')+'<div class="table-wrap">'+(members.length?'<table><thead><tr><th scope="col">Farmer</th><th scope="col">Barangay</th><th scope="col">Crops</th><th scope="col">Area</th><th scope="col">Member since</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>'+members.map(m=>'<tr><td><div class="table-product"><span class="avatar organization-avatar">'+dashInitials(m.name)+'</span><strong>'+de(m.name)+'</strong></div></td><td>'+de(m.place)+'</td><td>'+de(m.crops)+'</td><td>'+m.area.toFixed(1)+' ha</td><td>'+de(m.joined)+'</td><td>'+ds(m.status)+'</td><td>'+actions(m)+'</td></tr>').join('')+'</tbody></table>':dashEmpty(all.length?'No matching members':'No member farmers yet',all.length?'Try a different name, place or crop.':'Add the farmers who supply your organization.'))+'</div></section>';
 }
 function dashOrgPayments():string{
  const orders=dashRoleOrders().filter(o=>o.status!=='Cancelled');
@@ -1012,7 +1011,7 @@ function dashActiveOrder():string{
 function dashConsumerOverview():string{
  const own=dashRoleOrders();
  const saved=dashboardCrops.filter(c=>dashIsSaved(c.id));
- return '<section class="consumer-banner"><div class="eyebrow">Rooted in community. Grown for you.</div><h2>Fresh from their fields.<br>A little closer to your table.</h2><p>Meet the people behind your everyday food.</p><button class="control primary" data-go="shop">Explore the harvest '+di('arrow')+'</button><img class="banner-harvest" src="assets/vegetable-cutout.png" alt=""><img class="banner-leaf" src="assets/mango-branch.png" alt=""></section><div class="metric-grid">'+dashMetric('Active orders',String(own.filter(o=>!['Completed','Cancelled'].includes(o.status)).length),'bag','Being prepared by your growers')+dashMetric('Completed orders',String(own.filter(o=>o.status==='Completed').length),'check','Local harvests brought home')+dashMetric('Saved harvests',String(saved.length),'heart','Good things to come back to')+dashMetric('Growing connections',String(new Set(own.map(o=>o.organization)).size),'leaf','Communities you’ve ordered from')+'</div><div class="split">'+dashActiveOrder()+'<section class="panel grower-mini"><img src="assets/grower.png" alt="A grower in the Benguet highlands"><div class="grower-mini-copy"><small>The people behind your harvest</small><h2>Rooted in the<br>Benguet highlands.</h2><a href="#growers">Meet your growing community '+di('up')+'</a></div></section></div><div class="split">'+dashOrderTable('recent')+'<section class="panel">'+dashPanelHead('Saved for later','','<button class="text-button" data-go="saved">View all '+di('arrow')+'</button>')+'<div class="saved-mini">'+saved.slice(0,4).map(c=>'<div class="saved-row"><img src="'+dashImg(c.image)+'" alt=""><div><strong>'+de(c.name)+'</strong><p>'+dp(c.price)+' / '+de(c.unit)+' · harvested '+dd(c.harvested)+'</p></div><button class="save-button" data-save="'+c.id+'" aria-pressed="true" aria-label="Unsave '+de(c.name)+'">'+di('heart')+'</button></div>').join('')+(saved.length?'':dashEmpty('Nothing saved yet','Your saved harvests will appear here.'))+'</div></section></div>';
+ return '<section class="consumer-banner"><div class="eyebrow">Rooted in community. Grown for you.</div><h2>Fresh from their fields.<br>A little closer to your table.</h2><p>Meet the people behind your everyday food.</p><button class="control primary" data-go="shop">Explore the harvest '+di('arrow')+'</button><img class="banner-harvest" src="assets/vegetable-cutout.png" alt=""><img class="banner-leaf" src="assets/mango-branch.png" alt=""></section><div class="metric-grid">'+dashMetric('Active orders',String(own.filter(o=>!['Completed','Cancelled'].includes(o.status)).length),'bag','Being prepared by your growers')+dashMetric('Completed orders',String(own.filter(o=>o.status==='Completed').length),'check','Local harvests brought home')+dashMetric('Saved harvests',String(saved.length),'heart','Good things to come back to')+dashMetric('Growing connections',String(new Set(own.map(o=>o.organization)).size),'leaf','Communities you’ve ordered from')+'</div><div class="split">'+dashActiveOrder()+'<section class="panel grower-mini"><img src="assets/grower.png" alt="A vegetable grower at work"><div class="grower-mini-copy"><small>The people behind your harvest</small><h2>Rooted in<br>Calapan City.</h2><a href="#growers">Meet your growing community '+di('up')+'</a></div></section></div><div class="split">'+dashOrderTable('recent')+'<section class="panel">'+dashPanelHead('Saved for later','','<button class="text-button" data-go="saved">View all '+di('arrow')+'</button>')+'<div class="saved-mini">'+saved.slice(0,4).map(c=>'<div class="saved-row"><img src="'+dashImg(c.image)+'" alt=""><div><strong>'+de(c.name)+'</strong><p>'+dp(c.price)+' / '+de(c.unit)+' · harvested '+dd(c.harvested)+'</p></div><button class="save-button" data-save="'+c.id+'" aria-pressed="true" aria-label="Unsave '+de(c.name)+'">'+di('heart')+'</button></div>').join('')+(saved.length?'':dashEmpty('Nothing saved yet','Your saved harvests will appear here.'))+'</div></section></div>';
 }
 function dashSettings():string{
  const appearance='<section class="panel settings-panel"><h2>Appearance</h2><p>Adjust the dashboard to your preferred reading density. Saved in this browser.</p><div class="settings-row"><label for="density">Compact table rows</label><input type="checkbox" id="density" '+(document.body.classList.contains('compact-density')?'checked':'')+'></div><div class="settings-row"><label for="contrast">Stronger contrast</label><input type="checkbox" id="contrast" '+(document.body.classList.contains('contrast-mode')?'checked':'')+'></div><h2 class="settings-subhead">Data</h2><p>AniBayan keeps its accounts, listings, orders, ratings and reports in this browser, shared by every AniBayan page you open here.</p><div class="detail-actions"><button class="control danger" data-reset-data>Reset all data</button></div></section>';
@@ -1246,7 +1245,7 @@ function dashListingForm(editId=''):void{
  const uploaded=/^data:/.test(image);
  const photo='<div class="form-field wide"><span class="form-label" id="photo-label">Photo</span><div class="photo-field"><img class="photo-preview" id="photo-preview" src="'+dashImg(image)+'" alt="Listing photo"><div class="photo-inputs"><label class="control small file-button">'+di('plus')+'Upload a photo<input type="file" name="photo" id="field-photo" accept="image/jpeg,image/png,image/webp" aria-describedby="hint-photo error-photo"></label><select name="image" id="field-image" aria-label="Or choose a stock photo">'+(uploaded?'<option value="">Keep the uploaded photo</option>':'')+dashStockPhotos.map(p=>'<option value="'+p[0]+'"'+dashSelected(p[0],image)+'>Stock photo: '+p[1]+'</option>').join('')+'</select><small class="form-hint" id="hint-photo">Upload a JPG, PNG or WebP photo, or choose a stock photo.</small><small class="field-error" id="error-photo" data-error-for="photo"></small></div></div></div>';
  dashOpen('<p class="detail-kicker">'+(crop?'Edit listing · '+crop.id:'New listing · '+de(dashOrgName))+'</p><h2 id="detail-title">'+(crop?de(crop.name):'Add a crop listing')+'</h2><p class="detail-subtitle">Buyers see the harvest date and shelf life on every listing.</p><form class="dash-form" id="listing-form"'+(crop?' data-edit="'+crop.id+'"':'')+' novalidate><div class="form-grid">'
-  +dashField('name','Crop name'+dashRequired,'<input required maxlength="80" autocomplete="off" placeholder="e.g. Highland cabbage"'+value(crop?.name)+'>','',true)
+  +dashField('name','Crop name'+dashRequired,'<input required maxlength="80" autocomplete="off" placeholder="e.g. Calamansi"'+value(crop?.name)+'>','',true)
   +dashField('category','Crop type'+dashRequired,'<select required><option value="">Choose a type…</option>'+Object.keys(dashShelfDefaults).map(c=>'<option'+dashSelected(c,crop?crop.category:'')+'>'+de(c)+'</option>').join('')+'</select>')
   +dashField('unit','Unit'+dashRequired,'<select required>'+['kg','piece','bundle','sack'].map(u=>'<option value="'+u+'"'+dashSelected(u,crop?crop.unit:'kg')+'>'+u+'</option>').join('')+'</select>')
   +dashField('price','Price per unit (₱)'+dashRequired,'<input type="number" required min="1" step="1" inputmode="numeric"'+value(crop?.price)+'>')
@@ -1326,9 +1325,9 @@ function dashConfirmRemoveListing(id:string):void{
 function dashMemberForm():void{
  dashOpen('<p class="detail-kicker">Member farmers · '+de(dashOrgName)+'</p><h2 id="detail-title">Add a member farmer</h2><p class="detail-subtitle">Members are the growers who supply your organization’s listings.</p><form class="dash-form" id="member-form" novalidate><div class="form-grid">'
   +dashField('name','Full name'+dashRequired,'<input required maxlength="80" autocomplete="off">','',true)
-  +dashField('place','Municipality'+dashRequired,'<input required maxlength="60" placeholder="e.g. La Trinidad">')
+  +dashField('place','Barangay'+dashRequired,'<input required maxlength="60" placeholder="e.g. Canubing I">')
   +dashField('area','Farm area (hectares)'+dashRequired,'<input type="number" required min="0.1" max="500" step="0.1" inputmode="decimal">')
-  +dashField('crops','Crops grown'+dashRequired,'<input required maxlength="80" placeholder="e.g. Carrots, cabbage">','',true)
+  +dashField('crops','Crops grown'+dashRequired,'<input required maxlength="80" placeholder="e.g. Rice, calamansi">','',true)
   +'</div><div class="detail-actions"><button type="button" class="control" data-close-dialog>Cancel</button><button type="submit" class="control primary">'+di('plus')+'Add member</button></div></form>');
  dashFocusField('#field-name');
 }
@@ -1338,7 +1337,7 @@ function dashSubmitMember(form:HTMLFormElement):void{
  const area=Number(value('area'));
  const errors:Record<string,string>={};
  if(value('name').length<3)errors.name='Enter the farmer’s full name.';
- if(value('place').length<3)errors.place='Enter the municipality.';
+ if(value('place').length<3)errors.place='Enter the barangay.';
  if(!value('area')||!(area>=0.1&&area<=500))errors.area='Enter the farm area in hectares, from 0.1 to 500.';
  if(value('crops').length<3)errors.crops='Enter the crops they grow.';
  if(!dashShowErrors(form,errors))return;
@@ -1350,12 +1349,11 @@ function dashSubmitMember(form:HTMLFormElement):void{
 function dashOrgProfileForm():void{
  const org=dashMyOrg();
  if(!org)return;
- const [province,region]=org.region.split(', ');
+ const barangay=org.region.split(', ')[0];
  dashOpen('<p class="detail-kicker">Organization profile</p><h2 id="detail-title">'+de(org.name)+'</h2><p class="detail-subtitle">Buyers see this on your storefront and listings.</p><form class="dash-form" id="org-profile-form" novalidate><div class="form-grid">'
   +dashField('crop','Main crops'+dashRequired,'<input required maxlength="80" value="'+de(org.crop)+'">','',true)
-  +dashField('province','Province'+dashRequired,'<input required maxlength="60" value="'+de(province||'')+'">')
-  +dashField('region','Region'+dashRequired,'<select required><option value="">Choose a region…</option>'+dashRegions.map(r=>'<option'+dashSelected(r,region||'')+'>'+de(r)+'</option>').join('')+'</select>')
-  +dashField('phone','Contact number'+dashRequired,'<input type="tel" required maxlength="20" autocomplete="tel" value="'+de(org.phone||'')+'">','',true)
+  +dashField('barangay','Barangay, '+dashCityName+dashRequired,'<select required>'+dashBarangayOptions(dashBarangays.includes(barangay)?barangay:'')+'</select>')
+  +dashField('phone','Contact number'+dashRequired,'<input type="tel" required maxlength="20" autocomplete="tel" value="'+de(org.phone||'')+'">')
   +dashField('description','About your organization','<textarea rows="3" maxlength="240">'+de(org.description||'')+'</textarea>','',true)
   +'</div><div class="detail-actions"><button type="button" class="control" data-close-dialog>Cancel</button><button type="submit" class="control primary">'+di('check')+'Save profile</button></div></form>');
  dashFocusField('#field-crop');
@@ -1365,31 +1363,43 @@ function dashSubmitOrgProfile(form:HTMLFormElement):void{
  const value=(name:string)=>String(data.get(name)??'').trim();
  const errors:Record<string,string>={};
  if(value('crop').length<3)errors.crop='Enter your main crops.';
- if(value('province').length<3)errors.province='Enter your province.';
- if(!dashRegions.includes(value('region')))errors.region='Choose your region.';
+ if(!dashBarangays.includes(value('barangay')))errors.barangay='Choose your barangay.';
  if(!dashPhonePattern.test(value('phone')))errors.phone='Enter a mobile number like 0917 555 0148.';
  if(!dashShowErrors(form,errors))return;
  const org=dashMyOrg();
  if(!org)return;
- Object.assign(org,{crop:value('crop'),region:value('province')+', '+value('region'),phone:value('phone'),description:value('description')});
+ Object.assign(org,{crop:value('crop'),region:value('barangay')+', '+dashCityName,phone:value('phone'),description:value('description')});
  dashLog('profile-updated',dashMeEmail,'Organization profile');
  dashDialog.close();dashRender();
  dashToast('Organization profile saved.');
+}
+// Delivery address fields: house and street, plus a barangay of Calapan City (AniBayan delivers only there).
+function dashAddressFields(address?:string):string{
+ const a=dashSplitAddress(address);
+ return dashField('street','House number and street'+dashRequired,'<input required maxlength="120" autocomplete="address-line1" placeholder="e.g. 12 J.P. Rizal Street" value="'+de(a.street)+'">')
+  +dashField('barangay','Barangay, '+dashCityName+dashRequired,'<select required>'+dashBarangayOptions(a.barangay)+'</select>');
+}
+// Reads those fields back as one address, adding any problems to errors.
+function dashReadAddress(data:FormData,errors:Record<string,string>):string{
+ const street=String(data.get('street')??'').trim(),barangay=String(data.get('barangay')??'').trim();
+ if(street.length<4)errors.street='Enter the house number and street.';
+ if(!dashBarangays.includes(barangay))errors.barangay='Choose a barangay in Calapan City.';
+ return dashJoinAddress(street,barangay);
 }
 function dashProfileForm():void{
  const me=dashAccount();
  dashOpen('<p class="detail-kicker">Your profile</p><h2 id="detail-title">Delivery details</h2><p class="detail-subtitle">Used to fill in checkout. Your name and email can’t be changed here.</p><form class="dash-form" id="profile-form" novalidate><div class="form-grid single">'
   +dashField('phone','Mobile number'+dashRequired,'<input type="tel" required maxlength="20" autocomplete="tel" value="'+de(me.phone||'')+'">')
-  +dashField('address','Delivery address'+dashRequired,'<textarea rows="3" required maxlength="200" autocomplete="street-address">'+de(me.address||'')+'</textarea>','House number, street, barangay, city or municipality, and province.')
+  +dashAddressFields(me.address)
   +'</div><div class="detail-actions"><button type="button" class="control" data-close-dialog>Cancel</button><button type="submit" class="control primary">'+di('check')+'Save details</button></div></form>');
  dashFocusField('#field-phone');
 }
 function dashSubmitProfile(form:HTMLFormElement):void{
  const data=new FormData(form);
- const phone=String(data.get('phone')??'').trim(),address=String(data.get('address')??'').trim();
+ const phone=String(data.get('phone')??'').trim();
  const errors:Record<string,string>={};
  if(!dashPhonePattern.test(phone))errors.phone='Enter a mobile number like 0917 555 0148.';
- if(address.length<10)errors.address='Enter your full delivery address.';
+ const address=dashReadAddress(data,errors);
  if(!dashShowErrors(form,errors))return;
  Object.assign(dashAccount(),{phone,address});
  dashLog('profile-updated',dashMeEmail,'Delivery details');
@@ -1427,20 +1437,20 @@ function dashCheckoutForm():void{
  const total=entries.reduce((sum,e)=>sum+e.line.quantity*e.crop.price,0);
  const orgs=[...new Set(entries.map(e=>e.crop.organization))];
  dashOpen('<p class="detail-kicker">Checkout</p><h2 id="detail-title">Place your order'+(orgs.length>1?'s':'')+'</h2><p class="detail-subtitle">'+dashPlural(entries.length,'harvest')+' · '+dp(total)+(orgs.length>1?' · '+orgs.length+' orders, one per organization':'')+'</p><form class="dash-form" id="checkout-form" novalidate><div class="form-grid single">'
-  +dashField('address','Delivery address'+dashRequired,'<textarea rows="3" required maxlength="200" autocomplete="street-address">'+de(me.address||'')+'</textarea>')
+  +dashAddressFields(me.address)
   +dashField('phone','Mobile number'+dashRequired,'<input type="tel" required maxlength="20" autocomplete="tel" value="'+de(me.phone||'')+'">','The organization calls this number to arrange delivery.')
   +'<div class="form-field"><span class="form-label" id="method-label">Payment method'+dashRequired+'</span><div class="choice-list" role="radiogroup" aria-labelledby="method-label">'+dashPaymentMethods.map((m,i)=>'<label class="choice"><input type="radio" name="method" value="'+m[0]+'"'+(i===0?' checked':'')+'><span><strong>'+m[0]+'</strong><small>'+m[1]+'</small></span></label>').join('')+'</div></div>'
   +dashField('note','Note for the organization','<textarea rows="2" maxlength="200" placeholder="Gate code, preferred delivery time…"></textarea>')
   +'<label class="check-row"><input type="checkbox" name="remember" checked> Save this address and number to my profile</label>'
   +'</div><p class="form-error" id="checkout-error" role="alert" hidden></p><div class="detail-actions"><button type="button" class="control" data-close-dialog>Back to cart</button><button type="submit" class="control primary">Place order'+(orgs.length>1?'s':'')+' · '+dp(total)+'</button></div></form>');
- dashFocusField(me.address?'[type=submit]':'#field-address');
+ dashFocusField(dashSplitAddress(me.address).barangay?'[type=submit]':'#field-street');
 }
 function dashSubmitCheckout(form:HTMLFormElement):void{
  const data=new FormData(form);
- const address=String(data.get('address')??'').trim(),phone=String(data.get('phone')??'').trim(),note=String(data.get('note')??'').trim();
+ const phone=String(data.get('phone')??'').trim(),note=String(data.get('note')??'').trim();
  const method=String(data.get('method')||'Cash on delivery');
  const errors:Record<string,string>={};
- if(address.length<10)errors.address='Enter your full delivery address.';
+ const address=dashReadAddress(data,errors);
  if(!dashPhonePattern.test(phone))errors.phone='Enter a mobile number like 0917 555 0148.';
  if(!dashShowErrors(form,errors))return;
  const entries=dashCartEntries();
@@ -1575,7 +1585,7 @@ function dashExportRows():[string,(string|number)[][]]{
   return ['accounts',[['Name','Email','Role','Organization','Joined','Last active','Status'],...dashAccountList().map(a=>[a.name,a.email,a.role==='Consumer'?'Buyer':a.role,a.organization||'',a.joined,a.lastActive,a.status])]];
  }
  if(view==='listings')return ['listings',[['Product ID','Name','Category','Price PHP','Unit','Available quantity','Harvest date','Shelf life (days)','Best before','Status'],...dashListingCrops().map(c=>[c.id,c.name,c.category,c.price,c.unit,c.stock,c.harvested,c.shelfLife,dashAddDays(c.harvested,c.shelfLife),dashCropStatus(c)])]];
- if(view==='members')return ['members',[['Farmer','Municipality','Crops','Area ha','Member since','Status'],...dashMyMembers().filter(m=>dashMatching([m.name,m.place,m.crops,m.status].join(' '))).map(m=>[m.name,m.place,m.crops,m.area,m.joined,m.status])]];
+ if(view==='members')return ['members',[['Farmer','Barangay','Crops','Area ha','Member since','Status'],...dashMyMembers().filter(m=>dashMatching([m.name,m.place,m.crops,m.status].join(' '))).map(m=>[m.name,m.place,m.crops,m.area,m.joined,m.status])]];
  if(view==='feedback')return ['feedback',[['Feedback ID','Date','Buyer','Rating','Comment','Order'],...dashOrgFeedbackList().map(f=>[f.id,f.date,f.customer,f.rating,f.comment,f.order||''])]];
  return ['orders',[['Order ID','Buyer','Organization','Harvest','Quantity','Total PHP','Status','Payment','Date','Delivery address','Contact number','Payment method'],...dashOrders().map(o=>[o.id,o.customer,o.organization,o.crop,o.quantity,o.total,o.status,o.payment,o.date,o.address||'',o.phone||'',o.method||''])]];
 }

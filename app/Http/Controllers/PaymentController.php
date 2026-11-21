@@ -42,7 +42,7 @@ class PaymentController extends Controller
         $numbers = array_map(fn ($o) => '#'.substr($o['id'], 8), $data['orders']);
         // The buyer's details fill PayMongo's form, so they don't type them again.
         $billing = array_filter(['name' => $data['buyer']['name'], 'email' => $data['buyer']['email'], 'phone' => $data['buyer']['phone'] ?? null]);
-        // "12 Mabini Street, Barangay San Isidro, Quezon City, Metro Manila": the last two parts are the city and province.
+        // "12 J.P. Rizal Street, Barangay Lalud, Calapan City, Oriental Mindoro": the last two parts are the city and province.
         $parts = array_values(array_filter(array_map('trim', explode(',', (string) ($data['buyer']['address'] ?? '')))));
         if (count($parts) >= 3) {
             $billing['address'] = ['line1' => implode(', ', array_slice($parts, 0, -2)), 'city' => $parts[count($parts) - 2], 'state' => end($parts), 'country' => 'PH'];
