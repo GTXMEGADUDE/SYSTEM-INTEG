@@ -1,27 +1,28 @@
-// Sign-in and create-account page (login.html). Accounts are part of the browser-stored AniBayan data the dashboards share:
-// buyers can sign up and shop right away; organization representatives apply and can sign in once an administrator approves.
-dashLoadStore();
+// Sign-in and create-account page (login.html). Accounts live on AniBayan's server: buyers can sign up and shop
+// right away; organization representatives apply and can sign in once an administrator approves.
 const authRoot=document.getElementById('auth-content')!;
 const authParams=new URLSearchParams(location.search);
 const authEmailPattern=/^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 type AuthView='signin'|'register'|'submitted';
 let authView:AuthView=location.hash==='#register'?'register':'signin';
-let authSubmitted:DashboardAccount|undefined;
-const authSamples=[['alex@example.com','Buyer'],['ramon@example.com','Canubing Vegetable Growers'],['admin@example.com','Platform administrator']];
+let authSubmitted:{organization:string;email:string}|undefined;
+// Test accounts: [email, name, what it is, role].
+const authSamples=[['alex@example.com','Alex Reyes','Buyer','Consumer'],['ramon@example.com','Ramon Dulnuan','Canubing Vegetable Growers','Representative'],['admin@example.com','AniBayan Admin','Platform administrator','Administrator']];
 const authNotices:Record<string,string>={
  signin:'Sign in to continue.',
  buyer:'Sign in with a buyer account to order, save harvests and rate growers.',
  admin:'Sign in with an administrator account to open the admin workspace.',
  organization:'Sign in with your organization representative account to open your workspace.',
  suspended:'You were signed out because an AniBayan administrator suspended that account.',
+ terminated:'You were signed out because your organization was terminated.',
  pending:'That organization application is still being reviewed.',
  declined:'That organization application was declined.',
 };
 // Where to go after signing in: back to the page that asked (when it suits the account's role), otherwise the role's home.
-function authDestination(account:DashboardAccount):string{
+function authDestination(role:string):string{
  const next=authParams.get('next')||'';
  const roles:Record<string,string>={'consumer.html':'Consumer','organization.html':'Representative','admin.html':'Administrator'};
- return roles[next.split(/[?#]/)[0]]===account.role?next:dashHomeFor(account);
+ return roles[next.split(/[?#]/)[0]]===role?next:dashHomeForRole(role);
 }
 const authDocuments=['CDA or SEC registration','Barangay endorsement','Representative ID'];
 const authAvatarClass=(role:string)=>role==='Administrator'?'admin-avatar':role==='Representative'?'organization-avatar':'consumer-avatar';
@@ -30,11 +31,7 @@ const authArrow='<svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path 
 
 function authSignInView():string{
  const notice=authNotices[authParams.get('notice')||''];
- const samples=authSamples.map(([email,label])=>{
-  const account=dashAccountByEmail(email);
-  if(!account)return '';
-  return '<button class="demo-account" data-sample="'+de(email)+'"><span class="avatar '+authAvatarClass(account.role)+'">'+(account.role==='Administrator'?'AD':authInitials(account.name))+'</span><span><strong>'+de(account.name)+'</strong><small>'+de(label)+'</small></span>'+authArrow+'</button>';
- }).join('');
+ const samples=authSamples.map(([email,name,label,role])=>'<button class="demo-account" data-sample="'+de(email)+'"><span class="avatar '+authAvatarClass(role)+'">'+(role==='Administrator'?'AD':authInitials(name))+'</span><span><strong>'+de(name)+'</strong><small>'+de(label)+'</small></span>'+authArrow+'</button>').join('');
  return '<form class="auth-form" id="signin-form" novalidate><h1>Welcome back</h1><p class="auth-lead">Sign in to shop fresh harvests or manage your organization.</p>'+(notice?'<p class="auth-notice">'+notice+'</p>':'')+'<div class="form-grid single">'
   +dashField('email','Email','<input type="email" required autocomplete="email" placeholder="name@example.com">')
   +dashField('password','Password','<input type="password" required autocomplete="current-password">')
@@ -61,7 +58,7 @@ function authRegisterView():string{
 }
 function authSubmittedView():string{
  const account=authSubmitted!;
- return '<div class="auth-done"><svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg><h1>Application submitted</h1><p><strong>'+de(account.organization||'')+'</strong> is waiting for review. An AniBayan administrator checks your documents, then approves or declines the application.</p><p>Once it’s approved, sign in as <strong>'+de(account.email)+'</strong> to add your crop listings.</p><div class="detail-actions"><a class="control" href="index.html">Back to homepage</a><button class="control primary" data-auth-view="signin">Go to sign in</button></div></div>';
+ return '<div class="auth-done"><svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg><h1>Application submitted</h1><p><strong>'+de(account.organization)+'</strong> is waiting for review. An AniBayan administrator checks your documents, then approves or declines the application.</p><p>Once it’s approved, sign in as <strong>'+de(account.email)+'</strong> to add your crop listings.</p><div class="detail-actions"><a class="control" href="index.html">Back to homepage</a><button class="control primary" data-auth-view="signin">Go to sign in</button></div></div>';
 }
 function authRender():void{
  const current=dashAccountByEmail(dashSessionEmail());
@@ -70,7 +67,8 @@ function authRender():void{
  authRoot.innerHTML=banner+tabs+'<div id="auth-panel" role="tabpanel" aria-labelledby="tab-'+(authView==='register'?'register':'signin')+'">'+(authView==='signin'?authSignInView():authView==='register'?authRegisterView():authSubmittedView())+'</div>';
  document.title='AniBayan — '+(authView==='signin'?'Sign in':'Create an account');
 }
-function authSignIn(form:HTMLFormElement):void{
+// The server checks the password (stored only as a hash), logs the attempt and starts the session.
+async function authSignIn(form:HTMLFormElement):Promise<void>{
  const data=new FormData(form);
  const email=String(data.get('email')??'').trim(),password=String(data.get('password')??'');
  const errors:Record<string,string>={};
@@ -78,33 +76,24 @@ function authSignIn(form:HTMLFormElement):void{
  if(!password)errors.password='Enter your password.';
  if(!dashShowErrors(form,errors))return;
  const error=document.getElementById('signin-error')!;
- const fail=(message:string)=>{error.hidden=false;error.textContent=message;};
- const account=dashAccountByEmail(email);
- const refuse=(type:string,detail:string,message:string)=>{dashLog(type,account?account.email:email.toLowerCase(),detail);dashSaveStore();fail(message);};
- if(!account){refuse('signin-failed','No account with this email','The email or password is incorrect.');return;}
- if((account.password||dashDemoPassword)!==password){refuse('signin-failed','Wrong password','The email or password is incorrect.');return;}
- if(account.status==='Suspended'){refuse('signin-blocked','Account suspended','This account is suspended. Contact AniBayan support if you think this is a mistake.');return;}
- if(account.status==='Pending'){refuse('signin-waiting','Application under review','Your organization application is still being reviewed. You can sign in once an administrator approves it.');return;}
- if(account.status==='Declined'){refuse('signin-blocked','Application declined','Your organization application was declined, so this account can’t sign in.');return;}
- if(account.status==='Terminated'){refuse('signin-blocked','Organization terminated','Your organization was terminated after repeated warnings, so this account can’t sign in.');return;}
- account.lastActive=dashToday;
- dashLog('signin',account.email);
- dashSaveStore();dashSetSession(account.email);
- location.href=authDestination(account);
+ error.hidden=true;
+ const r=await dashApi('login',{email,password});
+ if(r.ok){location.href=authDestination(String(r.data.role));return;}
+ const fields=dashFieldErrors(r.data.errors);
+ if(Object.keys(fields).length)dashShowErrors(form,fields);
+ else{error.hidden=false;error.textContent=String(r.data.message||'The email or password is incorrect.');}
 }
-function authRegister(form:HTMLFormElement):void{
+async function authRegister(form:HTMLFormElement):Promise<void>{
  const data=new FormData(form);
  const value=(name:string)=>String(data.get(name)??'').trim();
  const organization=value('type')==='organization';
  const errors:Record<string,string>={};
  if(value('name').length<3)errors.name='Enter your full name.';
  if(!authEmailPattern.test(value('email')))errors.email='Enter an email address like name@example.com.';
- else if(dashAccountByEmail(value('email')))errors.email='An account already uses this email. Sign in instead.';
  if(!dashPhonePattern.test(value('phone')))errors.phone='Enter a mobile number like 0917 555 0148.';
  if(String(data.get('password')??'').length<8)errors.password='Use at least 8 characters.';
  if(organization){
   if(value('orgName').length<3)errors.orgName='Enter your organization’s name.';
-  else if(dashboardOrganizations.some(o=>o.name.toLowerCase()===value('orgName').toLowerCase()))errors.orgName='An organization with this name is already on AniBayan.';
   if(!dashBarangays.includes(value('barangay')))errors.barangay='Choose your barangay.';
   if(value('crops').length<3)errors.crops='Enter your main crops.';
   const members=Number(value('members'));
@@ -112,16 +101,18 @@ function authRegister(form:HTMLFormElement):void{
   if(!data.getAll('documents').length)errors.documents='Choose at least one document you can submit.';
  }
  if(!dashShowErrors(form,errors))return;
- const account:DashboardAccount={name:value('name'),email:value('email'),role:organization?'Representative':'Consumer',joined:dashToday,lastActive:dashToday,status:organization?'Pending':'Active',phone:value('phone'),password:String(data.get('password'))};
- if(organization){
-  account.organization=value('orgName');
-  dashboardOrganizations.push({name:account.organization,region:value('barangay')+', '+dashCityName,crop:value('crops'),image:'field-detail.jpg',listings:0,status:'Pending review',representative:account.name,applied:dashToday,members:Number(value('members')),documents:data.getAll('documents').map(String),phone:account.phone});
+ // The server checks the email and organization name aren't taken, then creates the account.
+ const r=await dashApi('register',organization
+  ?{type:'organization',name:value('name'),email:value('email'),phone:value('phone'),password:String(data.get('password')??''),orgName:value('orgName'),barangay:value('barangay'),crops:value('crops'),members:Number(value('members')),documents:data.getAll('documents').map(String)}
+  :{type:'buyer',name:value('name'),email:value('email'),phone:value('phone'),password:String(data.get('password')??'')});
+ if(!r.ok){
+  const fields=dashFieldErrors(r.data.errors);
+  if(Object.keys(fields).length)dashShowErrors(form,fields);
+  else dashShowErrors(form,{email:String(r.data.message||'The account couldn’t be created. Try again.')});
+  return;
  }
- dashboardAccounts.push(account);
- dashLog('register',account.email,organization?'Organization application · '+account.organization:'Buyer');
- dashSaveStore();
- if(!organization){dashSetSession(account.email);const next=authDestination(account);location.href=next==='consumer.html'?'consumer.html#shop':next;return;}
- authSubmitted=account;authView='submitted';authRender();
+ if(!organization){const next=authDestination('Consumer');location.href=next==='consumer.html'?'consumer.html#shop':next;return;}
+ authSubmitted={organization:String(r.data.organization),email:String(r.data.email)};authView='submitted';authRender();
  window.scrollTo(0,0);
 }
 document.addEventListener('click',event=>{
@@ -139,10 +130,10 @@ document.addEventListener('click',event=>{
   if(!form)return;
   (form.elements.namedItem('email') as HTMLInputElement).value=el.dataset.sample;
   (form.elements.namedItem('password') as HTMLInputElement).value=dashDemoPassword;
-  authSignIn(form);
+  void authSignIn(form);
   return;
  }
- if(el.hasAttribute('data-auth-sign-out')){dashClearSession();authRender();}
+ if(el.hasAttribute('data-auth-sign-out'))void dashApi('logout',{}).then(()=>dashFetchState()).then(()=>authRender());
 });
 document.addEventListener('input',event=>{
  const input=event.target as HTMLInputElement;
@@ -156,8 +147,9 @@ document.addEventListener('input',event=>{
 document.addEventListener('submit',event=>{
  const form=event.target as HTMLFormElement;
  event.preventDefault();
- if(form.id==='signin-form')authSignIn(form);
- else if(form.id==='register-form')authRegister(form);
+ if(form.id==='signin-form')void authSignIn(form);
+ else if(form.id==='register-form')void authRegister(form);
 });
 window.addEventListener('hashchange',()=>{authView=location.hash==='#register'?'register':'signin';authRender();});
-authRender();
+// Asking the server who is signed in also gives the page its anti-forgery cookie for signing in.
+void dashFetchState().then(()=>authRender());

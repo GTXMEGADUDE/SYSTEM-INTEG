@@ -65,7 +65,8 @@ return [
     |
     */
 
-    'timezone' => 'UTC',
+    // AniBayan serves Calapan City, so "today" (harvest dates, orders, the activity log) is Philippine time.
+    'timezone' => 'Asia/Manila',
 
     /*
     |--------------------------------------------------------------------------

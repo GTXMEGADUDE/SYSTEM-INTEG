@@ -4,136 +4,21 @@ const dashIsoDate = (date) => date.getFullYear() + '-' + String(date.getMonth() 
 const dashToday = dashIsoDate(dashTodayDate);
 const dashDaysAgo = (days) => { const date = new Date(dashTodayDate); date.setDate(date.getDate() - days); return dashIsoDate(date); };
 const dashDemoPassword = 'anibayan';
-// Orders: [number, buyer, organization, crop, image, quantity, total, days ago, status, payment]
-const dashboardOrders = [
-    [1048, 'Alex Reyes', 'Canubing Vegetable Growers', 'Vegetable basket', 'vegetable-cutout.png', '3 items', 485, 0, 'Processing', 'Paid'],
-    [1047, 'Maria Santos', 'Managpi Fruit Growers', 'Carabao mangoes', 'mango.jpg', '5 kg', 650, 0, 'Pending', 'Unpaid'],
-    [1046, 'Carlo Mendoza', 'Bucayao Rice Farmers', 'Dinorado rice', 'rice.jpg', '25 kg', 1450, 1, 'Confirmed', 'Paid'],
-    [1045, 'Alex Reyes', 'Managpi Fruit Growers', 'Carabao mangoes', 'mango.jpg', '2 kg', 260, 2, 'Completed', 'Paid'],
-    [1044, 'Isabel Cruz', 'Canubing Vegetable Growers', 'Fresh carrots', 'carrot.jpg', '4 kg', 280, 2, 'Completed', 'Paid'],
-    [1043, 'Alex Reyes', 'Bucayao Rice Farmers', 'Dinorado rice', 'rice.jpg', '10 kg', 580, 4, 'Completed', 'Paid'],
-    [1042, 'Daniel Tan', 'Canubing Vegetable Growers', 'Red onions', 'onion.jpg', '2 kg', 180, 5, 'Cancelled', 'Unpaid'],
-    [1041, 'Alex Reyes', 'Canubing Vegetable Growers', 'Fresh carrots', 'carrot.jpg', '2 kg', 140, 6, 'Pending', 'Unpaid'],
-    [1040, 'Maria Santos', 'Canubing Vegetable Growers', 'Vine-ripened tomatoes', 'tomatoes.jpg', '6 kg', 480, 6, 'Confirmed', 'Paid'],
-    [1039, 'Isabel Cruz', 'Canubing Vegetable Growers', 'Sweet potatoes', 'sweet-potatoes.jpg', '8 kg', 360, 7, 'Completed', 'Paid'],
-    [1038, 'Carlo Mendoza', 'Canubing Vegetable Growers', 'Red onions', 'onion.jpg', '5 kg', 450, 7, 'Completed', 'Paid'],
-    [1037, 'Daniel Tan', 'Bucayao Rice Farmers', 'Dinorado rice', 'rice.jpg', '15 kg', 870, 9, 'Completed', 'Paid'],
-    [1036, 'Maria Santos', 'Canubing Vegetable Growers', 'Fresh carrots', 'carrot.jpg', '5 kg', 350, 10, 'Completed', 'Paid'],
-    [1035, 'Isabel Cruz', 'Managpi Fruit Growers', 'Golden bananas', 'bananas.jpg', '4 kg', 220, 11, 'Completed', 'Paid'],
-    [1034, 'Alex Reyes', 'Canubing Vegetable Growers', 'Vine-ripened tomatoes', 'tomatoes.jpg', '3 kg', 240, 12, 'Completed', 'Paid'],
-    [1033, 'Carlo Mendoza', 'Bucayao Rice Farmers', 'Dinorado rice', 'rice.jpg', '20 kg', 1160, 13, 'Completed', 'Paid'],
-    [1032, 'Daniel Tan', 'Managpi Fruit Growers', 'Carabao mangoes', 'mango.jpg', '3 kg', 390, 14, 'Completed', 'Paid'],
-    [1031, 'Maria Santos', 'Canubing Vegetable Growers', 'Sweet potatoes', 'sweet-potatoes.jpg', '6 kg', 270, 15, 'Completed', 'Paid'],
-    [1030, 'Isabel Cruz', 'Bucayao Rice Farmers', 'Dinorado rice', 'rice.jpg', '10 kg', 580, 17, 'Completed', 'Paid'],
-    [1029, 'Alex Reyes', 'Canubing Vegetable Growers', 'Red onions', 'onion.jpg', '3 kg', 270, 18, 'Cancelled', 'Unpaid'],
-    [1028, 'Maria Santos', 'Managpi Fruit Growers', 'Carabao mangoes', 'mango.jpg', '4 kg', 520, 19, 'Completed', 'Paid'],
-    [1027, 'Daniel Tan', 'Canubing Vegetable Growers', 'Fresh carrots', 'carrot.jpg', '6 kg', 420, 21, 'Completed', 'Paid'],
-    [1026, 'Carlo Mendoza', 'Canubing Vegetable Growers', 'Vine-ripened tomatoes', 'tomatoes.jpg', '4 kg', 320, 23, 'Completed', 'Paid'],
-    [1025, 'Isabel Cruz', 'Bucayao Rice Farmers', 'Dinorado rice', 'rice.jpg', '25 kg', 1450, 24, 'Completed', 'Paid'],
-    [1024, 'Alex Reyes', 'Managpi Fruit Growers', 'Golden bananas', 'bananas.jpg', '3 kg', 165, 26, 'Completed', 'Paid'],
-    [1023, 'Maria Santos', 'Canubing Vegetable Growers', 'Red onions', 'onion.jpg', '4 kg', 360, 27, 'Completed', 'Paid'],
-    [1022, 'Daniel Tan', 'Bucayao Rice Farmers', 'Dinorado rice', 'rice.jpg', '10 kg', 580, 30, 'Completed', 'Paid'],
-    [1021, 'Isabel Cruz', 'Canubing Vegetable Growers', 'Sweet potatoes', 'sweet-potatoes.jpg', '10 kg', 450, 33, 'Completed', 'Paid'],
-    [1020, 'Carlo Mendoza', 'Managpi Fruit Growers', 'Carabao mangoes', 'mango.jpg', '5 kg', 650, 36, 'Completed', 'Paid'],
-].map(([n, customer, organization, crop, image, quantity, total, days, status, payment]) => ({ id: 'AB-2026-' + n, customer, organization, crop, image, quantity, total, date: dashDaysAgo(days), status, payment }));
-const dashboardCrops = [
-    { id: 'CROP-001', name: 'Carabao mangoes', organization: 'Managpi Fruit Growers', image: 'mango.jpg', price: 130, unit: 'kg', category: 'Fruits', stock: 180, status: 'Active', harvested: dashDaysAgo(3), shelfLife: 7 },
-    { id: 'CROP-002', name: 'Fresh carrots', organization: 'Canubing Vegetable Growers', image: 'carrot.jpg', price: 70, unit: 'kg', category: 'Vegetables', stock: 96, status: 'Active', harvested: dashDaysAgo(2), shelfLife: 21 },
-    { id: 'CROP-003', name: 'Dinorado rice', organization: 'Bucayao Rice Farmers', image: 'rice.jpg', price: 58, unit: 'kg', category: 'Rice & grains', stock: 850, status: 'Active', harvested: dashDaysAgo(19), shelfLife: 180 },
-    { id: 'CROP-004', name: 'Red onions', organization: 'Canubing Vegetable Growers', image: 'onion.jpg', price: 90, unit: 'kg', category: 'Vegetables', stock: 45, status: 'Active', harvested: dashDaysAgo(11), shelfLife: 30 },
-    { id: 'CROP-005', name: 'Purple eggplants', organization: 'Canubing Vegetable Growers', image: 'eggplant.jpg', price: 65, unit: 'kg', category: 'Vegetables', stock: 0, status: 'Unavailable', harvested: dashDaysAgo(9), shelfLife: 7 },
-    { id: 'CROP-006', name: 'Golden bananas', organization: 'Managpi Fruit Growers', image: 'bananas.jpg', price: 55, unit: 'kg', category: 'Fruits', stock: 74, status: 'Active', harvested: dashDaysAgo(4), shelfLife: 6 },
-    { id: 'CROP-007', name: 'Vine-ripened tomatoes', organization: 'Canubing Vegetable Growers', image: 'tomatoes.jpg', price: 80, unit: 'kg', category: 'Vegetables', stock: 132, status: 'Active', harvested: dashDaysAgo(1), shelfLife: 7 },
-    { id: 'CROP-008', name: 'Sweet potatoes', organization: 'Canubing Vegetable Growers', image: 'sweet-potatoes.jpg', price: 45, unit: 'kg', category: 'Vegetables', stock: 28, status: 'Active', harvested: dashDaysAgo(14), shelfLife: 28 },
-];
-const dashboardOrganizations = [
-    { name: 'Canubing Vegetable Growers', region: 'Canubing I, Calapan City', crop: 'Vegetables & root crops', image: 'grower.png', listings: 0, status: 'Active', representative: 'Ramon Dulnuan', applied: dashDaysAgo(39), members: 6, documents: ['CDA registration', 'Barangay endorsement', 'Representative ID'], approved: dashDaysAgo(34), phone: '0917 555 0110', description: 'Smallholder vegetable growers from Barangay Canubing and nearby barangays of Calapan City.' },
-    { name: 'Managpi Fruit Growers', region: 'Managpi, Calapan City', crop: 'Mangoes & fruits', image: 'mango.jpg', listings: 0, status: 'Active', representative: 'Carlo Mendoza', applied: dashDaysAgo(42), members: 14, documents: ['CDA registration', 'Barangay endorsement', 'Representative ID'], approved: dashDaysAgo(38), phone: '0918 555 0122', description: 'Mango and banana growers from Barangay Managpi, Calapan City.' },
-    { name: 'Bucayao Rice Farmers', region: 'Bucayao, Calapan City', crop: 'Rice & grains', image: 'rice-hero.png', listings: 0, status: 'Active', representative: 'Teodoro Pascual', applied: dashDaysAgo(46), members: 31, documents: ['CDA registration', 'Barangay endorsement', 'Representative ID'], approved: dashDaysAgo(43), phone: '0919 555 0133', description: 'Rice farming families from Barangay Bucayao, Calapan City.' },
-    { name: 'Sapul Harvest Collective', region: 'Sapul, Calapan City', crop: 'Vegetables & roots', image: 'soil-story.png', listings: 0, status: 'Pending review', representative: 'Joel Malabanan', applied: dashDaysAgo(2), members: 9, documents: ['CDA registration', 'Barangay endorsement'] },
-    { name: 'Comunal Coconut Farmers Association', region: 'Comunal, Calapan City', crop: 'Coconuts & root crops', image: 'seedlings-story.png', listings: 0, status: 'Pending review', representative: 'Edna Villareal', applied: dashDaysAgo(1), members: 22, documents: ['SEC registration', 'Barangay endorsement', 'Representative ID'] },
-    { name: 'Gulod Vegetable Growers', region: 'Gulod, Calapan City', crop: 'Leafy vegetables', image: 'field-detail.jpg', listings: 0, status: 'Declined', representative: 'Ben Soriano', applied: dashDaysAgo(15), members: 4, documents: ['Representative ID'] },
-];
-const dashboardAccounts = [
-    { name: 'Alex Reyes', email: 'alex@example.com', role: 'Consumer', joined: dashDaysAgo(44), lastActive: dashToday, status: 'Active', phone: '0917 555 0148', address: '12 J.P. Rizal Street, Barangay Lalud, Calapan City, Oriental Mindoro' },
-    { name: 'Maria Santos', email: 'maria@example.com', role: 'Consumer', joined: dashDaysAgo(42), lastActive: dashToday, status: 'Active', phone: '0927 555 0161', address: '45 Mabini Street, Barangay Camilmil, Calapan City, Oriental Mindoro' },
-    { name: 'Isabel Cruz', email: 'isabel@example.com', role: 'Consumer', joined: dashDaysAgo(40), lastActive: dashDaysAgo(1), status: 'Active', phone: '0939 555 0172', address: '8 Del Pilar Street, Barangay Suqui, Calapan City, Oriental Mindoro' },
-    { name: 'Daniel Tan', email: 'daniel@example.com', role: 'Consumer', joined: dashDaysAgo(35), lastActive: dashDaysAgo(5), status: 'Active', phone: '0945 555 0183', address: '23 Luna Street, Barangay Guinobatan, Calapan City, Oriental Mindoro' },
-    { name: 'Jessa Bautista', email: 'jessa@example.com', role: 'Consumer', joined: dashDaysAgo(27), lastActive: dashDaysAgo(25), status: 'Suspended', note: 'Suspended after repeated abusive messages to growers.' },
-    { name: 'Ramon Dulnuan', email: 'ramon@example.com', role: 'Representative', organization: 'Canubing Vegetable Growers', joined: dashDaysAgo(39), lastActive: dashToday, status: 'Active', phone: '0917 555 0110' },
-    { name: 'Carlo Mendoza', email: 'carlo@example.com', role: 'Representative', organization: 'Managpi Fruit Growers', joined: dashDaysAgo(42), lastActive: dashDaysAgo(1), status: 'Active', phone: '0918 555 0122' },
-    { name: 'Teodoro Pascual', email: 'teodoro@example.com', role: 'Representative', organization: 'Bucayao Rice Farmers', joined: dashDaysAgo(46), lastActive: dashDaysAgo(2), status: 'Active', phone: '0919 555 0133' },
-    { name: 'Joel Malabanan', email: 'joel@example.com', role: 'Representative', organization: 'Sapul Harvest Collective', joined: dashDaysAgo(2), lastActive: dashDaysAgo(2), status: 'Pending' },
-    { name: 'Edna Villareal', email: 'edna@example.com', role: 'Representative', organization: 'Comunal Coconut Farmers Association', joined: dashDaysAgo(1), lastActive: dashDaysAgo(1), status: 'Pending' },
-    { name: 'AniBayan Admin', email: 'admin@example.com', role: 'Administrator', joined: dashDaysAgo(47), lastActive: dashToday, status: 'Active' },
-];
-const dashboardFeedback = [
-    { id: 'FB-118', organization: 'Managpi Fruit Growers', customer: 'Alex Reyes', rating: 5, comment: 'Sweet, ripe mangoes and very well packed.', date: dashDaysAgo(1), order: 'AB-2026-1045' },
-    { id: 'FB-117', organization: 'Bucayao Rice Farmers', customer: 'Daniel Tan', rating: 5, comment: 'Clean grains, exactly as described.', date: dashDaysAgo(3), order: 'AB-2026-1037' },
-    { id: 'FB-116', organization: 'Canubing Vegetable Growers', customer: 'Isabel Cruz', rating: 5, comment: 'Carrots were crisp and arrived quickly.', date: dashDaysAgo(1), order: 'AB-2026-1044' },
-    { id: 'FB-115', organization: 'Canubing Vegetable Growers', customer: 'Carlo Mendoza', rating: 4, comment: 'Good onions; one bag was slightly bruised.', date: dashDaysAgo(6), order: 'AB-2026-1038' },
-    { id: 'FB-114', organization: 'Canubing Vegetable Growers', customer: 'Isabel Cruz', rating: 5, comment: 'Sweet potatoes were fresh and well sorted.', date: dashDaysAgo(6), order: 'AB-2026-1039' },
-    { id: 'FB-113', organization: 'Bucayao Rice Farmers', customer: 'Isabel Cruz', rating: 4, comment: 'Good rice. Delivery took one day longer than expected.', date: dashDaysAgo(15), order: 'AB-2026-1030' },
-    { id: 'FB-112', organization: 'Managpi Fruit Growers', customer: 'Daniel Tan', rating: 3, comment: 'Tasty, but a few mangoes were overripe.', date: dashDaysAgo(11), order: 'AB-2026-1032' },
-    { id: 'FB-111', organization: 'Canubing Vegetable Growers', customer: 'Maria Santos', rating: 5, comment: 'Carrots were fresh and the order was well packed.', date: dashDaysAgo(8), order: 'AB-2026-1036' },
-    { id: 'FB-110', organization: 'Managpi Fruit Growers', customer: 'Isabel Cruz', rating: 4, comment: 'Lovely fruit; the order was confirmed late.', date: dashDaysAgo(9), order: 'AB-2026-1035' },
-    { id: 'FB-109', organization: 'Bucayao Rice Farmers', customer: 'Carlo Mendoza', rating: 5, comment: 'Will order again.', date: dashDaysAgo(11), order: 'AB-2026-1033' },
-    { id: 'FB-108', organization: 'Canubing Vegetable Growers', customer: 'Daniel Tan', rating: 4, comment: 'Fresh vegetables, fair prices.', date: dashDaysAgo(19), order: 'AB-2026-1027' },
-    { id: 'FB-107', organization: 'Managpi Fruit Growers', customer: 'Maria Santos', rating: 2, comment: 'Received fewer kilos than ordered.', date: dashDaysAgo(17), order: 'AB-2026-1028' },
-];
-const dashboardReports = [
-    { id: 'RP-031', organization: 'Managpi Fruit Growers', customer: 'Maria Santos', reason: 'Short or wrong quantity', details: 'The order weighed 3.4 kg instead of the 4 kg I paid for.', date: dashDaysAgo(17), status: 'Upheld', order: 'AB-2026-1028', decided: dashDaysAgo(16) },
-    { id: 'RP-032', organization: 'Managpi Fruit Growers', customer: 'Daniel Tan', reason: 'Poor quality or spoiled', details: 'Several mangoes were overripe and bruised on arrival.', date: dashDaysAgo(11), status: 'Open', order: 'AB-2026-1032' },
-    { id: 'RP-033', organization: 'Canubing Vegetable Growers', customer: 'Carlo Mendoza', reason: 'Late or no fulfillment', details: 'The organization took more than two days to confirm my order.', date: dashDaysAgo(6), status: 'Dismissed', order: 'AB-2026-1038', decided: dashDaysAgo(5) },
-];
+// The data itself comes from AniBayan's server (see shared.ts); these lists hold the signed-in person's copy.
+// The starting data is in database/seeders/DatabaseSeeder.php.
+const dashboardOrders = [];
+const dashboardCrops = [];
+const dashboardOrganizations = [];
+const dashboardAccounts = [];
+const dashboardFeedback = [];
+const dashboardReports = [];
 const dashboardWarnings = [];
-// Activity log: [minutes ago, actor, type, detail, target]
-const dashMinutesAgo = (minutes) => new Date(dashTodayDate.getTime() - minutes * 60000).toISOString();
-const dashboardActivity = [
-    [23, 'admin@anibayan.ph', 'signin-failed', 'No account with this email'],
-    [24, 'admin@anibayan.ph', 'signin-failed', 'No account with this email'],
-    [24, 'admin@anibayan.ph', 'signin-failed', 'No account with this email'],
-    [26, 'admin@anibayan.ph', 'signin-failed', 'No account with this email'],
-    [40, 'jessa@example.com', 'signin-blocked', 'Account suspended'],
-    [41, 'jessa@example.com', 'signin-blocked', 'Account suspended'],
-    [43, 'jessa@example.com', 'signin-blocked', 'Account suspended'],
-    [50, 'ramon@example.com', 'order-updated', '#1048 → Processing'],
-    [55, 'ramon@example.com', 'signin', ''],
-    [67, 'alex@example.com', 'order-paid', '#1048 · ₱485'],
-    [68, 'alex@example.com', 'order-placed', '#1048 · ₱485 · Canubing Vegetable Growers'],
-    [72, 'alex@example.com', 'signin', ''],
-    [170, 'maria@example.com', 'order-placed', '#1047 · ₱650 · Managpi Fruit Growers'],
-    [175, 'maria@example.com', 'password-changed', ''],
-    [178, 'maria@example.com', 'signin', ''],
-    [180, 'maria@example.com', 'signin-failed', 'Wrong password'],
-    [182, 'maria@example.com', 'signin-failed', 'Wrong password'],
-    [1500, 'edna@example.com', 'register', 'Organization application · Comunal Coconut Farmers Association'],
-    [2910, 'joel@example.com', 'register', 'Organization application · Sapul Harvest Collective'],
-    [3080, 'ramon@example.com', 'price-changed', 'Fresh carrots · ₱65 → ₱70 /kg'],
-    [7395, 'admin@example.com', 'report-dismissed', 'RP-033 · Canubing Vegetable Growers'],
-    [7500, 'daniel@example.com', 'order-cancelled', '#1042'],
-    [16110, 'daniel@example.com', 'report-filed', 'RP-032 · Managpi Fruit Growers'],
-    [18990, 'admin@example.com', 'application-declined', 'Gulod Vegetable Growers'],
-    [23275, 'admin@example.com', 'report-upheld', 'RP-031 · Managpi Fruit Growers'],
-    [24610, 'maria@example.com', 'report-filed', 'RP-031 · Managpi Fruit Growers'],
-    [36260, 'admin@example.com', 'account-suspended', 'Jessa Bautista', 'jessa@example.com'],
-].map(([minutes, actor, type, detail, target]) => target ? { time: dashMinutesAgo(minutes), actor, type, detail, target } : { time: dashMinutesAgo(minutes), actor, type, detail });
-const dashboardMembers = [
-    { id: 'MB-001', organization: 'Canubing Vegetable Growers', name: 'Ramon Dulnuan', place: 'Canubing I', crops: 'Carrots, cabbage', area: 1.2, joined: '2021', status: 'Active' },
-    { id: 'MB-002', organization: 'Canubing Vegetable Growers', name: 'Josefa Baniwas', place: 'Canubing II', crops: 'Potatoes, carrots', area: 0.8, joined: '2021', status: 'Active' },
-    { id: 'MB-003', organization: 'Canubing Vegetable Growers', name: 'Marlon Pocding', place: 'Bayanan II', crops: 'Onions, tomatoes', area: 1.5, joined: '2022', status: 'Active' },
-    { id: 'MB-004', organization: 'Canubing Vegetable Growers', name: 'Teresita Lumbag', place: 'Parang', crops: 'Sweet potatoes', area: 0.6, joined: '2023', status: 'Active' },
-    { id: 'MB-005', organization: 'Canubing Vegetable Growers', name: 'Norma Calatan', place: 'Masipit', crops: 'Lettuce, carrots', area: 0.7, joined: '2024', status: 'Active' },
-    { id: 'MB-006', organization: 'Canubing Vegetable Growers', name: 'Alfredo Sagayo', place: 'Lumangbayan', crops: 'Eggplants, tomatoes', area: 0.9, joined: '2026', status: 'Pending' },
-    { id: 'MB-007', organization: 'Managpi Fruit Growers', name: 'Lorna Gallego', place: 'Managpi', crops: 'Carabao mangoes', area: 2.1, joined: '2020', status: 'Active' },
-    { id: 'MB-008', organization: 'Managpi Fruit Growers', name: 'Rodel Gabasa', place: 'Tawiran', crops: 'Mangoes, bananas', area: 1.4, joined: '2022', status: 'Active' },
-    { id: 'MB-009', organization: 'Bucayao Rice Farmers', name: 'Felipe Dizon', place: 'Bucayao', crops: 'Rice', area: 3.5, joined: '2019', status: 'Active' },
-    { id: 'MB-010', organization: 'Bucayao Rice Farmers', name: 'Celia Manalo', place: 'Baruyan', crops: 'Rice, corn', area: 2.8, joined: '2021', status: 'Active' },
-];
-// Saved harvests and shopping carts, keyed by buyer email.
-const dashboardSaved = { 'alex@example.com': ['CROP-001', 'CROP-002', 'CROP-003'] };
+const dashboardActivity = [];
+const dashboardMembers = [];
+// Saved harvests and shopping carts, keyed by buyer email (only the signed-in buyer's).
+const dashboardSaved = {};
 const dashboardCarts = {};
-// Results of the admin site-health checks, oldest first; the newest 30 runs are kept.
+// Results of the admin site-health checks, oldest first; the server keeps the newest 30 runs.
 const dashboardHealthLog = [];
 // AniBayan serves Calapan City, Oriental Mindoro only. Organizations and delivery addresses pick one of its
 // 62 barangays (names from Philippines JSON Maps, PSGC 2026-3q). An organization's region is "<barangay>, Calapan City".
@@ -149,7 +34,7 @@ function dashSplitAddress(address) {
 }
 const dashBarangayOptions = (current) => '<option value="">Choose a barangay…</option>' + dashBarangays.map(b => '<option' + (b === current ? ' selected' : '') + '>' + b + '</option>').join('');
 // Shared by every AniBayan page (homepage, sign-in and the three dashboards): text helpers, form helpers,
-// and the browser-stored copy of the data plus the signed-in session.
+// and talking to AniBayan's server, which holds the data.
 const de = (value) => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const dashPlural = (count, word) => count + ' ' + word + (count === 1 ? '' : 's');
 const dashPhonePattern = /^(\+63|0)9\d{2}[\s-]?\d{3}[\s-]?\d{4}$/;
@@ -188,113 +73,101 @@ function dashClearFieldError(input) {
         form.querySelectorAll('[name="' + input.name + '"]').forEach(field => field.removeAttribute('aria-invalid'));
     }
 }
-/* ---------- Browser storage: one copy of the data shared by all pages ---------- */
-const dashStoreKey = 'anibayan-data-v1';
-const dashSessionKey = 'anibayan-session-v1';
-let dashLastSaved = '';
-function dashReplaceList(target, source) { if (Array.isArray(source))
-    target.splice(0, target.length, ...source); }
+let dashSessionMe = '';
+// Set when the server signed this person out because the account is no longer active ("suspended", "terminated").
+let dashBlockedStatus = '';
+// True when the server couldn't be reached when the page loaded.
+let dashOffline = false;
+let dashPrefs = {};
+function dashReplaceList(target, source) { target.splice(0, target.length, ...(Array.isArray(source) ? source : [])); }
 function dashReplaceRecord(target, source) {
-    if (!source || typeof source !== 'object')
-        return;
     Object.keys(target).forEach(key => delete target[key]);
-    Object.assign(target, source);
+    if (source && typeof source === 'object')
+        Object.assign(target, source);
 }
-function dashSnapshot() {
-    return JSON.stringify({ orders: dashboardOrders, crops: dashboardCrops, organizations: dashboardOrganizations, accounts: dashboardAccounts, feedback: dashboardFeedback, reports: dashboardReports, warnings: dashboardWarnings, activity: dashboardActivity, members: dashboardMembers, saved: dashboardSaved, carts: dashboardCarts, healthLog: dashboardHealthLog });
+function dashApplyState(s) {
+    dashReplaceList(dashboardOrders, s.orders);
+    dashReplaceList(dashboardCrops, s.crops);
+    dashReplaceList(dashboardOrganizations, s.organizations);
+    dashReplaceList(dashboardAccounts, (s.accounts || []).map(a => ({ ...a, email: a.email || '', joined: a.joined || '', lastActive: a.lastActive || '' })));
+    dashReplaceList(dashboardFeedback, s.feedback);
+    dashReplaceList(dashboardReports, s.reports);
+    dashReplaceList(dashboardWarnings, s.warnings);
+    dashReplaceList(dashboardActivity, s.activity);
+    dashReplaceList(dashboardMembers, s.members);
+    dashReplaceList(dashboardHealthLog, s.healthLog);
+    dashReplaceRecord(dashboardSaved, s.saved);
+    dashReplaceRecord(dashboardCarts, s.carts);
+    dashSessionMe = s.me || '';
+    dashBlockedStatus = s.blocked || '';
+    dashPrefs = s.preferences || {};
 }
-// Replaces the starting data with the copy saved by any AniBayan page, if there is one.
+// The dashboards' loader (in their HTML) fetches the data before the script runs; this applies it.
 function dashLoadStore() {
-    let raw = null;
+    const state = window.anibayanState;
+    if (state && Array.isArray(state.orders))
+        dashApplyState(state);
+    else
+        dashOffline = true;
+}
+function dashCookie(name) { const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)')); return match ? decodeURIComponent(match[1]) : ''; }
+// GET when there is no body, otherwise a POST with the anti-forgery token Laravel set as the XSRF-TOKEN cookie.
+async function dashApi(path, body, retried = false) {
+    const headers = { Accept: 'application/json' };
+    if (body !== undefined) {
+        headers['Content-Type'] = 'application/json';
+        headers['X-XSRF-TOKEN'] = dashCookie('XSRF-TOKEN');
+    }
     try {
-        raw = localStorage.getItem(dashStoreKey);
+        const response = await fetch('../api/' + path, { method: body === undefined ? 'GET' : 'POST', headers, credentials: 'same-origin', cache: 'no-store', body: body === undefined ? undefined : JSON.stringify(body) });
+        // 419: the anti-forgery token expired; fetching the data renews it.
+        if (response.status === 419 && !retried) {
+            await dashApi('state');
+            return dashApi(path, body, true);
+        }
+        const data = await response.json().catch(() => ({}));
+        return { ok: response.ok, status: response.status, data };
     }
     catch {
-        return;
+        return { ok: false, status: 0, data: { message: 'AniBayan’s server isn’t answering. Check that it’s running, then try again.' } };
     }
-    if (!raw)
-        return;
-    try {
-        const data = JSON.parse(raw);
-        dashReplaceList(dashboardOrders, data.orders);
-        dashReplaceList(dashboardCrops, data.crops);
-        dashReplaceList(dashboardOrganizations, data.organizations);
-        dashReplaceList(dashboardAccounts, data.accounts);
-        dashReplaceList(dashboardFeedback, data.feedback);
-        dashReplaceList(dashboardReports, data.reports);
-        dashReplaceList(dashboardWarnings, data.warnings);
-        dashReplaceList(dashboardActivity, data.activity);
-        dashReplaceList(dashboardMembers, data.members);
-        dashReplaceList(dashboardHealthLog, data.healthLog);
-        dashReplaceRecord(dashboardSaved, data.saved);
-        dashReplaceRecord(dashboardCarts, data.carts);
-        dashLastSaved = raw;
-    }
-    catch { /* unreadable copy: keep the starting data */ }
 }
-// Saves only when something changed, so pages listening for storage events don't echo each other.
-// Returns false when the browser refused to store the data (for example, storage is full).
-function dashSaveStore() {
-    const json = dashSnapshot();
-    if (json === dashLastSaved)
+async function dashFetchState() {
+    const r = await dashApi('state');
+    if (r.ok && Array.isArray(r.data.orders)) {
+        dashOffline = false;
+        dashApplyState(r.data);
         return true;
-    try {
-        localStorage.setItem(dashStoreKey, json);
     }
-    catch {
-        return false;
-    }
-    dashLastSaved = json;
-    return true;
+    dashOffline = true;
+    return false;
 }
-// Adds one event to the administrators' activity log, newest first. The caller saves.
-function dashLog(type, actor, detail = '', target = '') {
-    dashboardActivity.unshift(target ? { time: new Date().toISOString(), actor, type, detail, target } : { time: new Date().toISOString(), actor, type, detail });
-    if (dashboardActivity.length > 1000)
-        dashboardActivity.length = 1000;
+const dashSessionEmail = () => dashSessionMe;
+// Laravel's field errors ({field:["message"]}) as one message per field, for dashShowErrors.
+function dashFieldErrors(errors) {
+    const out = {};
+    if (errors && typeof errors === 'object')
+        Object.entries(errors).forEach(([key, value]) => { out[key.replace(/\.\d+$/, '')] = Array.isArray(value) ? String(value[0]) : String(value); });
+    return out;
 }
-function dashResetStore() { try {
-    localStorage.removeItem(dashStoreKey);
-    localStorage.removeItem(dashSessionKey);
-}
-catch { /* nothing stored */ } }
-function dashSessionEmail() { try {
-    return localStorage.getItem(dashSessionKey) || '';
-}
-catch {
-    return '';
-} }
-function dashSetSession(email) { try {
-    localStorage.setItem(dashSessionKey, email);
-}
-catch { /* the session lasts for this page only */ } }
-function dashClearSession() { try {
-    localStorage.removeItem(dashSessionKey);
-}
-catch { /* nothing stored */ } }
-const dashAccountByEmail = (email) => dashboardAccounts.find(a => a.email.toLowerCase() === email.trim().toLowerCase());
-const dashHomeFor = (account) => account.role === 'Administrator' ? 'admin.html' : account.role === 'Representative' ? 'organization.html' : 'consumer.html';
+// Public profiles carry no email, so an empty email never matches.
+const dashAccountByEmail = (email) => email.trim() ? dashboardAccounts.find(a => a.email.toLowerCase() === email.trim().toLowerCase()) : undefined;
+const dashHomeForRole = (role) => role === 'Administrator' ? 'admin.html' : role === 'Representative' ? 'organization.html' : 'consumer.html';
+const dashHomeFor = (account) => dashHomeForRole(account.role);
 const dashRoleAttr = document.body.dataset.dashboard;
 const dashboardRole = dashRoleAttr === 'admin' || dashRoleAttr === 'organization' ? dashRoleAttr : 'consumer';
 const isAdminDashboard = dashboardRole === 'admin';
 const isOrgDashboard = dashboardRole === 'organization';
 const isConsumerDashboard = dashboardRole === 'consumer';
 dashLoadStore();
-/* ---------- Display preferences (remembered in this browser) ---------- */
-const dashPrefsKey = 'anibayan-preferences-v1';
+/* ---------- Display preferences (saved with the signed-in account) ---------- */
 function dashApplyPreferences() {
-    try {
-        const prefs = JSON.parse(localStorage.getItem(dashPrefsKey) || '{}');
-        document.body.classList.toggle('compact-density', !!prefs.compact);
-        document.body.classList.toggle('contrast-mode', !!prefs.contrast);
-    }
-    catch { /* no saved preferences */ }
+    document.body.classList.toggle('compact-density', !!dashPrefs.compact);
+    document.body.classList.toggle('contrast-mode', !!dashPrefs.contrast);
 }
 function dashSavePreferences() {
-    try {
-        localStorage.setItem(dashPrefsKey, JSON.stringify({ compact: document.body.classList.contains('compact-density'), contrast: document.body.classList.contains('contrast-mode') }));
-    }
-    catch { /* preferences last for this page only */ }
+    if (dashSessionEmail())
+        void dashDo('preferences', { compact: document.body.classList.contains('compact-density'), contrast: document.body.classList.contains('contrast-mode') });
 }
 dashApplyPreferences();
 /* ---------- Who is signed in ---------- */
@@ -370,8 +243,44 @@ const dtime = (iso) => new Date(iso).toLocaleString('en-PH', { month: 'short', d
 const ds = (status) => '<span class="status ' + status.toLowerCase().replace(/ /g, '-') + '">' + de(status) + '</span>';
 const dashOrderNo = (id) => id.replace('AB-2026-', '#');
 const dashInitials = (name) => name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase();
-// Stock photos live in assets/; uploaded photos are stored as data URLs.
-const dashImg = (src) => /^(data:|blob:|https?:)/.test(src) ? src : 'assets/' + src;
+// Stock photos live in assets/; uploaded photos are saved by the server under uploads/.
+const dashImg = (src) => /^(data:|blob:|https?:|uploads\/)/.test(src) ? src : 'assets/' + src;
+/* ---------- Changing data: every change goes to the server ---------- */
+const dashInFlight = new Set();
+// Sends one action to the server, which checks it, saves it and answers with this person's fresh data; the page
+// then redraws. Returns the action's result, or null when it didn't go through (the reason is shown: under the
+// form's fields when a form is given, otherwise as a toast). An action already on its way isn't sent again, so a
+// double click can't repeat it.
+async function dashDo(action, payload = {}, form) {
+    if (dashInFlight.has(action))
+        return null;
+    dashInFlight.add(action);
+    document.body.classList.add('is-saving');
+    const r = await dashApi('actions/' + action, payload);
+    dashInFlight.delete(action);
+    if (!dashInFlight.size)
+        document.body.classList.remove('is-saving');
+    if (r.data.state)
+        dashApplyState(r.data.state);
+    if (r.status === 401) {
+        location.href = 'login.html?notice=signin';
+        return null;
+    }
+    if (r.data.state)
+        dashRender();
+    if (!r.ok) {
+        const errors = dashFieldErrors(r.data.errors);
+        const shown = form && Object.keys(errors).some(key => form.querySelector('[data-error-for="' + key + '"]'));
+        if (form && shown)
+            dashShowErrors(form, errors);
+        else
+            dashToast(String(r.data.message || 'That didn’t go through. Try again.'));
+        return null;
+    }
+    if (!r.data.state)
+        dashRender();
+    return (r.data.result || {});
+}
 /* ---------- Harvest date & shelf life ---------- */
 const dashDayNumber = (date) => Math.round(new Date(date + 'T12:00:00').getTime() / 864e5);
 const dashAge = (date) => dashDayNumber(dashToday) - dashDayNumber(date);
@@ -507,10 +416,10 @@ function dashOrgCard(o, heading, actions) {
 }
 function dashUserCard(a, heading, actions, showCity) {
     const p = dashPrivacy(a);
-    const city = showCity ? dashCity(a.address) : '';
-    const line = (a.role === 'Consumer' ? 'Buyer' : 'Representative · ' + dashOrgLink(a.organization || '')) + ' · Joined ' + dmonth(a.joined) + (city ? ' · ' + de(city) : '');
+    const city = showCity ? a.city || dashCity(a.address) : '';
+    const line = (a.role === 'Consumer' ? 'Buyer' : 'Representative · ' + dashOrgLink(a.organization || '')) + (a.joined ? ' · Joined ' + dmonth(a.joined) : '') + (city ? ' · ' + de(city) : '');
     const badges = (a.role === 'Consumer' && !p.profile ? '<span class="status private">' + di('lock') + 'Private</span>' : '') + (a.status !== 'Active' && isAdminDashboard ? ds(a.status) : '');
-    return dashProfileCard({ look: a, target: 'user:' + a.email, name: a.name, kind: dashLookKind(a.role), fallback: dashUserBanner(a.name), line, badges, actions, about: '', heading });
+    return dashProfileCard({ look: a, target: 'user:' + (a.email || ''), name: a.name, kind: dashLookKind(a.role), fallback: dashUserBanner(a.name), line, badges, actions, about: '', heading });
 }
 const dashProfileMissing = () => '<section class="panel">' + dashEmpty('This profile isn’t available.', '') + '<div class="empty-action"><button class="control" data-go="' + dashRole.nav[0][0] + '">' + di('arrow') + 'Back</button></div></section>';
 function dashReviewRow(f, by) {
@@ -527,7 +436,7 @@ function dashOrgProfileView(slug) {
     const r = dashRatingOf(o.name);
     const crops = dashboardCrops.filter(c => c.organization === o.name && dashIsBuyable(c));
     const members = dashboardMembers.filter(m => m.organization === o.name).length || o.members;
-    const completed = dashboardOrders.filter(x => x.organization === o.name && x.status === 'Completed').length;
+    const completed = o.completedOrders ?? 0;
     const mine = dashRoleOrders().filter(x => x.organization === o.name);
     const toRate = isConsumerDashboard ? mine.find(x => x.status === 'Completed' && !dashRated(x.id)) : undefined;
     const toReport = isConsumerDashboard ? mine.find(x => !dashMyReport(x.id)) : undefined;
@@ -544,20 +453,20 @@ function dashUserProfileView(slug) {
     const a = dashboardAccounts.find(x => dashSlug(x.name) === slug && x.role !== 'Administrator');
     if (!a)
         return dashProfileMissing();
-    const own = !!dashMeEmail && a.email.toLowerCase() === dashMeEmail.toLowerCase();
+    const own = !!dashMeEmail && !!a.email && a.email.toLowerCase() === dashMeEmail.toLowerCase();
     const p = dashPrivacy(a);
     // The buyer and administrators see everything; others see what the buyer's privacy settings allow.
     const shows = (key) => a.role !== 'Consumer' || own || isAdminDashboard || (p.profile && p[key]);
-    const actions = own ? '<button class="control" data-go="settings">' + di('settings') + 'Edit profile</button>' : isAdminDashboard ? '<button class="control" data-account="' + de(a.email) + '">' + di('shield') + 'Manage account</button>' : '';
+    const actions = own ? '<button class="control" data-go="settings">' + di('settings') + 'Edit profile</button>' : isAdminDashboard ? '<button class="control" data-account="' + de(a.email || '') + '">' + di('shield') + 'Manage account</button>' : '';
     const card = dashUserCard(a, 'h1', actions, shows('city'));
     if (a.role !== 'Consumer')
         return card;
     if (!shows('profile'))
         return card + '<section class="panel private-panel">' + di('lock') + '<h2>Private profile</h2></section>';
-    const orders = dashboardOrders.filter(o => o.customer === a.name);
+    // The server works out a buyer's completed orders and growers, since other people's orders aren't sent here.
     const reviews = dashboardFeedback.filter(f => f.customer === a.name).sort((x, y) => y.date.localeCompare(x.date));
-    const growers = [...new Set(orders.filter(o => o.status !== 'Cancelled').map(o => o.organization))].map(name => dashboardOrganizations.find(o => o.name === name)).filter((o) => !!o && dashOrgVisible(o));
-    const metrics = '<div class="metric-grid three">' + dashMetric('Orders completed', String(orders.filter(o => o.status === 'Completed').length), 'check', '') + (shows('reviews') ? dashMetric('Reviews', String(reviews.length), 'star', '') : '') + (shows('growers') ? dashMetric('Growers', String(growers.length), 'leaf', '') : '') + '</div>';
+    const growers = (a.growers || []).map(name => dashboardOrganizations.find(o => o.name === name)).filter((o) => !!o && dashOrgVisible(o));
+    const metrics = '<div class="metric-grid three">' + dashMetric('Orders completed', String(a.completedOrders ?? 0), 'check', '') + (shows('reviews') ? dashMetric('Reviews', String(reviews.length), 'star', '') : '') + (shows('growers') ? dashMetric('Growers', String(growers.length), 'leaf', '') : '') + '</div>';
     const reviewPanel = shows('reviews') ? '<section class="panel">' + dashPanelHead('Reviews', '', '<span class="filter-summary">' + dashPlural(reviews.length, 'review') + '</span>') + '<div class="feedback-list">' + (reviews.length ? reviews.map(f => dashReviewRow(f, 'organization')).join('') : dashEmpty('No reviews yet.', '')) + '</div></section>' : '';
     const growerPanel = shows('growers') ? '<section class="panel">' + dashPanelHead('Growers', '') + '<div class="grower-list">' + (growers.length ? growers.map(o => '<a class="grower-chip" href="#org=' + dashSlug(o.name) + '" data-profile-link>' + dashAvatar(o, o.name, 'organization') + '<span><strong>' + de(o.name) + '</strong><small>' + de(o.region) + '</small></span></a>').join('') : dashEmpty('No growers yet.', '')) + '</div></section>' : '';
     return card + metrics + (reviewPanel && growerPanel ? '<div class="split">' + reviewPanel + growerPanel + '</div>' : reviewPanel + growerPanel);
@@ -587,19 +496,8 @@ async function dashUploadLook(input) {
         dashToast('This picture couldn’t be read. Try another one.');
         return;
     }
-    const before = { avatar: look.avatar, banner: look.banner, bannerX: look.bannerX, bannerY: look.bannerY };
-    if (kind === 'avatar')
-        look.avatar = photo;
-    else
-        Object.assign(look, { banner: photo, bannerX: 50, bannerY: 50 });
-    // Unset fields go back to undefined, which the saved copy leaves out.
-    if (!dashSaveStore()) {
-        Object.assign(look, before);
-        dashToast('This browser has no room left for that picture. Try a smaller one.');
+    if (!await dashDo('look.upload', { target, kind, photo }))
         return;
-    }
-    dashLog('profile-updated', dashMeEmail, kind === 'avatar' ? 'Profile picture' : 'Profile banner');
-    dashRender();
     if (kind === 'banner')
         void dashStartReposition(target);
     else
@@ -654,17 +552,12 @@ function dashMoveBanner(dx, dy, from) {
 function dashFinishReposition(save) {
     const r = dashRepositioning;
     dashRepositioning = null;
-    if (r && save) {
-        const look = dashLookOf(r.target);
-        if (look && dashCanEdit(r.target)) {
-            look.bannerX = r.x;
-            look.bannerY = r.y;
-            dashLog('profile-updated', dashMeEmail, 'Banner position');
-        }
+    if (!r || !save || !dashCanEdit(r.target)) {
+        dashRender();
+        return;
     }
-    dashRender();
-    if (r && save)
-        dashToast('Banner position saved.');
+    void dashDo('look.position', { target: r.target, x: r.x, y: r.y }).then(done => { if (done)
+        dashToast('Banner position saved.'); });
 }
 /* ---------- The signed-in buyer's saved harvests and cart ---------- */
 const dashSavedList = () => dashMeEmail ? dashboardSaved[dashMeEmail] || (dashboardSaved[dashMeEmail] = []) : [];
@@ -731,17 +624,7 @@ const dashHealthChecks = [
     ['Web application', 'Homepage and dashboards', () => dashTimedFetch('index.html')],
     ['Application code', 'Dashboard and sign-in scripts', () => dashTimedFetch('js/dashboards.js')],
     ['File storage', 'Product and organization photos', () => dashTimedFetch('assets/carrot.jpg')],
-    ['Data store', 'Accounts, listings and orders', async () => {
-            const start = performance.now();
-            const key = 'anibayan-health-probe';
-            const value = String(Date.now());
-            localStorage.setItem(key, value);
-            const read = localStorage.getItem(key);
-            localStorage.removeItem(key);
-            if (read !== value)
-                throw new Error('Saved data could not be read back.');
-            return performance.now() - start;
-        }],
+    ['Database', 'Accounts, listings and orders (MySQL)', () => dashTimedFetch('../api/health/database')],
 ];
 // CPU, memory and storage of the machine serving AniBayan, read by the Laravel app (routes/web.php).
 async function dashReadHardware() {
@@ -775,11 +658,10 @@ async function dashRunHealthChecks() {
     catch (error) {
         hardwareError = error instanceof Error ? error.message : String(error);
     }
-    dashboardHealthLog.push({ time: new Date().toISOString(), results, hardware, hardwareError });
-    if (dashboardHealthLog.length > 30)
-        dashboardHealthLog.splice(0, dashboardHealthLog.length - 30);
     dashChecking = false;
-    dashRender();
+    // The server keeps the history (the newest 30 runs) and sends it back with the fresh data.
+    if (!await dashDo('health.record', { results, hardware: hardware ?? null, hardwareError: hardwareError ?? null }))
+        dashRender();
 }
 function dashHealthSummary() {
     const log = dashboardHealthLog;
@@ -829,23 +711,16 @@ const dashRoles = {
 const dashRole = dashRoles[dashboardRole];
 // Organization order workflow: current status -> [next status, action label].
 const dashNextStep = { Pending: ['Confirmed', 'Confirm order'], Confirmed: ['Processing', 'Start preparing'], Processing: ['Completed', 'Mark completed'] };
-// Cancelling returns checked-out items to stock; cash-on-delivery orders count as paid once completed.
-function dashSetOrderStatus(order, status) {
-    if (status === 'Cancelled' && order.status !== 'Cancelled')
-        (order.items || []).forEach(item => { const crop = dashboardCrops.find(c => c.id === item.crop); if (crop)
-            crop.stock += item.quantity; });
-    order.status = status;
-    if (status === 'Completed' && order.method === 'Cash on delivery')
-        order.payment = 'Paid';
-}
 const dashOnline = (order) => !!order.method && order.method !== 'Cash on delivery';
 // [title, message] when the signed-in account can no longer use this page, otherwise [].
 function dashBlocked() {
+    if (dashOffline)
+        return ['AniBayan’s server isn’t answering', 'Start the server (php artisan serve) and its database, then reload this page.'];
     const me = dashMe();
     if (!me)
         return [];
     if (me.status === 'Suspended')
-        return ['This account is suspended', 'An AniBayan administrator suspended ' + me.email + '. Contact AniBayan support if you think this is a mistake.'];
+        return ['This account is suspended', 'An AniBayan administrator suspended ' + (me.email || 'this account') + '. Contact AniBayan support if you think this is a mistake.'];
     if (me.status === 'Terminated' || (isOrgDashboard && dashMyOrg()?.status === 'Terminated'))
         return ['Your organization was terminated', (me.organization || 'Your organization') + ' was removed from AniBayan after repeated warnings. Contact AniBayan support if you think this is a mistake.'];
     if (isOrgDashboard) {
@@ -1345,28 +1220,16 @@ function dashRefreshShop() {
     results.innerHTML = dashShopGrid(crops);
     document.getElementById('shop-summary').textContent = dashShopSummary(crops.length);
 }
-function dashAddToCart(id, quantity) {
+// The server checks the stock and how much is already in the cart, and adds what's left.
+async function dashAddToCart(id, quantity) {
     if (!dashRequireBuyer())
         return;
     const crop = dashboardCrops.find(c => c.id === id);
-    if (!crop || !dashIsBuyable(crop)) {
-        dashToast('This harvest isn’t available right now.');
+    if (!crop)
         return;
-    }
-    const cart = dashCart();
-    const line = cart.find(l => l.crop === id);
-    const room = crop.stock - (line ? line.quantity : 0);
-    if (room <= 0) {
-        dashToast('Your cart already has all ' + crop.stock + ' ' + crop.unit + ' of ' + crop.name + '.');
-        return;
-    }
-    const amount = Math.max(1, Math.min(Math.floor(quantity) || 1, room));
-    if (line)
-        line.quantity += amount;
-    else
-        cart.push({ crop: id, quantity: amount });
-    dashRender();
-    dashToast(amount + ' ' + crop.unit + ' of ' + crop.name + ' added to your cart.' + (amount < quantity ? ' That’s all the stock left.' : ''));
+    const r = await dashDo('cart.add', { crop: id, quantity: Math.max(1, Math.floor(quantity) || 1) });
+    if (r)
+        dashToast(r.added + ' ' + crop.unit + ' of ' + crop.name + ' added to your cart.' + (r.allLeft ? ' That’s all the stock left.' : ''));
 }
 function dashCartView() {
     const entries = dashCartEntries();
@@ -1406,7 +1269,8 @@ function dashConsumerOverview() {
     return '<section class="consumer-banner"><div class="eyebrow">Rooted in community. Grown for you.</div><h2>Fresh from their fields.<br>A little closer to your table.</h2><p>Meet the people behind your everyday food.</p><button class="control primary" data-go="shop">Explore the harvest ' + di('arrow') + '</button><img class="banner-harvest" src="assets/vegetable-cutout.png" alt=""><img class="banner-leaf" src="assets/mango-branch.png" alt=""></section><div class="metric-grid">' + dashMetric('Active orders', String(own.filter(o => !['Completed', 'Cancelled'].includes(o.status)).length), 'bag', 'Being prepared by your growers') + dashMetric('Completed orders', String(own.filter(o => o.status === 'Completed').length), 'check', 'Local harvests brought home') + dashMetric('Saved harvests', String(saved.length), 'heart', 'Good things to come back to') + dashMetric('Growing connections', String(new Set(own.map(o => o.organization)).size), 'leaf', 'Communities you’ve ordered from') + '</div><div class="split">' + dashActiveOrder() + '<section class="panel grower-mini"><img src="assets/grower.png" alt="A vegetable grower at work"><div class="grower-mini-copy"><small>The people behind your harvest</small><h2>Rooted in<br>Calapan City.</h2><a href="#growers">Meet your growing community ' + di('up') + '</a></div></section></div><div class="split">' + dashOrderTable('recent') + '<section class="panel">' + dashPanelHead('Saved for later', '', '<button class="text-button" data-go="saved">View all ' + di('arrow') + '</button>') + '<div class="saved-mini">' + saved.slice(0, 4).map(c => '<div class="saved-row"><img src="' + dashImg(c.image) + '" alt=""><div><strong>' + de(c.name) + '</strong><p>' + dp(c.price) + ' / ' + de(c.unit) + ' · harvested ' + dd(c.harvested) + '</p></div><button class="save-button" data-save="' + c.id + '" aria-pressed="true" aria-label="Unsave ' + de(c.name) + '">' + di('heart') + '</button></div>').join('') + (saved.length ? '' : dashEmpty('Nothing saved yet', 'Your saved harvests will appear here.')) + '</div></section></div>';
 }
 function dashSettings() {
-    const appearance = '<section class="panel settings-panel"><h2>Appearance</h2><p>Adjust the dashboard to your preferred reading density. Saved in this browser.</p><div class="settings-row"><label for="density">Compact table rows</label><input type="checkbox" id="density" ' + (document.body.classList.contains('compact-density') ? 'checked' : '') + '></div><div class="settings-row"><label for="contrast">Stronger contrast</label><input type="checkbox" id="contrast" ' + (document.body.classList.contains('contrast-mode') ? 'checked' : '') + '></div><h2 class="settings-subhead">Data</h2><p>AniBayan keeps its accounts, listings, orders, ratings and reports in this browser, shared by every AniBayan page you open here.</p><div class="detail-actions"><button class="control danger" data-reset-data>Reset all data</button></div></section>';
+    // Resetting puts the shared database back to the starting data for everyone, so only administrators have it.
+    const appearance = '<section class="panel settings-panel"><h2>Appearance</h2><p>Adjust the dashboard to your preferred reading density.</p><div class="settings-row"><label for="density">Compact table rows</label><input type="checkbox" id="density" ' + (document.body.classList.contains('compact-density') ? 'checked' : '') + '></div><div class="settings-row"><label for="contrast">Stronger contrast</label><input type="checkbox" id="contrast" ' + (document.body.classList.contains('contrast-mode') ? 'checked' : '') + '></div>' + (isAdminDashboard ? '<h2 class="settings-subhead">Data</h2><div class="detail-actions"><button class="control danger" data-reset-data>Reset all data</button></div>' : '') + '</section>';
     const facts = (rows) => '<dl class="detail-facts">' + rows.map(r => '<div><dt>' + r[0] + '</dt><dd>' + de(r[1]) + '</dd></div>').join('') + '</dl>';
     const me = dashAccount();
     const common = '<a class="control" href="login.html" data-sign-out>' + di('logout') + 'Sign out</a><button class="control" data-change-password>' + di('key') + 'Change password</button>';
@@ -1445,7 +1309,6 @@ function dashNavCounts() {
         return { orders: orders.filter(o => o.status === 'Pending').length, members: dashMyMembers().filter(m => m.status === 'Pending').length };
     return { orders: orders.filter(o => !['Completed', 'Cancelled'].includes(o.status)).length, cart: dashCart().length };
 }
-let dashStorageWarned = false;
 function dashRender() {
     // A table's search box is redrawn with the table; keep the cursor in it, even when a health check finishes mid-typing.
     const typing = document.activeElement instanceof HTMLInputElement && document.activeElement.dataset.tableSearch !== undefined ? [document.activeElement.selectionStart ?? 0, document.activeElement.selectionEnd ?? 0] : null;
@@ -1511,10 +1374,6 @@ function dashRender() {
         box.setSelectionRange(typing[0], typing[1]);
     }
     dashShowReposition();
-    if (!dashSaveStore() && !dashStorageWarned) {
-        dashStorageWarned = true;
-        dashToast('This browser couldn’t save your latest change. Its storage may be full or turned off.');
-    }
 }
 function dashNavigate(view) { if (location.hash.slice(1) === view)
     dashReadHash();
@@ -1580,23 +1439,19 @@ function dashAccountDetails(email) {
         return;
     const self = a.email === dashMeEmail;
     const org = a.organization ? dashboardOrganizations.find(o => o.name === a.organization) : undefined;
-    const toggle = !self && a.role !== 'Administrator' && (a.status === 'Active' || a.status === 'Suspended') ? (a.status === 'Suspended' ? '<button class="control primary" data-suspend="' + de(a.email) + '">' + di('check') + 'Reactivate account</button>' : '<button class="control danger" data-suspend="' + de(a.email) + '">' + di('lock') + 'Suspend account</button>') : '';
+    const toggle = !self && a.role !== 'Administrator' && (a.status === 'Active' || a.status === 'Suspended') ? (a.status === 'Suspended' ? '<button class="control primary" data-suspend="' + de(email) + '">' + di('check') + 'Reactivate account</button>' : '<button class="control danger" data-suspend="' + de(email) + '">' + di('lock') + 'Suspend account</button>') : '';
     const review = a.status === 'Pending' && org ? '<button class="control primary" data-organization="' + de(org.name) + '">Review application</button>' : '';
-    dashOpen('<p class="detail-kicker">' + (a.role === 'Consumer' ? 'Buyer' : a.role) + ' account</p><h2 id="detail-title">' + de(a.name) + '</h2><p class="detail-subtitle">' + de(a.email) + '</p><dl class="detail-facts">' + dashFact('Role', a.role === 'Consumer' ? 'Buyer' : a.role) + dashFact('Status', ds(a.status)) + dashFact('Joined', dfull(a.joined)) + dashFact('Last active', dfull(a.lastActive)) + (a.organization ? dashFact('Organization', de(a.organization)) : '') + (a.phone ? dashFact('Mobile number', de(a.phone)) : '') + (a.note ? dashFact('Note', de(a.note)) : '') + '</dl>' + dashAccountActivity(a.email) + '<div class="detail-actions">' + (a.role === 'Administrator' ? '' : '<a class="control" href="#user=' + dashSlug(a.name) + '" data-profile-link>' + di('user') + 'View profile</a>') + (self ? '' : '<button class="control" data-reset-password="' + de(a.email) + '">' + di('key') + 'Reset password</button>') + toggle + review + '</div>');
+    dashOpen('<p class="detail-kicker">' + (a.role === 'Consumer' ? 'Buyer' : a.role) + ' account</p><h2 id="detail-title">' + de(a.name) + '</h2><p class="detail-subtitle">' + de(email) + '</p><dl class="detail-facts">' + dashFact('Role', a.role === 'Consumer' ? 'Buyer' : a.role) + dashFact('Status', ds(a.status)) + (a.joined ? dashFact('Joined', dfull(a.joined)) : '') + (a.lastActive ? dashFact('Last active', dfull(a.lastActive)) : '') + (a.organization ? dashFact('Organization', de(a.organization)) : '') + (a.phone ? dashFact('Mobile number', de(a.phone)) : '') + (a.note ? dashFact('Note', de(a.note)) : '') + '</dl>' + dashAccountActivity(email) + '<div class="detail-actions">' + (a.role === 'Administrator' ? '' : '<a class="control" href="#user=' + dashSlug(a.name) + '" data-profile-link>' + di('user') + 'View profile</a>') + (self ? '' : '<button class="control" data-reset-password="' + de(email) + '">' + di('key') + 'Reset password</button>') + toggle + review + '</div>');
 }
-// Sets a new temporary password and shows it once so the administrator can pass it on.
-function dashResetPassword(email) {
+// The server sets a new temporary password; it's shown once so the administrator can pass it on.
+async function dashResetPassword(email) {
     const a = dashAccountByEmail(email);
     if (!a)
         return;
-    const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
-    const random = new Uint32Array(8);
-    crypto.getRandomValues(random);
-    const temporary = 'ab-' + Array.from(random, value => chars[value % chars.length]).join('');
-    a.password = temporary;
-    dashLog('password-reset', dashMeEmail, a.name, a.email);
-    dashRender();
-    dashOpen('<p class="detail-kicker">Password reset</p><h2 id="detail-title">Temporary password for ' + de(a.name) + '</h2><div class="temp-password"><code id="temp-password">' + temporary + '</code><button class="control small" data-copy="temp-password">Copy</button></div><div class="detail-actions"><button class="control" data-account="' + de(a.email) + '">Back to account</button><button class="control primary" data-close-dialog>Done</button></div>');
+    const r = await dashDo('account.reset-password', { email });
+    if (!r)
+        return;
+    dashOpen('<p class="detail-kicker">Password reset</p><h2 id="detail-title">Temporary password for ' + de(a.name) + '</h2><div class="temp-password"><code id="temp-password">' + de(String(r.password)) + '</code><button class="control small" data-copy="temp-password">Copy</button></div><div class="detail-actions"><button class="control" data-account="' + de(email) + '">Back to account</button><button class="control primary" data-close-dialog>Done</button></div>');
 }
 function dashReportDetails(id) {
     const r = dashboardReports.find(x => x.id === id);
@@ -1624,7 +1479,7 @@ function dashApplicationDetails(name) {
     dashOpen('<p class="detail-kicker">' + (selling ? 'Organization' : 'Organization application') + '</p><h2 id="detail-title">' + de(o.name) + '</h2><p class="detail-subtitle">' + de(o.region) + ' · submitted ' + dfull(o.applied) + '</p><div class="detail-hero"><img src="' + dashImg(o.image) + '" alt="' + de(o.name) + '"><div><h3>' + de(o.crop) + '</h3><p>' + dashPlural(o.members, 'member farmer') + ' · ' + ds(dashAppStatus(o)) + '</p></div></div><dl class="detail-facts">' + dashFact('Representative', de(o.representative) + (rep ? '<small class="fact-note">' + de(rep.email) + '</small>' : '')) + dashFact('Submitted documents', o.documents.map(de).join(', ')) + (o.phone ? dashFact('Contact number', de(o.phone)) : '') + (o.approved ? dashFact('Approved on', dfull(o.approved)) : '') + (o.terminated ? dashFact('Terminated on', dfull(o.terminated)) : '') + (o.terminatedFor ? dashFact('Final offence', de(o.terminatedFor)) : '') + '</dl>' + warnings + '<div class="detail-actions">' + actions + '</div>');
 }
 function dashConfirmReset() {
-    dashOpen('<p class="detail-kicker">Data</p><h2 id="detail-title">Reset all AniBayan data?</h2><p class="detail-subtitle">Accounts, listings, orders, ratings and reports go back to the starting data, and you’re signed out on every AniBayan page in this browser.</p><div class="detail-actions"><button class="control" data-close-dialog>Cancel</button><button class="control danger" data-confirm-reset>Reset data</button></div>');
+    dashOpen('<p class="detail-kicker">Data</p><h2 id="detail-title">Reset all AniBayan data?</h2><p class="detail-subtitle">Every account, listing, order, rating, report and uploaded photo in the database goes back to the starting data, for everyone. Everyone is signed out. This can’t be undone.</p><div class="detail-actions"><button class="control" data-close-dialog>Cancel</button><button class="control danger" data-confirm-reset>Reset data</button></div>');
 }
 // Shown after checkout for card and GCash orders, and from "Pay now" on unpaid ones.
 function dashPaymentDialog(ids) {
@@ -1635,36 +1490,23 @@ function dashPaymentDialog(ids) {
     const method = orders[0].method || 'GCash';
     dashOpen('<p class="detail-kicker">PayMongo · test mode</p><h2 id="detail-title">Pay ' + dp(total) + ' with ' + de(method) + '</h2><p class="detail-subtitle">' + orders.map(o => dashOrderNo(o.id) + ' · ' + de(o.organization)).join('<br>') + '</p>' + (method === 'GCash' ? '' : '<div class="pay-box">' + di('shield') + '<p>Test card <b>4343 4343 4343 4345</b> · any future date · any CVC</p></div>') + '<div class="detail-actions"><button class="control" data-pay-later>Pay later</button><button class="control primary" data-pay="' + orders.map(o => o.id).join(',') + '">' + di('wallet') + 'Pay ' + dp(total) + '</button></div>');
 }
-// The crops PayMongo lists on its checkout page. Uploaded photos stay in this browser, so only stock photos are sent.
-function dashPaymentItems(o) {
-    const photo = (src) => src && !/^(data:|blob:)/.test(src) ? src : null;
-    return o.items?.length ? o.items.map(i => ({ name: i.name, quantity: i.quantity, unit: i.unit, price: i.price, image: photo(dashboardCrops.find(c => c.id === i.crop)?.image) }))
-        : [{ name: o.crop, quantity: 1, unit: 'order', price: o.total, image: photo(o.image) }];
-}
-// Opens PayMongo's checkout for the orders. The secret key stays on the server (routes/api.php).
+// Opens PayMongo's checkout for the orders. The server builds it from the orders in the database; the secret key
+// stays there (PaymentController).
 async function dashStartPayment(ids, button) {
-    const orders = ids.map(id => dashboardOrders.find(o => o.id === id)).filter((o) => !!o && o.payment === 'Unpaid');
-    if (!orders.length)
-        return;
     const label = button.innerHTML;
     button.disabled = true;
     button.textContent = 'Opening PayMongo…';
-    try {
-        const response = await fetch('../api/payments', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ method: orders[0].method, buyer: { name: dashAccount().name, email: dashAccount().email, phone: orders[0].phone || dashAccount().phone || null, address: orders[0].address || dashAccount().address || null }, orders: orders.map(o => ({ id: o.id, total: o.total, organization: o.organization, items: dashPaymentItems(o) })) }) });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok || !data.session || !data.checkoutUrl)
-            throw new Error(data.message || 'PayMongo didn’t answer (' + response.status + ').');
-        orders.forEach(o => { o.checkout = data.session; });
-        dashSaveStore();
-        location.href = data.checkoutUrl;
+    const r = await dashApi('payments', { orders: ids });
+    if (r.ok && r.data.checkoutUrl) {
+        location.href = String(r.data.checkoutUrl);
+        return;
     }
-    catch (error) {
-        button.disabled = false;
-        button.innerHTML = label;
-        dashToast(error instanceof Error ? error.message : 'PayMongo couldn’t be reached.');
-    }
+    button.disabled = false;
+    button.innerHTML = label;
+    dashToast(String(r.data.message || 'PayMongo didn’t answer (' + r.status + ').'));
 }
-// When PayMongo sends the buyer back, and on every later visit, asks the server whether each open checkout was paid.
+// When PayMongo sends the buyer back, and on every later visit, the server asks PayMongo whether each open
+// checkout was paid and marks those orders paid.
 async function dashCheckPayments() {
     const params = new URLSearchParams(location.search);
     const outcome = params.get('payment');
@@ -1672,26 +1514,19 @@ async function dashCheckPayments() {
         params.delete('payment');
         history.replaceState(null, '', location.pathname + (params.toString() ? '?' + params : '') + location.hash);
     }
-    const sessions = [...new Set(dashRoleOrders().filter(o => o.checkout && o.payment === 'Unpaid').map(o => o.checkout))];
-    const paid = [];
-    for (const session of sessions) {
-        try {
-            const response = await fetch('../api/payments/' + encodeURIComponent(session), { headers: { Accept: 'application/json' }, cache: 'no-store' });
-            if (!response.ok)
-                continue;
-            const result = await response.json();
-            const orders = dashboardOrders.filter(o => o.checkout === session);
-            if (result.paid)
-                orders.forEach(o => { o.payment = 'Paid'; o.paymentRef = result.payment || undefined; o.checkout = undefined; dashLog('order-paid', dashMeEmail, dashOrderNo(o.id) + ' · ' + dp(o.total) + ' · ' + (o.method || 'PayMongo')); paid.push(o); });
-            else if (result.status !== 'active' || outcome === 'cancelled')
-                orders.forEach(o => { o.checkout = undefined; });
-        }
-        catch { /* offline: checked again on the next visit */ }
+    if (!dashRoleOrders().some(o => o.checkout && o.payment === 'Unpaid')) {
+        if (outcome === 'cancelled')
+            dashToast('Payment cancelled.');
+        return;
     }
-    if (sessions.length)
+    const r = await dashApi('payments/check', { cancelled: outcome === 'cancelled' });
+    if (r.data.state) {
+        dashApplyState(r.data.state);
         dashRender();
+    }
+    const paid = (r.data.result?.paid || []);
     if (paid.length)
-        dashToast('Payment received for ' + paid.map(o => dashOrderNo(o.id)).join(', ') + '.');
+        dashToast('Payment received for ' + paid.join(', ') + '.');
     else if (outcome === 'cancelled')
         dashToast('Payment cancelled.');
 }
@@ -1704,7 +1539,7 @@ function dashListingForm(editId = '') {
         return;
     const value = (v) => v === undefined ? '' : ' value="' + de(v) + '"';
     const image = crop ? crop.image : 'vegetable-cutout.png';
-    const uploaded = /^data:/.test(image);
+    const uploaded = /^uploads\//.test(image);
     const photo = '<div class="form-field wide"><span class="form-label" id="photo-label">Photo</span><div class="photo-field"><img class="photo-preview" id="photo-preview" src="' + dashImg(image) + '" alt="Listing photo"><div class="photo-inputs"><label class="control small file-button">' + di('plus') + 'Upload a photo<input type="file" name="photo" id="field-photo" accept="image/jpeg,image/png,image/webp" aria-describedby="hint-photo error-photo"></label><select name="image" id="field-image" aria-label="Or choose a stock photo">' + (uploaded ? '<option value="">Keep the uploaded photo</option>' : '') + dashStockPhotos.map(p => '<option value="' + p[0] + '"' + dashSelected(p[0], image) + '>Stock photo: ' + p[1] + '</option>').join('') + '</select><small class="form-hint" id="hint-photo">Upload a JPG, PNG or WebP photo, or choose a stock photo.</small><small class="field-error" id="error-photo" data-error-for="photo"></small></div></div></div>';
     dashOpen('<p class="detail-kicker">' + (crop ? 'Edit listing · ' + crop.id : 'New listing · ' + de(dashOrgName)) + '</p><h2 id="detail-title">' + (crop ? de(crop.name) : 'Add a crop listing') + '</h2><p class="detail-subtitle">Buyers see the harvest date and shelf life on every listing.</p><form class="dash-form" id="listing-form"' + (crop ? ' data-edit="' + crop.id + '"' : '') + ' novalidate><div class="form-grid">'
         + dashField('name', 'Crop name' + dashRequired, '<input required maxlength="80" autocomplete="off" placeholder="e.g. Calamansi"' + value(crop?.name) + '>', '', true)
@@ -1718,7 +1553,7 @@ function dashListingForm(editId = '') {
         + '</div><p class="form-error" id="listing-error" role="alert" hidden></p><div class="detail-actions">' + (crop ? '<button type="button" class="control danger push-left" data-remove-listing="' + crop.id + '">Remove listing</button>' : '') + '<button type="button" class="control" data-close-dialog>Cancel</button><button type="submit" class="control primary">' + (crop ? di('check') + 'Save changes' : di('plus') + 'Publish listing') + '</button></div></form>');
     dashFocusField('#field-name');
 }
-// Shrinks an uploaded photo to at most max px (listings 640, banners 1600) so it fits in browser storage.
+// Shrinks an uploaded photo to at most max px (listings 640, banners 1600) before it is sent to the server.
 // square: crops the middle square first (profile pictures). Transparent parts become white.
 async function dashReadPhoto(file, max = 640, square = false) {
     const url = URL.createObjectURL(file);
@@ -1773,38 +1608,27 @@ async function dashSubmitListing(form) {
         errors.photo = 'Choose a photo smaller than 10 MB.';
     if (!dashShowErrors(form, errors))
         return;
-    let image = value('image') || (editing ? editing.image : 'vegetable-cutout.png');
+    // An uploaded photo is shrunk here and saved by the server; otherwise the chosen stock photo, or the current one.
+    let photo = '';
     if (file) {
         try {
-            image = await dashReadPhoto(file);
+            photo = await dashReadPhoto(file);
         }
         catch {
             dashShowErrors(form, { photo: 'This photo couldn’t be read. Try another JPG or PNG.' });
             return;
         }
     }
-    const fields = { name, category, image, price, unit: value('unit') || 'kg', stock, harvested, shelfLife };
+    const r = await dashDo('listing.save', { id: editing?.id || '', name, category, unit: value('unit') || 'kg', price, stock, harvested, shelfLife, image: value('image'), photo }, form);
+    if (!r)
+        return;
+    dashDialog.close();
     if (editing) {
-        const oldPrice = editing.price;
-        Object.assign(editing, fields);
-        if (editing.price !== oldPrice)
-            dashLog('price-changed', dashMeEmail, editing.name + ' · ' + dp(oldPrice) + ' → ' + dp(editing.price) + ' /' + editing.unit);
-        else
-            dashLog('listing-edited', dashMeEmail, editing.name);
-        if (editing.stock === 0 && editing.status === 'Active')
-            editing.status = 'Unavailable';
-        dashDialog.close();
-        dashRender();
-        dashToast('Changes to ' + editing.name + ' saved.');
+        dashToast('Changes to ' + name + ' saved.');
         return;
     }
-    const next = Math.max(0, ...dashboardCrops.map(c => Number(c.id.slice(5)) || 0)) + 1;
-    const crop = { id: 'CROP-' + String(next).padStart(3, '0'), organization: dashOrgName, status: 'Active', ...fields };
-    dashboardCrops.unshift(crop);
-    dashDialog.close();
     dashNavigate('listings');
-    dashLog('listing-added', dashMeEmail, crop.name + ' · ' + dp(crop.price) + ' /' + crop.unit);
-    dashToast(crop.name + ' is listed. Buyers see it was harvested ' + dd(harvested) + '.');
+    dashToast(name + ' is listed. Buyers see it was harvested ' + dd(harvested) + '.');
 }
 function dashConfirmRemoveListing(id) {
     const crop = dashboardCrops.find(c => c.id === id);
@@ -1836,11 +1660,12 @@ function dashSubmitMember(form) {
         errors.crops = 'Enter the crops they grow.';
     if (!dashShowErrors(form, errors))
         return;
-    const next = Math.max(0, ...dashboardMembers.map(m => Number(m.id.slice(3)) || 0)) + 1;
-    dashboardMembers.push({ id: 'MB-' + String(next).padStart(3, '0'), organization: dashOrgName, name: value('name'), place: value('place'), crops: value('crops'), area: Math.round(area * 10) / 10, joined: String(dashTodayDate.getFullYear()), status: 'Active' });
-    dashDialog.close();
-    dashRender();
-    dashToast(value('name') + ' was added as a member farmer.');
+    void dashDo('member.add', { name: value('name'), place: value('place'), crops: value('crops'), area }, form).then(r => {
+        if (!r)
+            return;
+        dashDialog.close();
+        dashToast(value('name') + ' was added as a member farmer.');
+    });
 }
 function dashOrgProfileForm() {
     const org = dashMyOrg();
@@ -1867,14 +1692,12 @@ function dashSubmitOrgProfile(form) {
         errors.phone = 'Enter a mobile number like 0917 555 0148.';
     if (!dashShowErrors(form, errors))
         return;
-    const org = dashMyOrg();
-    if (!org)
-        return;
-    Object.assign(org, { crop: value('crop'), region: value('barangay') + ', ' + dashCityName, phone: value('phone'), description: value('description') });
-    dashLog('profile-updated', dashMeEmail, 'Organization profile');
-    dashDialog.close();
-    dashRender();
-    dashToast('Organization profile saved.');
+    void dashDo('org.profile', { crop: value('crop'), barangay: value('barangay'), phone: value('phone'), description: value('description') }, form).then(r => {
+        if (r) {
+            dashDialog.close();
+            dashToast('Organization profile saved.');
+        }
+    });
 }
 // Delivery address fields: house and street, plus a barangay of Calapan City (AniBayan delivers only there).
 function dashAddressFields(address) {
@@ -1905,14 +1728,15 @@ function dashSubmitProfile(form) {
     const errors = {};
     if (!dashPhonePattern.test(phone))
         errors.phone = 'Enter a mobile number like 0917 555 0148.';
-    const address = dashReadAddress(data, errors);
+    dashReadAddress(data, errors);
     if (!dashShowErrors(form, errors))
         return;
-    Object.assign(dashAccount(), { phone, address });
-    dashLog('profile-updated', dashMeEmail, 'Delivery details');
-    dashDialog.close();
-    dashRender();
-    dashToast('Delivery details saved.');
+    void dashDo('profile.delivery', { phone, street: String(data.get('street') ?? '').trim(), barangay: String(data.get('barangay') ?? '') }, form).then(r => {
+        if (r) {
+            dashDialog.close();
+            dashToast('Delivery details saved.');
+        }
+    });
 }
 function dashPasswordForm() {
     dashOpen('<p class="detail-kicker">Security</p><h2 id="detail-title">Change your password</h2><p class="detail-subtitle">You’ll use the new password the next time you sign in.</p><form class="dash-form" id="password-form" novalidate><div class="form-grid single">'
@@ -1925,10 +1749,9 @@ function dashPasswordForm() {
 function dashSubmitPassword(form) {
     const data = new FormData(form);
     const current = String(data.get('current') ?? ''), password = String(data.get('password') ?? ''), confirm = String(data.get('confirm') ?? '');
-    const me = dashAccount();
     const errors = {};
-    if (current !== (me.password || dashDemoPassword))
-        errors.current = 'That isn’t your current password.';
+    if (!current)
+        errors.current = 'Enter your current password.';
     if (password.length < 8)
         errors.password = 'Use at least 8 characters.';
     else if (password === current)
@@ -1937,11 +1760,13 @@ function dashSubmitPassword(form) {
         errors.confirm = 'The two new passwords don’t match.';
     if (!dashShowErrors(form, errors))
         return;
-    me.password = password;
-    dashLog('password-changed', dashMeEmail);
-    dashDialog.close();
-    dashRender();
-    dashToast('Password changed.');
+    // The server checks the current password; passwords are stored there only as hashes.
+    void dashDo('password.change', { current, password, confirm }, form).then(r => {
+        if (r) {
+            dashDialog.close();
+            dashToast('Password changed.');
+        }
+    });
 }
 const dashPaymentMethods = [['Cash on delivery', 'Pay the organization when your order arrives.'], ['GCash', 'Pay now through PayMongo.'], ['Credit or debit card', 'Pay now through PayMongo.']];
 function dashCheckoutForm() {
@@ -1965,42 +1790,38 @@ function dashSubmitCheckout(form) {
     const phone = String(data.get('phone') ?? '').trim(), note = String(data.get('note') ?? '').trim();
     const method = String(data.get('method') || 'Cash on delivery');
     const errors = {};
-    const address = dashReadAddress(data, errors);
+    dashReadAddress(data, errors);
     if (!dashPhonePattern.test(phone))
         errors.phone = 'Enter a mobile number like 0917 555 0148.';
     if (!dashShowErrors(form, errors))
         return;
-    const entries = dashCartEntries();
-    const problems = entries.filter(e => dashCartProblem(e));
     const error = document.getElementById('checkout-error');
-    if (!entries.length || problems.length) {
-        error.hidden = false;
-        error.textContent = problems.length ? 'Some items changed while you were checking out: ' + problems.map(e => e.crop.name + ' (' + dashCartProblem(e).toLowerCase() + ')').join(', ') + '. Go back to your cart to update them.' : 'Your cart is empty.';
-        return;
-    }
-    let next = Math.max(...dashboardOrders.map(o => Number(o.id.slice(8)) || 0)) + 1;
-    const placed = [];
-    [...new Set(entries.map(e => e.crop.organization))].forEach(org => {
-        const lines = entries.filter(e => e.crop.organization === org);
-        const items = lines.map(e => ({ crop: e.crop.id, name: e.crop.name, quantity: e.line.quantity, unit: e.crop.unit, price: e.crop.price }));
-        lines.forEach(e => { e.crop.stock -= e.line.quantity; });
-        placed.push({ id: 'AB-2026-' + next++, customer: dashConsumerName, organization: org, crop: items.length === 1 ? items[0].name : items[0].name + ' + ' + (items.length - 1) + ' more', image: lines[0].crop.image, quantity: items.length === 1 ? items[0].quantity + ' ' + items[0].unit : dashPlural(items.length, 'item'), total: items.reduce((sum, i) => sum + i.quantity * i.price, 0), date: dashToday, status: 'Pending', payment: 'Unpaid', items, address, phone, method, note });
-    });
-    dashboardOrders.unshift(...placed);
-    placed.forEach(o => dashLog('order-placed', dashMeEmail, dashOrderNo(o.id) + ' · ' + dp(o.total) + ' · ' + o.organization));
-    dashCart().splice(0);
-    if (data.get('remember'))
-        Object.assign(dashAccount(), { address, phone });
-    const numbers = placed.map(o => dashOrderNo(o.id)).join(', ');
-    if (method !== 'Cash on delivery') {
+    // The server checks stock again, places one order per organization and empties the cart.
+    void dashApi('actions/checkout', { street: String(data.get('street') ?? '').trim(), barangay: String(data.get('barangay') ?? ''), phone, method, note, remember: !!data.get('remember') }).then(r => {
+        if (r.data.state)
+            dashApplyState(r.data.state);
         dashRender();
-        dashPaymentDialog(placed.map(o => o.id));
-        dashToast('Order' + (placed.length > 1 ? 's ' : ' ') + numbers + ' placed. Complete the payment to finish.');
-        return;
-    }
-    dashDialog.close();
-    dashNavigate('orders');
-    dashToast(placed.length === 1 ? 'Order ' + numbers + ' placed with ' + placed[0].organization + '.' : placed.length + ' orders placed: ' + numbers + '.');
+        if (!r.ok) {
+            const fields = dashFieldErrors(r.data.errors);
+            if (Object.keys(fields).length)
+                dashShowErrors(form, fields);
+            else {
+                error.hidden = false;
+                error.textContent = String(r.data.message || 'Your order couldn’t be placed. Try again.');
+            }
+            return;
+        }
+        const placed = (r.data.result.orders || []);
+        const numbers = placed.map(o => dashOrderNo(o.id)).join(', ');
+        if (method !== 'Cash on delivery') {
+            dashPaymentDialog(placed.map(o => o.id));
+            dashToast('Order' + (placed.length > 1 ? 's ' : ' ') + numbers + ' placed. Complete the payment to finish.');
+            return;
+        }
+        dashDialog.close();
+        dashNavigate('orders');
+        dashToast(placed.length === 1 ? 'Order ' + numbers + ' placed with ' + placed[0].organization + '.' : placed.length + ' orders placed: ' + numbers + '.');
+    });
 }
 const dashRatingWords = ['', 'Very poor', 'Poor', 'Okay', 'Good', 'Excellent'];
 function dashFeedbackForm(orderId) {
@@ -2016,15 +1837,12 @@ function dashSubmitFeedback(form) {
     const rating = Number(data.get('rating'));
     if (!dashShowErrors(form, rating >= 1 && rating <= 5 ? {} : { rating: 'Choose a rating from 1 to 5 stars.' }))
         return;
-    const order = dashboardOrders.find(o => o.id === form.dataset.order);
-    if (!order)
-        return;
-    const next = Math.max(0, ...dashboardFeedback.map(f => Number(f.id.slice(3)) || 0)) + 1;
-    dashLog('rating', dashMeEmail, rating + '★ · ' + order.organization);
-    dashboardFeedback.unshift({ id: 'FB-' + next, organization: order.organization, customer: dashConsumerName, rating, comment: String(data.get('comment') ?? '').trim(), date: dashToday, order: order.id });
-    dashDialog.close();
-    dashRender();
-    dashToast('Thanks for rating ' + order.organization + '!');
+    void dashDo('feedback.create', { order: form.dataset.order, rating, comment: String(data.get('comment') ?? '').trim() }, form).then(r => {
+        if (r) {
+            dashDialog.close();
+            dashToast('Thanks for rating ' + r.organization + '!');
+        }
+    });
 }
 const dashReportReasons = ['Short or wrong quantity', 'Poor quality or spoiled', 'Harvest date not as listed', 'Late or no fulfillment', 'Payment or refund problem', 'Other'];
 function dashReportForm(orderId) {
@@ -2047,17 +1865,13 @@ function dashSubmitReport(form) {
         errors.details = 'Describe the problem in at least 20 characters.';
     if (!dashShowErrors(form, errors))
         return;
-    const order = dashboardOrders.find(o => o.id === form.dataset.order);
-    if (!order)
-        return;
-    const next = Math.max(0, ...dashboardReports.map(r => Number(r.id.slice(3)) || 0)) + 1;
-    dashboardReports.push({ id: 'RP-' + String(next).padStart(3, '0'), organization: order.organization, customer: dashConsumerName, reason, details, date: dashToday, status: 'Open', order: order.id });
-    dashLog('report-filed', dashMeEmail, 'RP-' + String(next).padStart(3, '0') + ' · ' + order.organization);
-    dashDialog.close();
-    dashRender();
-    dashToast('Report sent. An AniBayan administrator will review it.');
+    void dashDo('report.create', { order: form.dataset.order, reason, details }, form).then(r => {
+        if (r) {
+            dashDialog.close();
+            dashToast('Report sent. An AniBayan administrator will review it.');
+        }
+    });
 }
-const dashRepEmail = (org) => dashboardAccounts.find(a => a.organization === org && a.role === 'Representative')?.email || '';
 // Administrators warn an organization directly; at its final warning the next step is termination.
 function dashWarningForm(name) {
     const s = dashStanding(name);
@@ -2080,12 +1894,12 @@ function dashSubmitWarning(form) {
     if (!dashShowErrors(form, reason.length >= 5 ? {} : { reason: 'Give a reason of at least 5 characters.' }))
         return;
     const name = form.dataset.organizationName || '';
-    const next = Math.max(0, ...dashboardWarnings.map(w => Number(w.id.slice(3)) || 0)) + 1;
-    dashboardWarnings.push({ id: 'WN-' + String(next).padStart(3, '0'), organization: name, reason, details, date: dashToday, by: dashAccount().name });
-    dashLog('warning-given', dashMeEmail, name + ' · ' + reason, dashRepEmail(name));
-    dashRender();
-    dashApplicationDetails(name);
-    dashToast('Warning given. ' + dashStandingSentence(name));
+    void dashDo('warning.create', { organization: name, reason, details }, form).then(r => {
+        if (r) {
+            dashApplicationDetails(name);
+            dashToast('Warning given. ' + dashStandingSentence(name));
+        }
+    });
 }
 // Asks before terminating. With a report, upholding that report is the offence that ends it.
 function dashTerminateDialog(name, reportId = '') {
@@ -2100,31 +1914,16 @@ function dashTerminateDialog(name, reportId = '') {
 }
 function dashSubmitTerminate(form) {
     const name = form.dataset.organizationName || '';
-    const org = dashboardOrganizations.find(o => o.name === name);
-    if (!org)
+    const report = form.dataset.report || '';
+    const reason = report ? '' : String(new FormData(form).get('reason') ?? '').trim();
+    if (!report && !dashShowErrors(form, reason.length >= 5 ? {} : { reason: 'Give a reason of at least 5 characters.' }))
         return;
-    const report = form.dataset.report ? dashboardReports.find(r => r.id === form.dataset.report) : undefined;
-    let reason = '';
-    if (report) {
-        report.status = 'Upheld';
-        report.decided = dashToday;
-        reason = report.reason + ' (report ' + report.id + ')';
-    }
-    else {
-        reason = String(new FormData(form).get('reason') ?? '').trim();
-        if (!dashShowErrors(form, reason.length >= 5 ? {} : { reason: 'Give a reason of at least 5 characters.' }))
-            return;
-    }
-    if (report)
-        dashLog('report-upheld', dashMeEmail, report.id + ' · ' + name);
-    dashLog('org-terminated', dashMeEmail, name + ' · ' + reason, dashRepEmail(name));
-    org.status = 'Terminated';
-    org.terminated = dashToday;
-    org.terminatedFor = reason;
-    dashboardAccounts.filter(a => a.organization === name && a.role === 'Representative').forEach(a => { a.status = 'Terminated'; a.note = name + ' was terminated by ' + dashAccount().name + ' on ' + dfull(dashToday) + '.'; });
-    dashRender();
-    dashApplicationDetails(name);
-    dashToast(name + ' is terminated. Its listings left the shop and its representative is signed out.');
+    void dashDo('organization.terminate', { organization: name, report, reason }, form).then(r => {
+        if (r) {
+            dashApplicationDetails(name);
+            dashToast(name + ' is terminated. Its listings left the shop and its representative is signed out.');
+        }
+    });
 }
 let dashToastTimeout;
 function dashToast(message) { const el = document.getElementById('dashboard-toast'); el.textContent = message; el.classList.add('visible'); window.clearTimeout(dashToastTimeout); dashToastTimeout = window.setTimeout(() => el.classList.remove('visible'), 3600); }
@@ -2208,20 +2007,20 @@ function dashStart() {
         void dashRunHealthChecks();
     if (dashBuyer)
         void dashCheckPayments();
-    // Keep every open AniBayan page in step: another page saved new data, reset it, or signed in or out.
-    window.addEventListener('storage', event => {
-        if (event.key === dashSessionKey || (event.key === dashStoreKey && event.newValue === null) || event.key === null) {
-            location.reload();
-            return;
-        }
-        if (event.key === dashPrefsKey) {
+    // Coming back to this tab fetches the latest data, so changes made elsewhere (another tab, another person) show.
+    // A different person signed in meanwhile, or this one was signed out: start the page again.
+    window.addEventListener('focus', () => {
+        const before = dashSessionMe;
+        void dashFetchState().then(ok => {
+            if (!ok)
+                return;
+            if (dashSessionMe !== before || dashBlockedStatus) {
+                location.reload();
+                return;
+            }
             dashApplyPreferences();
-            return;
-        }
-        if (event.key !== dashStoreKey)
-            return;
-        dashLoadStore();
-        dashRender();
+            dashRender();
+        });
     });
     document.getElementById('dashboard-search').addEventListener('input', event => { dashState.query = event.target.value; dashRender(); });
     document.addEventListener('keydown', event => {
@@ -2318,14 +2117,10 @@ function dashStart() {
             return;
         }
         if (input.dataset.privacy) {
-            const me = dashMe();
             const key = input.dataset.privacy;
-            if (!me || !isConsumerDashboard || !(key in dashPrivacyDefaults))
+            if (!dashMe() || !isConsumerDashboard || !(key in dashPrivacyDefaults))
                 return;
-            me.privacy = { ...dashPrivacy(me), [key]: input.checked };
-            dashLog('profile-updated', dashMeEmail, 'Privacy settings');
-            dashRender();
-            document.getElementById('privacy-' + key)?.focus();
+            void dashDo('privacy', { key, value: input.checked }).then(() => document.getElementById('privacy-' + key)?.focus());
             return;
         }
         if (input.id === 'dashboard-period') {
@@ -2396,11 +2191,8 @@ function dashHandleClick(event) {
     if (el.closest('#sidebar-backdrop'))
         document.body.classList.remove('sidebar-open');
     if (el.closest('[data-sign-out]')) {
-        if (dashMeEmail) {
-            dashLog('signout', dashMeEmail);
-            dashSaveStore();
-        }
-        dashClearSession();
+        event.preventDefault();
+        void dashApi('logout', {}).then(() => { location.href = 'login.html'; });
         return;
     }
     if (el.closest('[data-sign-in]')) {
@@ -2433,21 +2225,12 @@ function dashHandleClick(event) {
         return;
     }
     if (data.removePhoto && data.look) {
-        const look = dashLookOf(data.look);
-        if (!look || !dashCanEdit(data.look))
+        if (!dashCanEdit(data.look))
             return;
         const avatar = data.removePhoto === 'avatar';
-        if (avatar)
-            delete look.avatar;
-        else {
-            delete look.banner;
-            delete look.bannerX;
-            delete look.bannerY;
-        }
         dashRepositioning = null;
-        dashLog('profile-updated', dashMeEmail, avatar ? 'Profile picture removed' : 'Profile banner removed');
-        dashRender();
-        dashToast(avatar ? 'Picture removed.' : 'Banner removed.');
+        void dashDo('look.remove', { target: data.look, kind: avatar ? 'avatar' : 'banner' }).then(r => { if (r)
+            dashToast(avatar ? 'Picture removed.' : 'Banner removed.'); });
         return;
     }
     if (data.shopType) {
@@ -2463,26 +2246,28 @@ function dashHandleClick(event) {
         return;
     }
     if (data.advance || data.decline || data.cancelOrder) {
-        const order = dashboardOrders.find(o => o.id === (data.advance || data.decline || data.cancelOrder));
-        dashSetOrderStatus(order, data.advance ? dashNextStep[order.status][0] : 'Cancelled');
-        if (order.status === 'Cancelled')
-            dashLog('order-cancelled', dashMeEmail, dashOrderNo(order.id) + (data.decline ? ' · declined by ' + order.organization : ''));
-        else
-            dashLog('order-updated', dashMeEmail, dashOrderNo(order.id) + ' → ' + order.status);
-        dashRender();
-        if (dashDialog.open)
-            dashOrderDetails(order.id);
-        dashToast('Order ' + dashOrderNo(order.id) + ' ' + (data.cancelOrder ? 'cancelled.' : 'marked ' + order.status.toLowerCase() + '.'));
+        const id = (data.advance || data.decline || data.cancelOrder);
+        const action = data.advance ? 'order.advance' : data.decline ? 'order.decline' : 'order.cancel';
+        void dashDo(action, { order: id }).then(r => {
+            if (!r)
+                return;
+            const order = dashboardOrders.find(o => o.id === id);
+            if (dashDialog.open && order)
+                dashOrderDetails(id);
+            dashToast('Order ' + dashOrderNo(id) + ' ' + (data.cancelOrder ? 'cancelled.' : 'marked ' + (order?.status || 'updated').toLowerCase() + '.'));
+        });
         return;
     }
     if (data.toggleListing) {
-        const crop = dashboardCrops.find(c => c.id === data.toggleListing);
-        crop.status = crop.status === 'Active' ? 'Unavailable' : 'Active';
-        dashLog(crop.status === 'Active' ? 'listing-resumed' : 'listing-paused', dashMeEmail, crop.name);
-        dashRender();
-        if (dashDialog.open)
-            dashProductDetails(crop.id);
-        dashToast(crop.name + (crop.status === 'Active' ? ' is visible to buyers again.' : ' is paused. Buyers can’t order it until you resume it.'));
+        const id = data.toggleListing;
+        void dashDo('listing.toggle', { id }).then(r => {
+            const crop = dashboardCrops.find(c => c.id === id);
+            if (!r || !crop)
+                return;
+            if (dashDialog.open)
+                dashProductDetails(id);
+            dashToast(crop.name + (crop.status === 'Active' ? ' is visible to buyers again.' : ' is paused. Buyers can’t order it until you resume it.'));
+        });
         return;
     }
     if (data.editListing) {
@@ -2494,16 +2279,12 @@ function dashHandleClick(event) {
         return;
     }
     if (data.confirmRemove) {
-        const index = dashboardCrops.findIndex(c => c.id === data.confirmRemove);
-        if (index < 0)
-            return;
-        const [crop] = dashboardCrops.splice(index, 1);
-        dashLog('listing-removed', dashMeEmail, crop.name);
-        Object.values(dashboardCarts).forEach(cart => { const i = cart.findIndex(l => l.crop === crop.id); if (i >= 0)
-            cart.splice(i, 1); });
-        dashDialog.close();
-        dashRender();
-        dashToast(crop.name + ' was removed from your listings.');
+        void dashDo('listing.remove', { id: data.confirmRemove }).then(r => {
+            if (r) {
+                dashDialog.close();
+                dashToast(r.name + ' was removed from your listings.');
+            }
+        });
         return;
     }
     if (data.addMember !== undefined) {
@@ -2512,11 +2293,9 @@ function dashHandleClick(event) {
     }
     if (data.memberConfirm) {
         const member = dashboardMembers.find(m => m.id === data.memberConfirm);
-        if (member) {
-            member.status = 'Active';
-            dashRender();
-            dashToast(member.name + ' is now an active member.');
-        }
+        if (member)
+            void dashDo('member.confirm', { id: member.id }).then(r => { if (r)
+                dashToast(member.name + ' is now an active member.'); });
         return;
     }
     if (data.memberRemove) {
@@ -2526,37 +2305,33 @@ function dashHandleClick(event) {
         return;
     }
     if (data.memberRemoveConfirm) {
-        const index = dashboardMembers.findIndex(m => m.id === data.memberRemoveConfirm);
-        if (index >= 0) {
-            const [member] = dashboardMembers.splice(index, 1);
-            dashDialog.close();
-            dashRender();
-            dashToast(member.name + ' was removed from your members.');
-        }
+        const member = dashboardMembers.find(m => m.id === data.memberRemoveConfirm);
+        if (member)
+            void dashDo('member.remove', { id: member.id }).then(r => { if (r) {
+                dashDialog.close();
+                dashToast(member.name + ' was removed from your members.');
+            } });
         return;
     }
     if (data.review && data.reviewName) {
-        const org = dashboardOrganizations.find(o => o.name === data.reviewName);
-        org.status = data.review;
-        if (data.review === 'Active')
-            org.approved = dashToday;
-        const representative = dashboardAccounts.find(a => a.organization === org.name && a.status === 'Pending');
-        if (representative)
-            representative.status = data.review === 'Active' ? 'Active' : 'Declined';
-        dashLog(data.review === 'Active' ? 'application-approved' : 'application-declined', dashMeEmail, org.name, representative?.email || '');
-        dashDialog.close();
-        dashRender();
-        dashToast(org.name + (data.review === 'Active' ? ' approved. ' + (representative ? representative.name + ' can now sign in.' : '') : ' declined.'));
+        const name = data.reviewName, approve = data.review === 'Active';
+        void dashDo('application.review', { name, decision: data.review }).then(r => {
+            if (!r)
+                return;
+            dashDialog.close();
+            dashToast(name + (approve ? ' approved. ' + (r.representative ? r.representative + ' can now sign in.' : '') : ' declined.'));
+        });
         return;
     }
     if (data.decide && data.reportId) {
-        const report = dashboardReports.find(r => r.id === data.reportId);
-        report.status = data.decide;
-        report.decided = report.status === 'Open' ? undefined : dashToday;
-        dashLog(report.status === 'Upheld' ? 'report-upheld' : report.status === 'Dismissed' ? 'report-dismissed' : 'report-reopened', dashMeEmail, report.id + ' · ' + report.organization);
-        dashRender();
-        dashReportDetails(report.id);
-        dashToast(report.id + (report.status === 'Open' ? ' reopened. ' : ' ' + report.status.toLowerCase() + '. ') + dashStandingSentence(report.organization));
+        const id = data.reportId, decision = data.decide;
+        void dashDo('report.decide', { id, decision }).then(r => {
+            const report = dashboardReports.find(x => x.id === id);
+            if (!r || !report)
+                return;
+            dashReportDetails(id);
+            dashToast(id + (decision === 'Open' ? ' reopened. ' : ' ' + decision.toLowerCase() + '. ') + dashStandingSentence(report.organization));
+        });
         return;
     }
     if (data.warn) {
@@ -2568,14 +2343,12 @@ function dashHandleClick(event) {
         return;
     }
     if (data.withdrawWarning) {
-        const index = dashboardWarnings.findIndex(w => w.id === data.withdrawWarning);
-        if (index >= 0) {
-            const [w] = dashboardWarnings.splice(index, 1);
-            dashLog('warning-withdrawn', dashMeEmail, w.organization + ' · ' + w.reason, dashRepEmail(w.organization));
-            dashRender();
-            dashApplicationDetails(w.organization);
-            dashToast('Warning withdrawn. ' + dashStandingSentence(w.organization));
-        }
+        void dashDo('warning.withdraw', { id: data.withdrawWarning }).then(r => {
+            if (!r)
+                return;
+            dashApplicationDetails(String(r.organization));
+            dashToast('Warning withdrawn. ' + dashStandingSentence(String(r.organization)));
+        });
         return;
     }
     if (data.reportId) {
@@ -2583,17 +2356,18 @@ function dashHandleClick(event) {
         return;
     }
     if (data.suspend) {
-        const account = dashAccountByEmail(data.suspend);
-        account.status = account.status === 'Suspended' ? 'Active' : 'Suspended';
-        account.note = account.status === 'Suspended' ? 'Suspended by ' + dashAccount().name + ' on ' + dfull(dashToday) + '.' : undefined;
-        dashLog(account.status === 'Suspended' ? 'account-suspended' : 'account-reactivated', dashMeEmail, account.name, account.email);
-        dashRender();
-        dashAccountDetails(account.email);
-        dashToast(account.name + (account.status === 'Suspended' ? ' is suspended and signed out of AniBayan.' : ' is reactivated.'));
+        const email = data.suspend;
+        void dashDo('account.suspend', { email }).then(r => {
+            const account = dashAccountByEmail(email);
+            if (!r || !account)
+                return;
+            dashAccountDetails(email);
+            dashToast(account.name + (r.status === 'Suspended' ? ' is suspended and signed out of AniBayan.' : ' is reactivated.'));
+        });
         return;
     }
     if (data.resetPassword) {
-        dashResetPassword(data.resetPassword);
+        void dashResetPassword(data.resetPassword);
         return;
     }
     if (data.copy) {
@@ -2650,40 +2424,29 @@ function dashHandleClick(event) {
         return;
     }
     if (data.confirmReset !== undefined) {
-        dashResetStore();
-        location.href = 'login.html';
+        void dashDo('data.reset').then(r => { if (r)
+            location.href = 'login.html'; });
         return;
     }
     if (data.addCart) {
+        const id = data.addCart;
         const input = data.qtyFrom ? document.getElementById(data.qtyFrom) : null;
-        dashAddToCart(data.addCart, input ? Number(input.value) : 1);
-        if (dashDialog.open && !isGuest)
-            dashProductDetails(data.addCart);
+        void dashAddToCart(id, input ? Number(input.value) : 1).then(() => { if (dashDialog.open && !isGuest)
+            dashProductDetails(id); });
         return;
     }
     if (data.cartStep) {
-        const line = dashCart().find(l => l.crop === data.cartStep);
-        const crop = dashboardCrops.find(c => c.id === data.cartStep);
-        if (line && crop) {
-            line.quantity = Math.max(1, Math.min(crop.stock, line.quantity + Number(data.step)));
-            dashRender();
-        }
+        void dashDo('cart.step', { crop: data.cartStep, step: Number(data.step) });
         return;
     }
     if (data.cartRemove) {
-        const cart = dashCart();
-        const index = cart.findIndex(l => l.crop === data.cartRemove);
-        if (index >= 0) {
-            cart.splice(index, 1);
-            dashRender();
-            dashToast('Removed from your cart.');
-        }
+        void dashDo('cart.remove', { crop: data.cartRemove }).then(r => { if (r)
+            dashToast('Removed from your cart.'); });
         return;
     }
     if (data.cartClear !== undefined) {
-        dashCart().splice(0);
-        dashRender();
-        dashToast('Your cart is empty.');
+        void dashDo('cart.clear').then(r => { if (r)
+            dashToast('Your cart is empty.'); });
         return;
     }
     if (data.checkout !== undefined) {
@@ -2744,16 +2507,14 @@ function dashHandleClick(event) {
         if (!dashRequireBuyer())
             return;
         const id = data.save;
-        const list = dashSavedList();
-        const index = list.indexOf(id);
-        if (index < 0)
-            list.push(id);
-        else
-            list.splice(index, 1);
-        dashRender();
-        if (target.closest('#detail-dialog'))
-            dashProductDetails(id);
-        dashToast(index < 0 ? 'Harvest saved.' : 'Harvest removed from saved items.');
+        const inDialog = !!target.closest('#detail-dialog');
+        void dashDo('save.toggle', { crop: id }).then(r => {
+            if (!r)
+                return;
+            if (inDialog)
+                dashProductDetails(id);
+            dashToast(r.saved ? 'Harvest saved.' : 'Harvest removed from saved items.');
+        });
         return;
     }
     if (target.hasAttribute('data-close-dialog')) {
@@ -2779,15 +2540,13 @@ function dashHandleClick(event) {
         dashSetPopover('workspace-menu', 'workspace-toggle', document.getElementById('workspace-menu').hidden);
     }
 }
-// Admin and organization pages need a matching account; a signed-in account that was suspended is signed out.
-if (dashNeedsSignIn || (dashSignedIn && dashSignedIn.status !== 'Active')) {
-    const notice = dashSignedIn && dashSignedIn.status !== 'Active' ? dashSignedIn.status.toLowerCase() : isAdminDashboard ? 'admin' : 'organization';
-    if (dashSignedIn && dashSignedIn.status !== 'Active')
-        dashClearSession();
-    if (dashNeedsSignIn)
-        location.replace('login.html?next=' + encodeURIComponent(dashPageFile() + location.search + location.hash) + '&notice=' + notice);
-    else
-        dashStart();
-}
+// Admin and organization pages need a matching account. The server signs out an account that was suspended or
+// terminated since it signed in, and says so (dashBlockedStatus). Without the server, the page says it isn't answering.
+if (dashOffline)
+    dashStart();
+else if (dashBlockedStatus)
+    location.replace('login.html?notice=' + dashBlockedStatus);
+else if (dashNeedsSignIn)
+    location.replace('login.html?next=' + encodeURIComponent(dashPageFile() + location.search + location.hash) + '&notice=' + (isAdminDashboard ? 'admin' : 'organization'));
 else
     dashStart();

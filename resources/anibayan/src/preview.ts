@@ -150,8 +150,8 @@ landDialog.addEventListener('click',event=>{if(event.target===landDialog){const 
 
 // The header follows the account signed in on login.html: its profile picture (a representative shows the
 // organization's, as in the dashboard) or initials, linking to its dashboard. The cart count is that buyer's cart.
-function setupAccountLinks():void {
-  dashLoadStore();
+async function setupAccountLinks():Promise<void> {
+  await dashFetchState();
   const account=dashAccountByEmail(dashSessionEmail());
   const active=account&&account.status==='Active'?account:undefined;
   const signIn=document.querySelector<HTMLAnchorElement>('.header-actions .sign-in');
@@ -168,4 +168,4 @@ function setupAccountLinks():void {
   getElement('cart-count').textContent=String(lines);
   getElement('open-cart').setAttribute('aria-label','Open your cart, '+dashPlural(lines,'item'));
 }
-setupAccountLinks();
+void setupAccountLinks();

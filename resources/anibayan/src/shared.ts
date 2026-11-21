@@ -1,5 +1,5 @@
 // Shared by every AniBayan page (homepage, sign-in and the three dashboards): text helpers, form helpers,
-// and the browser-stored copy of the data plus the signed-in session.
+// and talking to AniBayan's server, which holds the data.
 const de=(value:string|number)=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 const dashPlural=(count:number,word:string)=>count+' '+word+(count===1?'':'s');
 const dashPhonePattern=/^(\+63|0)9\d{2}[\s-]?\d{3}[\s-]?\d{4}$/;
@@ -30,50 +30,61 @@ function dashClearFieldError(input:HTMLInputElement):void{
  if(slot&&slot.textContent){slot.textContent='';form.querySelectorAll('[name="'+input.name+'"]').forEach(field=>field.removeAttribute('aria-invalid'));}
 }
 
-/* ---------- Browser storage: one copy of the data shared by all pages ---------- */
-const dashStoreKey='anibayan-data-v1';
-const dashSessionKey='anibayan-session-v1';
-let dashLastSaved='';
-function dashReplaceList<T>(target:T[],source:unknown):void{if(Array.isArray(source))target.splice(0,target.length,...(source as T[]));}
+/* ---------- AniBayan's data lives on the server (Laravel + MySQL) ---------- */
+// Pages load the signed-in person's data from /api/state and send every change to /api/actions/…; the server
+// checks who may do it, saves it to the database and answers with the fresh data. Nothing is kept in the browser:
+// signing in uses the server's session cookie.
+interface DashServerState{me:string|null;blocked?:string;preferences?:{compact?:boolean;contrast?:boolean};orders:DashboardOrder[];crops:DashboardCrop[];organizations:DashboardOrganization[];accounts:DashboardAccount[];feedback:DashboardFeedback[];reports:DashboardReport[];warnings:DashboardWarning[];activity:DashboardActivity[];members:DashboardMember[];saved:Record<string,string[]>;carts:Record<string,DashboardCartLine[]>;healthLog:DashboardHealthRun[]}
+let dashSessionMe='';
+// Set when the server signed this person out because the account is no longer active ("suspended", "terminated").
+let dashBlockedStatus='';
+// True when the server couldn't be reached when the page loaded.
+let dashOffline=false;
+let dashPrefs:{compact?:boolean;contrast?:boolean}={};
+function dashReplaceList<T>(target:T[],source:unknown):void{target.splice(0,target.length,...(Array.isArray(source)?source as T[]:[]));}
 function dashReplaceRecord<T>(target:Record<string,T>,source:unknown):void{
- if(!source||typeof source!=='object')return;
  Object.keys(target).forEach(key=>delete target[key]);
- Object.assign(target,source);
+ if(source&&typeof source==='object')Object.assign(target,source);
 }
-function dashSnapshot():string{
- return JSON.stringify({orders:dashboardOrders,crops:dashboardCrops,organizations:dashboardOrganizations,accounts:dashboardAccounts,feedback:dashboardFeedback,reports:dashboardReports,warnings:dashboardWarnings,activity:dashboardActivity,members:dashboardMembers,saved:dashboardSaved,carts:dashboardCarts,healthLog:dashboardHealthLog});
+function dashApplyState(s:DashServerState):void{
+ dashReplaceList(dashboardOrders,s.orders);dashReplaceList(dashboardCrops,s.crops);dashReplaceList(dashboardOrganizations,s.organizations);
+ dashReplaceList(dashboardAccounts,(s.accounts||[]).map(a=>({...a,email:a.email||'',joined:a.joined||'',lastActive:a.lastActive||''})));dashReplaceList(dashboardFeedback,s.feedback);dashReplaceList(dashboardReports,s.reports);
+ dashReplaceList(dashboardWarnings,s.warnings);dashReplaceList(dashboardActivity,s.activity);dashReplaceList(dashboardMembers,s.members);
+ dashReplaceList(dashboardHealthLog,s.healthLog);dashReplaceRecord(dashboardSaved,s.saved);dashReplaceRecord(dashboardCarts,s.carts);
+ dashSessionMe=s.me||'';dashBlockedStatus=s.blocked||'';dashPrefs=s.preferences||{};
 }
-// Replaces the starting data with the copy saved by any AniBayan page, if there is one.
+// The dashboards' loader (in their HTML) fetches the data before the script runs; this applies it.
 function dashLoadStore():void{
- let raw:string|null=null;
- try{raw=localStorage.getItem(dashStoreKey);}catch{return;}
- if(!raw)return;
+ const state=(window as unknown as {anibayanState?:DashServerState|null}).anibayanState;
+ if(state&&Array.isArray(state.orders))dashApplyState(state);else dashOffline=true;
+}
+interface DashResponse{ok:boolean;status:number;data:Record<string,any>}
+function dashCookie(name:string):string{const match=document.cookie.match(new RegExp('(?:^|; )'+name+'=([^;]*)'));return match?decodeURIComponent(match[1]):'';}
+// GET when there is no body, otherwise a POST with the anti-forgery token Laravel set as the XSRF-TOKEN cookie.
+async function dashApi(path:string,body?:unknown,retried=false):Promise<DashResponse>{
+ const headers:Record<string,string>={Accept:'application/json'};
+ if(body!==undefined){headers['Content-Type']='application/json';headers['X-XSRF-TOKEN']=dashCookie('XSRF-TOKEN');}
  try{
-  const data=JSON.parse(raw);
-  dashReplaceList(dashboardOrders,data.orders);dashReplaceList(dashboardCrops,data.crops);dashReplaceList(dashboardOrganizations,data.organizations);
-  dashReplaceList(dashboardAccounts,data.accounts);dashReplaceList(dashboardFeedback,data.feedback);dashReplaceList(dashboardReports,data.reports);dashReplaceList(dashboardWarnings,data.warnings);dashReplaceList(dashboardActivity,data.activity);
-  dashReplaceList(dashboardMembers,data.members);dashReplaceList(dashboardHealthLog,data.healthLog);
-  dashReplaceRecord(dashboardSaved,data.saved);dashReplaceRecord(dashboardCarts,data.carts);
-  dashLastSaved=raw;
- }catch{/* unreadable copy: keep the starting data */}
+  const response=await fetch('../api/'+path,{method:body===undefined?'GET':'POST',headers,credentials:'same-origin',cache:'no-store',body:body===undefined?undefined:JSON.stringify(body)});
+  // 419: the anti-forgery token expired; fetching the data renews it.
+  if(response.status===419&&!retried){await dashApi('state');return dashApi(path,body,true);}
+  const data=await response.json().catch(()=>({})) as Record<string,any>;
+  return {ok:response.ok,status:response.status,data};
+ }catch{return {ok:false,status:0,data:{message:'AniBayan’s server isn’t answering. Check that it’s running, then try again.'}};}
 }
-// Saves only when something changed, so pages listening for storage events don't echo each other.
-// Returns false when the browser refused to store the data (for example, storage is full).
-function dashSaveStore():boolean{
- const json=dashSnapshot();
- if(json===dashLastSaved)return true;
- try{localStorage.setItem(dashStoreKey,json);}catch{return false;}
- dashLastSaved=json;
- return true;
+async function dashFetchState():Promise<boolean>{
+ const r=await dashApi('state');
+ if(r.ok&&Array.isArray(r.data.orders)){dashOffline=false;dashApplyState(r.data as DashServerState);return true;}
+ dashOffline=true;return false;
 }
-// Adds one event to the administrators' activity log, newest first. The caller saves.
-function dashLog(type:string,actor:string,detail='',target=''):void{
- dashboardActivity.unshift(target?{time:new Date().toISOString(),actor,type,detail,target}:{time:new Date().toISOString(),actor,type,detail});
- if(dashboardActivity.length>1000)dashboardActivity.length=1000;
+const dashSessionEmail=()=>dashSessionMe;
+// Laravel's field errors ({field:["message"]}) as one message per field, for dashShowErrors.
+function dashFieldErrors(errors:unknown):Record<string,string>{
+ const out:Record<string,string>={};
+ if(errors&&typeof errors==='object')Object.entries(errors as Record<string,unknown>).forEach(([key,value])=>{out[key.replace(/\.\d+$/,'')]=Array.isArray(value)?String(value[0]):String(value);});
+ return out;
 }
-function dashResetStore():void{try{localStorage.removeItem(dashStoreKey);localStorage.removeItem(dashSessionKey);}catch{/* nothing stored */}}
-function dashSessionEmail():string{try{return localStorage.getItem(dashSessionKey)||'';}catch{return '';}}
-function dashSetSession(email:string):void{try{localStorage.setItem(dashSessionKey,email);}catch{/* the session lasts for this page only */}}
-function dashClearSession():void{try{localStorage.removeItem(dashSessionKey);}catch{/* nothing stored */}}
-const dashAccountByEmail=(email:string)=>dashboardAccounts.find(a=>a.email.toLowerCase()===email.trim().toLowerCase());
-const dashHomeFor=(account:DashboardAccount)=>account.role==='Administrator'?'admin.html':account.role==='Representative'?'organization.html':'consumer.html';
+// Public profiles carry no email, so an empty email never matches.
+const dashAccountByEmail=(email:string)=>email.trim()?dashboardAccounts.find(a=>a.email.toLowerCase()===email.trim().toLowerCase()):undefined;
+const dashHomeForRole=(role:string)=>role==='Administrator'?'admin.html':role==='Representative'?'organization.html':'consumer.html';
+const dashHomeFor=(account:DashboardAccount)=>dashHomeForRole(account.role);
