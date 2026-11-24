@@ -7,6 +7,7 @@ use App\Models\Organization;
 use App\Models\OrganizationDocument;
 use App\Models\User;
 use App\Support\AppState;
+use App\Support\BarangayDirectory;
 use App\Support\Documents;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -15,7 +16,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
@@ -29,9 +29,15 @@ class AuthController extends Controller
         // An account suspended or terminated since it signed in is signed out here, and the page is told why.
         if ($user && $user->status !== 'Active') {
             $blocked = strtolower($user->status);
+            $blockedReason = match ($user->status) {
+                'Suspended' => $user->suspension_reason,
+                'Declined' => $user->organization?->application_decline_reason,
+                'Terminated' => $user->organization?->terminated_for,
+                default => null,
+            };
             $this->signOut($request);
 
-            return response()->json(['blocked' => $blocked] + AppState::for(null))->header('Cache-Control', 'no-store');
+            return response()->json(['blocked' => $blocked, 'blockedReason' => $blockedReason] + AppState::for(null))->header('Cache-Control', 'no-store');
         }
 
         return response()->json(AppState::for($user))->header('Cache-Control', 'no-store');
@@ -53,11 +59,19 @@ class AuthController extends Controller
         if (! Hash::check($data['password'], $account->password)) {
             return $refuse('signin-failed', 'Wrong password', 'The email or password is incorrect.');
         }
+        if ($account->status === 'Suspended') {
+            $reason = trim((string) $account->suspension_reason);
+            $message = 'This account is suspended.'.($reason ? ' Reason: '.$reason : ' Contact AniBayan support if you think this is a mistake.');
+
+            return $refuse('signin-blocked', 'Account suspended', $message);
+        }
+        $organization = $account->organization;
+        $declineReason = trim((string) ($organization?->application_decline_reason ?? ''));
+        $terminationReason = trim((string) ($organization?->terminated_for ?? ''));
         $blocked = [
-            'Suspended' => ['signin-blocked', 'Account suspended', 'This account is suspended. Contact AniBayan support if you think this is a mistake.'],
             'Pending' => ['signin-waiting', 'Application under review', 'Your organization application is still being reviewed. You can sign in once an administrator approves it.'],
-            'Declined' => ['signin-blocked', 'Application declined', 'Your organization application was declined, so this account can’t sign in.'],
-            'Terminated' => ['signin-blocked', 'Organization terminated', 'Your organization was terminated after repeated warnings, so this account can’t sign in.'],
+            'Declined' => ['signin-blocked', 'Application declined', 'Your organization application was declined, so this account can’t sign in.'.($declineReason ? ' Reason: '.$declineReason : '')],
+            'Terminated' => ['signin-blocked', 'Organization terminated', 'Your organization was terminated, so this account can’t sign in.'.($terminationReason ? ' Reason: '.$terminationReason : ' Contact AniBayan support if you think this is a mistake.')],
         ][$account->status] ?? null;
         if ($blocked) {
             return $refuse(...$blocked);
@@ -78,6 +92,9 @@ class AuthController extends Controller
         $organization = $request->input('type') === 'organization';
         // Emails are kept in lower case, and names are compared ignoring capitals (Postgres compares them exactly).
         $request->merge(['email' => strtolower(trim((string) $request->input('email')))]);
+        if ($organization && is_string($request->input('barangay'))) {
+            $request->merge(['barangay' => trim(preg_replace('/\s+/', ' ', $request->input('barangay')))]);
+        }
         $rules = [
             'type' => 'required|in:buyer,organization', 'name' => 'required|string|min:3|max:80',
             'email' => 'required|email|max:120|unique:users,email', 'phone' => ['required', 'regex:'.ActionController::PHONE],
@@ -89,7 +106,7 @@ class AuthController extends Controller
                     if (Organization::whereRaw('lower(name) = ?', [mb_strtolower(trim((string) $value))])->exists()) {
                         $fail('An organization with this name is already on AniBayan.');
                     }
-                }], 'barangay' => ['required', Rule::in(config('anibayan.barangays'))],
+                }], 'barangay' => 'required|string|min:2|max:80|not_in:__other__',
                 'crops' => 'required|string|min:3|max:80',
                 'documents' => 'required|array:'.implode(',', array_keys(Documents::TYPES)).'|min:1',
                 'documents.*' => 'required|file|max:'.Documents::MAX_KB.'|mimetypes:'.implode(',', Documents::MIMES),
@@ -104,6 +121,13 @@ class AuthController extends Controller
                 : 'Your account couldn’t be created. Check your details and try again.'], 422);
         }
         $data = $validator->validated();
+        if ($organization) {
+            $data['barangay'] = trim(preg_replace('/\s+/', ' ', $data['barangay']));
+            $knownBarangay = collect(BarangayDirectory::names())->first(fn ($name) => mb_strtolower($name) === mb_strtolower($data['barangay']));
+            if ($knownBarangay) {
+                $data['barangay'] = $knownBarangay;
+            }
+        }
         $stored = [];
         try {
             $account = DB::transaction(function () use ($data, $organization, $request, &$stored) {

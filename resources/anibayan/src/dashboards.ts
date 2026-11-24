@@ -47,6 +47,8 @@ const dashShopDefaults:DashShopFilters={type:'All',min:'',max:'',harvest:'any',l
 // bar: the highlighted chart bar; anything past the end selects the newest one.
 // profile: the organization or person shown by the profile view (#org=… or #user=…).
 const dashState={view:'overview',query:'',filter:'All',nextFilter:'',period:'week' as 'week'|'month',chart:'value',hardwareChart:'cpu',bar:99,shop:{...dashShopDefaults},profile:{kind:'org' as 'org'|'user',slug:''}};
+const dashCartSelection=new Set<string>();
+const dashCartKnown=new Set<string>();
 const dashPaths:Record<string,string>={
  grid:'M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z',
  bag:'M5 7h14l2 14H3L5 7Z M8 8V6a4 4 0 0 1 8 0v2',
@@ -159,9 +161,9 @@ const dashStars=(rating:number)=>'<span class="stars" role="img" aria-label="Rat
 // for breaking AniBayan's rules. The last of dashWarningLimit warnings is the final warning; the next offence
 // terminates the organization: its listings leave the shop and its representative can no longer sign in.
 const dashWarningLimit=3;
-interface DashWarningEntry{id:string;reason:string;details:string;date:string;report?:string;by?:string}
+interface DashWarningEntry{id:string;reason:string;details:string;date:string;report?:string;by?:string;decisionNote?:string}
 function dashWarningsFor(org:string):DashWarningEntry[]{
- const fromReports:DashWarningEntry[]=dashboardReports.filter(r=>r.organization===org&&r.status==='Upheld').map(r=>({id:r.id,reason:r.reason,details:r.details,date:r.decided||r.date,report:r.id}));
+ const fromReports:DashWarningEntry[]=dashboardReports.filter(r=>r.organization===org&&r.status==='Upheld').map(r=>({id:r.id,reason:r.reason,details:r.details,date:r.decided||r.date,report:r.id,decisionNote:r.decisionNote}));
  const direct:DashWarningEntry[]=dashboardWarnings.filter(w=>w.organization===org).map(w=>({id:w.id,reason:w.reason,details:w.details,date:w.date,by:w.by}));
  return fromReports.concat(direct).sort((a,b)=>b.date.localeCompare(a.date));
 }
@@ -190,7 +192,7 @@ function dashWarningMeter(org:string):string{
 }
 // Administrators can withdraw a warning they gave; a report's warning goes when the report is reopened.
 function dashWarningRows(org:string,listClass:string,canWithdraw:boolean):string{
- return '<div class="'+listClass+'">'+dashWarningsFor(org).map(w=>'<article class="feedback-row"><header><strong>'+de(w.reason)+'</strong><small>'+dd(w.date)+'</small></header>'+(w.details?'<p>'+de(w.details)+'</p>':'')+'<small>'+(w.report?'Upheld report '+w.report:'Given by '+de(w.by||'AniBayan'))+'</small>'+(canWithdraw&&!w.report?' <button class="text-button" data-withdraw-warning="'+w.id+'">Withdraw</button>':'')+'</article>').join('')+'</div>';
+ return '<div class="'+listClass+'">'+dashWarningsFor(org).map(w=>'<article class="feedback-row"><header><strong>'+de(w.reason)+'</strong><small>'+dd(w.date)+'</small></header>'+(w.details?'<p>'+de(w.details)+'</p>':'')+(w.decisionNote?'<p class="detail-note">AniBayan’s explanation: '+de(w.decisionNote)+'</p>':'')+'<small>'+(w.report?'Upheld report '+w.report:'Given by '+de(w.by||'AniBayan'))+'</small>'+(canWithdraw&&!w.report?' <button class="text-button" data-withdraw-warning="'+w.id+'">Withdraw</button>':'')+'</article>').join('')+'</div>';
 }
 function dashWarningCallout():string{
  const s=dashStanding(dashOrgName);
@@ -435,7 +437,7 @@ async function dashReadHardware():Promise<DashboardHardware>{
  return await response.json() as DashboardHardware;
 }
 // Services AniBayan will connect to, with their current state.
-const dashIntegrations=[['PayMongo payments','Card and GCash checkout','Test mode','No money is charged'],['Tawk.to live chat','Customer support chat','Not connected','Live chat is not set up yet.'],['Email notifications','Order and account emails','Not connected','Email sending is not set up yet.']];
+const dashIntegrations=[['PayMongo payments','Card, GCash and QR Ph checkout','Test mode','No money is charged'],['Tawk.to live chat','Customer support chat','Connected','Chat widget is installed on AniBayan pages.'],['Email notifications','Order and account emails','Not connected','Email sending is not set up yet.']];
 async function dashRunHealthChecks():Promise<void>{
  if(dashChecking)return;
  dashChecking=true;dashRender();
@@ -468,13 +470,13 @@ const dashUserName=dashMe()?.name||'Guest';
 const dashRoles:Record<DashRole,DashRoleConfig>={
  admin:{
   page:'admin.html',workspace:'Admin workspace',navLabel:'Administration',
-  nav:[['overview','grid','Overview'],['accounts','people','Accounts'],['activity','eye','Activity log'],['reports','flag','User reports'],['refunds','wallet','Refunds'],['applications','clipboard','Applications'],['health','pulse','Site health']],
+   nav:[['overview','grid','Overview'],['accounts','people','Accounts'],['listings','box','Listings'],['barangays','pin','Barangays'],['activity','eye','Activity log'],['reports','flag','User reports'],['refunds','wallet','Refunds'],['applications','clipboard','Applications'],['health','pulse','Site health']],
   settingsNav:['settings','settings','Settings'],
   user:dashUserName,userRole:'Platform administrator',initials:'AD',
   search:'Search accounts, reports, applications…',
-  cardIcon:'shield',cardTitle:'Platform oversight',cardText:'Accounts, user reports, organization applications and site health.',
+   cardIcon:'shield',cardTitle:'Platform oversight',cardText:'Accounts, listings, barangays, reports, applications and site health.',
   shortcut:['Public homepage','index.html','home'],
-  titles:{overview:['Admin overview','Accounts, user reports, organization applications and site health.'],refunds:['Refunds','Buyers’ refund requests, and disputes waiting for your decision.'],accounts:['Account management','Consumer, representative and administrator accounts.'],activity:['Activity log','Sign-ins, orders, listings and administrator actions, newest first.'],reports:['User reports','Reports buyers filed about organizations.'],applications:['Organization applications','Farmer organizations asking to sell on AniBayan.'],health:['Site health','Live checks of AniBayan’s services, plus the history of recent checks.'],settings:['Workspace settings','Your administrator account and preferences.'],help:dashHelpTitle},
+   titles:{overview:['Admin overview','Accounts, listings, barangays, reports, organization applications and site health.'],refunds:['Refunds','Buyers’ refund requests, and disputes waiting for your decision.'],accounts:['Account management','Consumer, representative and administrator accounts.'],listings:['All listings','Review harvest listings and remove items that break AniBayan rules.'],barangays:['Barangays','Manage the barangays available in AniBayan location selectors.'],activity:['Activity log','Sign-ins, orders, listings and administrator actions, newest first.'],reports:['User reports','Reports buyers filed about organizations.'],applications:['Organization applications','Farmer organizations asking to sell on AniBayan.'],health:['Site health','Live checks of AniBayan’s services, plus the history of recent checks.'],settings:['Workspace settings','Your administrator account and preferences.'],help:dashHelpTitle},
  },
  organization:{
   page:'organization.html',workspace:'Organization workspace',navLabel:'Your organization',
@@ -522,12 +524,12 @@ function dashBlocked():string[]{
  if(dashOffline)return ['AniBayan’s server isn’t answering','Start the server (php artisan serve) and its database, then reload this page.'];
  const me=dashMe();
  if(!me)return [];
- if(me.status==='Suspended')return ['This account is suspended','An AniBayan administrator suspended '+(me.email||'this account')+'. Contact AniBayan support if you think this is a mistake.'];
- if(me.status==='Terminated'||(isOrgDashboard&&dashMyOrg()?.status==='Terminated'))return ['Your organization was terminated',(me.organization||'Your organization')+' was removed from AniBayan after repeated warnings. Contact AniBayan support if you think this is a mistake.'];
+ if(me.status==='Suspended')return ['This account is suspended',(dashBlockedReason||me.suspensionReason?'Reason: '+(dashBlockedReason||me.suspensionReason):'An AniBayan administrator suspended '+(me.email||'this account')+'. Contact AniBayan support if you think this is a mistake.')];
+ if(me.status==='Terminated'||(isOrgDashboard&&dashMyOrg()?.status==='Terminated'))return ['Your organization was terminated',(dashBlockedReason||dashMyOrg()?.terminatedFor?'Reason: '+(dashBlockedReason||dashMyOrg()?.terminatedFor):(me.organization||'Your organization')+' was removed from AniBayan after repeated warnings. Contact AniBayan support if you think this is a mistake.')];
  if(isOrgDashboard){
   const org=dashMyOrg();
   if(me.status==='Pending'||org?.status==='Pending review')return ['Your application is being reviewed','An AniBayan administrator is reviewing '+dashOrgName+'. You can manage listings and orders once it is approved.'];
-  if(me.status==='Declined'||org?.status==='Declined')return ['Your application was declined',dashOrgName+' was not approved. You can apply again with complete documents.'];
+  if(me.status==='Declined'||org?.status==='Declined')return ['Your application was declined',(dashBlockedReason||org?.applicationDeclineReason?'Reason: '+(dashBlockedReason||org?.applicationDeclineReason):dashOrgName+' was not approved.')+' Contact AniBayan support for next steps.'];
  }
  return [];
 }
@@ -577,7 +579,7 @@ function dashShell():void{
   ?'<p>Signed in as</p><div class="workspace-account">'+avatar+'<span><strong>'+de(me.name)+'</strong><small>'+de(me.email)+'</small></span></div>'+(dashRole.settingsNav?'<a href="#'+dashRole.settingsNav[0]+'">'+di(dashRole.settingsNav[1])+'<span>'+dashRole.settingsNav[2]+'</span></a>':'')+'<a href="index.html">'+di('home')+'<span>Homepage</span></a><a class="workspace-home" href="login.html" data-sign-out>'+di('logout')+'<span>Sign out</span></a>'
   :'<p>Browsing as a guest</p><a href="login.html" data-sign-in>'+di('user')+'<span>Sign in</span></a><a href="login.html#register">'+di('plus')+'<span>Create an account</span></a><a class="workspace-home" href="index.html">'+di('home')+'<span>Homepage</span></a>';
  const headerUser=me?'<button class="header-user" data-go="'+(dashRole.settingsNav?dashRole.settingsNav[0]:'help')+'" aria-label="'+(dashRole.settingsNav?dashRole.settingsNav[2]:'Help')+'">'+avatar+'<span><strong>'+de(me.name)+'</strong><small>'+dashRole.userRole+'</small></span></button>':'<a class="control" href="login.html#register">Create account</a><a class="control primary" href="login.html" data-sign-in>Sign in</a>';
- dashRoot.innerHTML=`<aside class="sidebar" id="sidebar"><a class="dash-brand" href="index.html" aria-label="AniBayan homepage"><svg viewBox="0 0 34 32" aria-hidden="true"><path d="M16 32V17C6 19 0 12 0 3c10 0 17 4 17 14C17 5 25 0 34 0c0 11-6 18-17 18v14Z"/></svg><strong>AniBayan.</strong></a><p class="sidebar-role"><span class="role-badge">${dashRole.workspace}</span></p><p class="nav-label">${dashRole.navLabel}</p><nav class="side-nav" aria-label="${dashRole.workspace} navigation">${dashRole.nav.map(link).join('')}</nav><p class="nav-label">General</p><nav class="side-nav" aria-label="Account and help">${(dashRole.settingsNav?link(dashRole.settingsNav):'')+link(['help','help','Help & support'])}</nav><div class="sidebar-foot"><div class="sidebar-card">${di(dashRole.cardIcon)}<strong>${de(dashRole.cardTitle)}</strong>${de(dashRole.cardText)}</div><div class="workspace-switch"><div class="workspace-menu" id="workspace-menu" hidden>${menu}</div><button class="sidebar-user" id="workspace-toggle" aria-expanded="false" aria-controls="workspace-menu" aria-label="Account menu">${avatar}<span class="sidebar-user-copy"><strong>${de(dashRole.user)}</strong><small>${dashRole.userRole}</small></span>${di('chevron')}</button></div></div></aside><div class="sidebar-backdrop" id="sidebar-backdrop"></div><div class="workspace"><header class="topbar"><button class="icon-button collapse-button" id="collapse-sidebar" aria-label="Toggle navigation" aria-controls="sidebar">${di('menu')}</button><label class="global-search">${di('search')}<input id="dashboard-search" type="search" placeholder="${dashRole.search}" aria-label="Search current section"><kbd>/</kbd></label><span class="topbar-spacer"></span><a class="market-shortcut" href="${dashRole.shortcut[1]}">${di(dashRole.shortcut[2])}<span>${dashRole.shortcut[0]}</span>${di('up')}</a><div class="notification-wrap"><button class="icon-button notification-button" id="show-notifications" aria-label="Show notifications" aria-expanded="false" aria-controls="notification-panel">${di('bell')}<span class="notification-dot" id="notification-dot"></span></button><div class="notification-panel" id="notification-panel" hidden><h2>Notifications</h2><ul id="notification-list"></ul></div></div><div class="header-account">${headerUser}</div></header><main class="main-content" id="dashboard-content" tabindex="-1"></main></div>`;
+  dashRoot.innerHTML=`<aside class="sidebar" id="sidebar"><a class="dash-brand" href="index.html" aria-label="AniBayan homepage"><svg viewBox="0 0 34 32" aria-hidden="true"><path d="M16 32V17C6 19 0 12 0 3c10 0 17 4 17 14C17 5 25 0 34 0c0 11-6 18-17 18v14Z"/></svg><strong>AniBayan.</strong></a><p class="sidebar-role"><span class="role-badge">${dashRole.workspace}</span></p><p class="nav-label">${dashRole.navLabel}</p><nav class="side-nav" aria-label="${dashRole.workspace} navigation">${dashRole.nav.map(link).join('')}</nav><p class="nav-label">General</p><nav class="side-nav" aria-label="Account and help">${(dashRole.settingsNav?link(dashRole.settingsNav):'')+link(['help','help','Help & support'])}</nav><div class="sidebar-foot"><div class="sidebar-card">${di(dashRole.cardIcon)}<strong>${de(dashRole.cardTitle)}</strong>${de(dashRole.cardText)}</div><div class="workspace-switch"><div class="workspace-menu" id="workspace-menu" hidden>${menu}</div><button class="sidebar-user" id="workspace-toggle" aria-expanded="false" aria-controls="workspace-menu" aria-label="Account menu">${avatar}<span class="sidebar-user-copy"><strong>${de(dashRole.user)}</strong><small>${dashRole.userRole}</small></span>${di('chevron')}</button></div></div></aside><div class="sidebar-backdrop" id="sidebar-backdrop"></div><div class="workspace"><header class="topbar"><button class="icon-button collapse-button" id="collapse-sidebar" aria-label="Toggle navigation" aria-controls="sidebar">${di('menu')}</button><label class="global-search">${di('search')}<input id="dashboard-search" type="search" placeholder="${dashState.view==='cart'?'Search items in your cart':dashRole.search}" aria-label="Search current section"><kbd>/</kbd></label><span class="topbar-spacer"></span><a class="market-shortcut" href="${dashRole.shortcut[1]}">${di(dashRole.shortcut[2])}<span>${dashRole.shortcut[0]}</span>${di('up')}</a><div class="notification-wrap"><button class="icon-button notification-button" id="show-notifications" aria-label="Show notifications" aria-expanded="false" aria-controls="notification-panel">${di('bell')}<span class="notification-dot" id="notification-dot"></span></button><div class="notification-panel" id="notification-panel" hidden><h2>Notifications</h2><ul id="notification-list"></ul></div></div><div class="header-account">${headerUser}</div></header><main class="main-content" id="dashboard-content" tabindex="-1"></main></div>`;
 }
 function dashRenderNotifications():void{
  const notes=dashBlocked().length?[]:dashNotifications();
@@ -592,7 +594,8 @@ function dashHeading():string{
  if(isConsumerDashboard)tools='<span class="control static">'+di('calendar')+dashTodayDate.toLocaleDateString('en-PH',{weekday:'long',day:'2-digit',month:'short',year:'numeric'})+'</span>'+(view==='shop'||view==='cart'?'':'<button class="control primary" data-go="shop">'+di('bag')+'Shop the harvest</button>');
  else if(isAdminDashboard){
   if(view==='health'){const latest=dashHealthSummary().latest;tools+='<span class="control static">'+di('clock')+(dashChecking?'Checking now…':latest?'Last checked '+dtime(latest.time):'Not checked yet')+'</span><button class="control" data-health-check'+(dashChecking?' disabled':'')+'>'+di('pulse')+'Run checks</button>';}
-  if(['accounts','reports','refunds','applications','health'].includes(view))tools+=exportButton;
+   if(['accounts','listings','reports','refunds','applications','health'].includes(view))tools+=exportButton;
+   if(view==='barangays')tools+='<button class="control primary" data-add-barangay>'+di('plus')+'Add barangay</button>';
  }else{
   if(view==='overview')tools+='<select class="period-select" id="dashboard-period" aria-label="Reporting period"><option value="week" '+(dashState.period==='week'?'selected':'')+'>Last 7 days</option><option value="month" '+(dashState.period==='month'?'selected':'')+'>Last 4 weeks</option></select>';
   if(['overview','orders','listings','feedback','members','payments'].includes(view))tools+=exportButton;
@@ -645,6 +648,7 @@ function dashRoleCrops():DashboardCrop[]{
  return dashboardCrops.filter(c=>!isOrgDashboard||c.organization===dashOrgName);
 }
 function dashCropStatus(crop:DashboardCrop):string{
+ if(crop.status==='Removed')return 'Removed by AniBayan';
  if(crop.stock===0)return 'Out of stock';
  if(crop.status!=='Active')return 'Unpublished';
  if(dashFreshness(crop).left<0)return 'Past shelf life';
@@ -657,7 +661,8 @@ function dashOrderTable(mode:'recent'|'all'|'payments'):string{
  const cols:[string,(o:DashboardOrder)=>string][]=[['Order',o=>'<strong>'+dashOrderNo(o.id)+'</strong>'],['Harvest',product]];
  if(isOrgDashboard)cols.push(['Buyer',o=>de(o.customer)]);
  cols.push(['Total',o=>'<strong>'+dp(o.total)+'</strong>']);
- if(mode==='payments')cols.push(['Payment',o=>ds(o.payment)+(o.method?'<small class="cell-note">'+de(o.method)+'</small>':'')],['Funds',o=>o.funds?ds(o.funds):'<small class="cell-note">'+(o.payment==='Paid'?'Cash':'–')+'</small>'],['Order status',o=>ds(o.status)]);else cols.push(['Status',o=>ds(o.status)]);
+ const statusCell=(o:DashboardOrder)=>ds(o.status)+(o.status==='Cancelled'&&o.cancelReason?'<small class="cell-note">'+de(o.cancelReason)+'</small>':'');
+ if(mode==='payments')cols.push(['Payment',o=>ds(o.payment)+(o.method?'<small class="cell-note">'+de(o.method)+'</small>':'')],['Funds',o=>o.funds?ds(o.funds):'<small class="cell-note">'+(o.payment==='Paid'?'Cash':'–')+'</small>'],['Order status',statusCell]);else cols.push(['Status',statusCell]);
  cols.push(['Date',o=>dd(o.date)]);
  const actions=(o:DashboardOrder)=>'<div class="row-actions">'+(isOrgDashboard&&mode==='all'&&dashNextStep[o.status]?'<button class="control small" data-advance="'+o.id+'">'+dashNextStep[o.status][1]+'</button>':'')+(isOrgDashboard&&mode!=='recent'&&dashRefundOpen(o)?'<button class="control small primary" data-order="'+o.id+'">Answer refund</button>':'')+(isConsumerDashboard&&mode!=='recent'&&o.status==='Delivered'?'<button class="control small primary" data-order-received="'+o.id+'">Order received</button>':'')+(isConsumerDashboard&&mode!=='recent'&&o.payment==='Unpaid'&&dashOnline(o)&&o.status!=='Cancelled'?'<button class="control small primary" data-pay-order="'+o.id+'">Pay now</button>':'')+(isConsumerDashboard&&mode==='all'&&o.status==='Completed'&&!dashRated(o.id)?'<button class="control small" data-rate="'+o.id+'">'+di('star')+'Rate</button>':'')+'<button class="table-action" data-order="'+o.id+'" aria-label="View order '+o.id+'">'+di('eye')+'</button></div>';
  const title=mode==='payments'?(isOrgDashboard?'Payments by order':'Your payment history'):mode==='recent'?(isConsumerDashboard?'Recent purchases':'Recent orders'):(isOrgDashboard?'Orders from your buyers':'Your orders');
@@ -727,6 +732,22 @@ function dashAccountsView():string{
  const rows=accounts.map(a=>'<tr><td><div class="table-product">'+dashAvatar(a,a.name,dashLookKind(a.role))+'<div><strong>'+de(a.name)+'</strong><small>'+de(a.email)+'</small></div></div></td><td>'+(a.role==='Consumer'?'Buyer':a.role)+(a.organization?'<small class="cell-note">'+de(a.organization)+'</small>':'')+'</td><td>'+dfull(a.joined)+'</td><td>'+dd(a.lastActive)+'</td><td>'+ds(a.status)+'</td><td><div class="row-actions"><button class="control small" data-account="'+de(a.email)+'">Manage</button></div></td></tr>').join('');
  const table=accounts.length?'<table><thead><tr><th scope="col">Account</th><th scope="col">Role</th><th scope="col">Joined</th><th scope="col">Last active</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>'+rows+'</tbody></table>':dashEmpty('No matching accounts','Try a different name, email, role or status.');
  return metrics+'<section class="panel">'+dashPanelHead('Accounts','')+dashFilters(['All','Buyer','Representative','Administrator','Pending','Suspended'],dashPlural(accounts.length,'account'),'Search accounts')+'<div class="table-wrap">'+table+'</div></section>';
+}
+function dashAdminListings():DashboardCrop[]{
+ const filter=dashState.filter;
+ return dashboardCrops.filter(c=>dashMatching([c.name,c.organization,c.category,c.id,c.removalReason||''].join(' '))
+  &&(filter==='All'||(filter==='Removed'?c.status==='Removed':filter==='Active'?c.status==='Active':c.status!=='Removed')));
+}
+function dashAdminListingsView():string{
+ const crops=dashAdminListings();
+ const rows=crops.map(c=>'<tr><td><div class="table-product"><img src="'+dashImg(c.image)+'" alt=""><div><strong>'+de(c.name)+'</strong><small>'+c.id+' · '+de(c.category)+'</small></div></div></td><td>'+de(c.organization)+'</td><td>'+dp(c.price)+' / '+de(c.unit)+'</td><td>'+c.stock+' '+de(c.unit)+'</td><td>'+ds(c.status==='Removed'?'Removed':dashCropStatus(c))+'</td><td>'+(c.removalReason?'<small class="cell-note">Reason: '+de(c.removalReason)+'</small>':'—')+'</td><td>'+(c.status==='Removed'?'<span class="filter-summary">Removed</span>':'<button class="control small danger" data-admin-remove-listing="'+c.id+'">Remove listing</button>')+'</td></tr>').join('');
+ const table=crops.length?'<table><thead><tr><th scope="col">Listing</th><th scope="col">Organization</th><th scope="col">Price</th><th scope="col">Stock</th><th scope="col">Status</th><th scope="col">Removal reason</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>'+rows+'</tbody></table>':dashEmpty(dashboardCrops.length?'No matching listings':'No listings yet','Try another search or filter.');
+ return '<section class="panel">'+dashPanelHead('Harvest listings','A removed listing stays in the organization’s record with its reason.')+dashFilters(['All','Active','Removed'],dashPlural(crops.length,'listing'),'Search listings')+'<div class="table-wrap">'+table+'</div></section>';
+}
+function dashBarangaysAdminView():string{
+ const rows=dashBarangays.filter(name=>dashMatching(name)).map(name=>'<tr><td><strong>'+de(name)+'</strong></td><td>'+de(dashCityName)+'</td><td><div class="row-actions"><button class="control small" data-barangay-edit="'+de(name)+'">Edit</button><button class="control small danger" data-barangay-remove="'+de(name)+'">Remove</button></div></td></tr>').join('');
+ const add='<button class="control small primary" data-add-barangay>'+di('plus')+'Add barangay</button>';
+ return '<section class="panel">'+dashPanelHead('Barangays','Rename, add or remove locations. Existing records can be moved when a barangay is removed.',add)+dashFilters(['All'],dashPlural(dashBarangays.length,'barangay'),'Search barangays')+'<div class="table-wrap">'+(rows?'<table><thead><tr><th scope="col">Barangay</th><th scope="col">Municipality</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>'+rows+'</tbody></table>':dashEmpty('No matching barangays','Try another search.'))+'</div></section>';
 }
 function dashReportsView():string{
  const n=(status:string)=>dashboardReports.filter(r=>r.status===status).length;
@@ -825,6 +846,9 @@ const dashActivityTypes:Record<string,[string,string,string]>={
  'org-terminated':['Organization terminated','admin','Admin'],
  'application-approved':['Application approved','admin','Admin'],
  'application-declined':['Application declined','admin','Admin'],
+ 'barangay-added':['Barangay added','admin','Admin'],
+ 'barangay-updated':['Barangay renamed','admin','Admin'],
+ 'barangay-removed':['Barangay removed','admin','Admin'],
 };
 const dashActivityInfo=(type:string):[string,string,string]=>dashActivityTypes[type]||[type,'muted','Other'];
 const dashFlagged=(e:DashboardActivity)=>dashActivityInfo(e.type)[1]==='flag';
@@ -892,7 +916,7 @@ function dashListingCrops():DashboardCrop[]{
  return dashRoleCrops().filter(c=>dashMatching(c.name+' '+c.organization+' '+c.category)&&(f==='All'||!dashListingFilters.includes(f)||(f==='Close to spoiling'?dashSpoilingSoon(c):dashCropStatus(c)===f)));
 }
 function dashListingTile(c:DashboardCrop):string{
- return '<article class="product-tile"><img src="'+dashImg(c.image)+'" alt="'+de(c.name)+'"><div class="product-tile-copy"><div class="product-tile-head"><h2>'+de(c.name)+'</h2>'+ds(dashCropStatus(c))+'</div><p>'+de(c.category)+' · '+c.id+'</p><div class="product-price"><strong>'+dp(c.price)+'</strong> / '+de(c.unit)+'</div>'+dashHarvestLine(c,true)+'<div class="product-bottom"><small>'+c.stock+' '+de(c.unit)+' available</small><span class="row-actions"><button class="control small" data-toggle-listing="'+c.id+'"'+(c.stock===0?' disabled':'')+'>'+(c.status==='Active'?'Unpublish':'Publish')+'</button><button class="control small" data-edit-listing="'+c.id+'">'+di('edit')+'Edit</button><button class="control small primary" data-product="'+c.id+'">Details</button></span></div></div></article>';
+ return '<article class="product-tile"><img src="'+dashImg(c.image)+'" alt="'+de(c.name)+'"><div class="product-tile-copy"><div class="product-tile-head"><h2>'+de(c.name)+'</h2>'+ds(dashCropStatus(c))+'</div><p>'+de(c.category)+' · '+c.id+'</p><div class="product-price"><strong>'+dp(c.price)+'</strong> / '+de(c.unit)+'</div>'+dashHarvestLine(c,true)+'<div class="product-bottom"><small>'+c.stock+' '+de(c.unit)+' available</small><span class="row-actions">'+(c.status==='Removed'?'<button class="control small primary" data-product="'+c.id+'">Details</button>':'<button class="control small" data-toggle-listing="'+c.id+'"'+(c.stock===0?' disabled':'')+'>'+(c.status==='Active'?'Unpublish':'Publish')+'</button><button class="control small" data-edit-listing="'+c.id+'">'+di('edit')+'Edit</button><button class="control small primary" data-product="'+c.id+'">Details</button>')+'</span></div></div></article>';
 }
 function dashListingGrid():string{
  const crops=dashListingCrops();
@@ -900,6 +924,22 @@ function dashListingGrid():string{
  if(crops.length)return filters+'<div class="product-grid">'+crops.map(dashListingTile).join('')+'</div>';
  if(dashRoleCrops().length)return filters+'<section class="panel">'+dashEmpty('No matching listings.','Try another filter or search.')+'</section>';
  return '<section class="panel">'+(dashRoleCrops().length?dashEmpty('No matching listings.','Try a different search.'):dashEmpty('No listings yet','Add a crop listing so buyers can find your harvest.')+'<div class="empty-action"><button class="control primary" data-add-listing>'+di('plus')+'Add listing</button></div>')+'</section>';
+}
+function dashActiveCropOrders(id:string):DashboardOrder[]{
+ return dashboardOrders.filter(o=>!['Completed','Cancelled','Refunded'].includes(o.status)&&o.items?.some(item=>item.crop===id));
+}
+function dashToggleListing(id:string,confirmActiveOrders=false):void{
+ const crop=dashboardCrops.find(c=>c.id===id);if(!crop)return;
+ const active=dashActiveCropOrders(id);
+ if(crop.status==='Active'&&active.length&&!confirmActiveOrders){
+  dashOpen('<p class="detail-kicker">Unpublish listing</p><h2 id="detail-title">Unpublish '+de(crop.name)+'?</h2><p class="detail-subtitle">There '+(active.length===1?'is 1 active order':'are '+active.length+' active orders')+' for this harvest. New buyers will not be able to order it; existing orders will stay active.</p><div class="detail-actions"><button class="control" data-close-dialog>Keep published</button><button class="control danger" data-toggle-confirm="'+id+'">Unpublish listing</button></div>');
+  return;
+ }
+ void dashDo('listing.toggle',{id,confirmActiveOrders}).then(r=>{
+  if(!r||!crop)return;
+  if(dashDialog.open)dashProductDetails(id);
+  dashToast(crop.name+(crop.status==='Active'?' is published. Buyers can see and order it.':' is unpublished. Existing orders stay active.'));
+ });
 }
 function dashOrgFeedbackList():DashboardFeedback[]{
  return dashboardFeedback.filter(f=>f.organization===dashOrgName&&dashMatching(f.customer+' '+f.comment+' '+f.rating)).sort((a,b)=>b.date.localeCompare(a.date));
@@ -925,7 +965,7 @@ function dashMembers():string{
  const members=all.filter(m=>dashMatching([m.name,m.place,m.crops,m.status].join(' ')));
  const area=all.reduce((sum,m)=>sum+m.area,0);
  const actions=(m:DashboardMember)=>'<div class="row-actions">'+(m.status==='Pending'?'<button class="control small primary" data-member-confirm="'+m.id+'">'+di('check')+'Confirm</button>':'')+'<button class="control small" data-member-remove="'+m.id+'">Remove</button></div>';
- return '<div class="metric-grid three">'+dashMetric('Member farmers',String(all.length),'people','Growers supplying your organization')+dashMetric('Farmed area',area.toFixed(1)+' ha','pin','Across all member farms')+dashMetric('Pending membership',String(all.filter(m=>m.status==='Pending').length),'clock','Awaiting your confirmation')+'</div><section class="panel">'+dashPanelHead('Members','','<span class="filter-summary">'+dashPlural(members.length,'member')+'</span>')+'<div class="table-wrap">'+(members.length?'<table><thead><tr><th scope="col">Farmer</th><th scope="col">Barangay</th><th scope="col">Crops</th><th scope="col">Area</th><th scope="col">Member since</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>'+members.map(m=>'<tr><td><div class="table-product"><span class="avatar organization-avatar">'+dashInitials(m.name)+'</span><strong>'+de(m.name)+'</strong></div></td><td>'+de(m.place)+'</td><td>'+de(m.crops)+'</td><td>'+m.area.toFixed(1)+' ha</td><td>'+de(m.joined)+'</td><td>'+ds(m.status)+'</td><td>'+actions(m)+'</td></tr>').join('')+'</tbody></table>':dashEmpty(all.length?'No matching members':'No member farmers yet',all.length?'Try a different name, place or crop.':'Add the farmers who supply your organization.'))+'</div></section>';
+  return '<div class="metric-grid three">'+dashMetric('Member farmers',String(all.length),'people','Growers supplying your organization')+dashMetric('Farmed area',area.toFixed(1)+' ha','pin','Across all member farms')+dashMetric('Pending membership',String(all.filter(m=>m.status==='Pending').length),'clock','Awaiting your confirmation')+'</div><section class="panel">'+dashPanelHead('Members','','<span class="filter-summary">'+dashPlural(members.length,'member')+'</span>')+'<div class="table-wrap">'+(members.length?'<table><thead><tr><th scope="col">Farmer</th><th scope="col">Barangay</th><th scope="col">Crops</th><th scope="col">Area</th><th scope="col">Member since</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>'+members.map(m=>'<tr><td><div class="table-product"><span class="avatar organization-avatar">'+dashInitials(m.name)+'</span><div><strong>'+de(m.name)+'</strong>'+(m.applicationMessage?'<small class="cell-note">Message: '+de(m.applicationMessage)+'</small>':'')+'</div></div></td><td>'+de(m.place)+'</td><td>'+de(m.crops)+'</td><td>'+m.area.toFixed(1)+' ha</td><td>'+de(m.joined)+'</td><td>'+ds(m.status)+'</td><td>'+actions(m)+'</td></tr>').join('')+'</tbody></table>':dashEmpty(all.length?'No matching members':'No member farmers yet',all.length?'Try a different name, place or crop.':'Add the farmers who supply your organization.'))+'</div></section>';
 }
 function dashOrgPayments():string{
  const orders=dashRoleOrders().filter(o=>o.status!=='Cancelled');
@@ -1006,27 +1046,41 @@ function dashRefreshShop():void{
  document.getElementById('shop-summary')!.textContent=dashShopSummary(crops.length);
 }
 // The server checks the stock and how much is already in the cart, and adds what's left.
-async function dashAddToCart(id:string,quantity:number):Promise<void>{
- if(!dashRequireBuyer())return;
+async function dashAddToCart(id:string,quantity:number,form?:HTMLFormElement):Promise<boolean>{
+ if(!dashRequireBuyer())return false;
  const crop=dashboardCrops.find(c=>c.id===id);
- if(!crop)return;
+ if(!crop)return false;
  const left=crop.stock-(dashCart().find(l=>l.crop===id)?.quantity||0);
- const r=await dashDo('cart.add',{crop:id,quantity:Math.min(Math.max(1,Math.floor(quantity)||1),Math.max(1,left))});
- if(r)dashToast(r.added+' '+crop.unit+' of '+crop.name+' added to your cart.'+(r.allLeft?' That’s all the stock left.':''));
+ const errors:Record<string,string>={};
+ if(!Number.isInteger(quantity)||quantity<1)errors.quantity='Enter a whole quantity of at least 1.';
+ else if(quantity>left)errors.quantity='Only '+Math.max(0,left)+' '+crop.unit+' available in stock.';
+ if(form&&!dashShowErrors(form,errors))return false;
+ if(!form&&Object.keys(errors).length){dashToast(errors.quantity);return false;}
+ const r=await dashDo('cart.add',{crop:id,quantity},form);
+ if(r)dashToast(r.added+' '+crop.unit+' of '+crop.name+' added to your cart.');
+ return !!r;
 }
 function dashCartView():string{
- const entries=dashCartEntries();
- if(!entries.length)return '<section class="panel">'+dashEmpty('Your cart is empty.','Add harvests from the shop to order them.')+'<div class="empty-action"><button class="control primary" data-go="shop">'+di('store')+'Shop the harvest</button></div></section>';
+ const allEntries=dashCartEntries();
+ const ids=new Set(allEntries.map(e=>e.crop.id));
+ dashCartKnown.forEach(id=>{if(!ids.has(id)){dashCartKnown.delete(id);dashCartSelection.delete(id);}});
+ allEntries.forEach(e=>{if(!dashCartKnown.has(e.crop.id))dashCartSelection.add(e.crop.id);dashCartKnown.add(e.crop.id);});
+ if(!allEntries.length)return '<section class="panel">'+dashEmpty('Your cart is empty.','Add harvests from the shop to order them.')+'<div class="empty-action"><button class="control primary" data-go="shop">'+di('store')+'Shop the harvest</button></div></section>';
+ const entries=allEntries.filter(e=>dashMatching(e.crop.name+' '+e.crop.organization+' '+e.crop.category));
+ if(!entries.length)return '<section class="panel">'+dashEmpty('No cart items match your search.','Try another crop or organization name.')+'</section>';
+ const selected=allEntries.filter(e=>dashCartSelection.has(e.crop.id));
  const orgs=[...new Set(entries.map(e=>e.crop.organization))];
+ const selectedOrgs=[...new Set(selected.map(e=>e.crop.organization))];
  const row=(e:DashCartEntry)=>{
   const problem=dashCartProblem(e);
-  return '<div class="cart-row"><img src="'+dashImg(e.crop.image)+'" alt=""><div class="cart-row-copy"><strong>'+de(e.crop.name)+'</strong><small>'+dp(e.crop.price)+' / '+de(e.crop.unit)+' · harvested '+dd(e.crop.harvested)+'</small>'+(problem?'<small class="cart-problem">'+de(problem)+'</small>':'')+'</div><div class="qty-stepper" role="group" aria-label="Quantity of '+de(e.crop.name)+'"><button class="qty-button" data-cart-step="'+e.crop.id+'" data-step="-1" aria-label="One less"'+(e.line.quantity<=1?' disabled':'')+'>−</button><span>'+e.line.quantity+' '+de(e.crop.unit)+'</span><button class="qty-button" data-cart-step="'+e.crop.id+'" data-step="1" aria-label="One more"'+(e.line.quantity>=e.crop.stock?' disabled':'')+'>+</button></div><strong class="cart-line-total">'+dp(e.line.quantity*e.crop.price)+'</strong><button class="table-action" data-cart-remove="'+e.crop.id+'" aria-label="Remove '+de(e.crop.name)+' from your cart">×</button></div>';
+  return '<div class="cart-row"><label class="cart-select"><input type="checkbox" data-cart-select="'+e.crop.id+'" aria-label="Select '+de(e.crop.name)+' for checkout"'+(dashCartSelection.has(e.crop.id)?' checked':'')+'></label><img src="'+dashImg(e.crop.image)+'" alt=""><div class="cart-row-copy"><strong>'+de(e.crop.name)+'</strong><small>'+dp(e.crop.price)+' / '+de(e.crop.unit)+' · harvested '+dd(e.crop.harvested)+'</small>'+(problem?'<small class="cart-problem">'+de(problem)+'</small>':'')+'</div><div class="qty-stepper" role="group" aria-label="Quantity of '+de(e.crop.name)+'"><button class="qty-button" data-cart-step="'+e.crop.id+'" data-step="-1" aria-label="One less"'+(e.line.quantity<=1?' disabled':'')+'>−</button><span>'+e.line.quantity+' '+de(e.crop.unit)+'</span><button class="qty-button" data-cart-step="'+e.crop.id+'" data-step="1" aria-label="One more"'+(e.line.quantity>=e.crop.stock?' disabled':'')+'>+</button></div><strong class="cart-line-total">'+dp(e.line.quantity*e.crop.price)+'</strong><button class="table-action" data-cart-remove="'+e.crop.id+'" aria-label="Remove '+de(e.crop.name)+' from your cart">×</button></div>';
  };
- const subtotal=(org:string)=>entries.filter(e=>e.crop.organization===org).reduce((sum,e)=>sum+e.line.quantity*e.crop.price,0);
- const total=orgs.reduce((sum,org)=>sum+subtotal(org),0);
- const problems=entries.filter(e=>dashCartProblem(e)).length;
- const list='<section class="panel">'+dashPanelHead('Items',dashPlural(entries.length,'harvest')+' from '+dashPlural(orgs.length,'organization'),'<button class="text-button" data-cart-clear>Clear cart</button>')+'<div class="cart-list">'+orgs.map(org=>'<div class="cart-group"><div class="cart-group-head"><strong>'+de(org)+'</strong></div>'+entries.filter(e=>e.crop.organization===org).map(row).join('')+'</div>').join('')+'</div></section>';
- const summary='<section class="panel cart-summary">'+dashPanelHead('Order summary','')+'<dl class="summary-lines">'+orgs.map(org=>'<div><dt>'+de(org)+'</dt><dd>'+dp(subtotal(org))+'</dd></div>').join('')+'<div class="summary-total"><dt>Total</dt><dd>'+dp(total)+'</dd></div></dl><p class="summary-note">'+(orgs.length>1?'You’ll place '+orgs.length+' orders, one with each organization.':'Your order goes straight to '+de(orgs[0])+'.')+' Delivery is arranged with each organization.</p>'+(problems?'<p class="cart-problem summary-problem">Remove or update '+dashPlural(problems,'item')+' before checking out.</p>':'')+'<div class="summary-actions"><button class="control primary" data-checkout'+(problems?' disabled':'')+'>Check out '+di('arrow')+'</button></div></section>';
+ const selectAll=entries.length>0&&entries.every(e=>dashCartSelection.has(e.crop.id));
+ const subtotal=(org:string)=>selected.filter(e=>e.crop.organization===org).reduce((sum,e)=>sum+e.line.quantity*e.crop.price,0);
+ const total=selected.reduce((sum,e)=>sum+e.line.quantity*e.crop.price,0);
+ const problems=selected.filter(e=>dashCartProblem(e)).length;
+ const list='<section class="panel">'+dashPanelHead('Items',dashPlural(allEntries.length,'harvest')+' in your cart','<label class="check-row cart-select-all"><input type="checkbox" data-cart-select-all aria-label="Select all visible cart items"'+(selectAll?' checked':'')+'>Select all</label><button class="text-button" data-cart-clear>Clear cart</button>')+'<div class="cart-list">'+orgs.map(org=>'<div class="cart-group"><div class="cart-group-head"><strong>'+de(org)+'</strong></div>'+entries.filter(e=>e.crop.organization===org).map(row).join('')+'</div>').join('')+'</div></section>';
+ const summary='<section class="panel cart-summary">'+dashPanelHead('Order summary',dashPlural(selected.length,'selected harvest'))+'<dl class="summary-lines">'+selectedOrgs.map(org=>'<div><dt>'+de(org)+'</dt><dd>'+dp(subtotal(org))+'</dd></div>').join('')+'<div class="summary-total"><dt>Total</dt><dd>'+dp(total)+'</dd></div></dl><p class="summary-note">'+(!selected.length?'Select at least one harvest to continue.':selectedOrgs.length>1?'You’ll place '+selectedOrgs.length+' orders, one with each organization.':'Your order goes straight to '+de(selectedOrgs[0])+'.')+' Delivery is arranged with each organization. Items you leave unselected stay in your cart.</p>'+(problems?'<p class="cart-problem summary-problem">Remove or update '+dashPlural(problems,'selected item')+' before checking out.</p>':'')+'<div class="summary-actions"><button class="control primary" data-checkout'+(!selected.length||problems?' disabled':'')+'>Check out '+di('arrow')+'</button></div></section>';
  return '<div class="split cart-split">'+list+summary+'</div>';
 }
 function dashSavedView():string{
@@ -1110,7 +1164,8 @@ function dashRender():void{
  else if(view==='health')content=dashHealthView();
  else if(view==='activity')content=dashActivityView();
  else if(view==='orders')content=dashOrderTable('all');
- else if(view==='listings')content=dashListingGrid();
+  else if(view==='listings')content=isAdminDashboard?dashAdminListingsView():dashListingGrid();
+  else if(view==='barangays')content=dashBarangaysAdminView();
  else if(view==='feedback')content=dashOrgFeedback();
  else if(view==='shop')content=dashShop();
  else if(view==='cart')content=dashCartView();
@@ -1151,7 +1206,7 @@ function dashOrderDetails(id:string):void{
   const canRate=order.status==='Completed'&&!feedback;
   const canPay=order.payment==='Unpaid'&&dashOnline(order)&&order.status!=='Cancelled';
   if(feedback)notes+='<p class="detail-note">You rated this order '+dashStars(feedback.rating)+(feedback.comment?' · “'+de(feedback.comment)+'”':'')+'</p>';
-  if(report)notes+='<p class="detail-note">Your report '+report.id+' ('+de(report.reason.toLowerCase())+') is '+(report.status==='Open'?'under review':report.status.toLowerCase())+'.</p>';
+  if(report)notes+='<p class="detail-note">Your report '+report.id+' ('+de(report.reason.toLowerCase())+') is '+(report.status==='Open'?'under review':report.status.toLowerCase())+'.'+(report.decisionNote?' AniBayan’s note: '+de(report.decisionNote):'')+'</p>';
   const main=canPay?'<button class="control primary" data-pay-order="'+order.id+'">Pay '+dp(order.total)+'</button>':order.status==='Delivered'?'<button class="control primary" data-order-received="'+order.id+'">'+di('check')+'Order received</button>':canRate?'<button class="control primary" data-rate="'+order.id+'">'+di('star')+'Rate this order</button>':'<button class="control primary" data-close-dialog>Close</button>';
   actions=(order.status==='Pending'?'<button class="control danger" data-cancel-order="'+order.id+'">Cancel order</button>':'')+(report?'':'<button class="control" data-report-order="'+order.id+'">'+di('flag')+'Report a problem</button>')+receipt+(dashCanRefund(order)?'<button class="control" data-request-refund="'+order.id+'">Request refund</button>':'')+main;
  }
@@ -1165,6 +1220,20 @@ function dashOrderDetails(id:string):void{
  const timeline=order.status==='Cancelled'?'<p class="detail-note">'+(order.cancelReason?de(order.cancelReason)+' ':'')+'This order was cancelled and will not be fulfilled.</p>':'<ol class="timeline">'+steps.map((s,i)=>'<li class="'+(i>current?'future':'')+'"><strong>'+s+'</strong><p>'+(i>current?'Not reached yet':i===current?'Current status':'Completed step')+'</p></li>').join('')+'</ol>';
  dashOpen('<p class="detail-kicker">'+(isOrgDashboard?'Incoming order':'Your order')+'</p><h2 id="detail-title">'+order.id+'</h2><p class="detail-subtitle">'+dashOrgLink(order.organization)+'</p><div class="detail-hero"><img src="'+dashImg(order.image)+'" alt="'+de(order.crop)+'"><div><h3>'+de(order.crop)+'</h3><p>'+de(order.quantity)+' · '+dp(order.total)+'</p></div></div><dl class="detail-facts">'+dashFact('Order status',ds(order.status))+dashFact('Payment',ds(order.payment))+(order.funds?dashFact('Funds',dashFundsText(order)):'')+dashFact('Placed on',dfull(order.date))+dashFact('Buyer',dashUserLink(order.customer)+(order.buyerSuspended?' '+ds('Suspended'):''))+dates+delivery+'</dl>'+items+refund+timeline+notes+'<div class="detail-actions">'+actions+'</div>');
 }
+function dashOrderDeclineForm(id:string):void{
+ const order=dashboardOrders.find(o=>o.id===id);
+ if(!order)return;
+ dashOpen('<p class="detail-kicker">Decline order · '+dashOrderNo(id)+'</p><h2 id="detail-title">Explain the decision to '+de(order.customer)+'</h2><p class="detail-subtitle">The buyer will see this note in the order status and order details.</p><form class="dash-form" id="order-decline-form" data-order="'+de(id)+'" novalidate><div class="form-grid single">'+dashField('reason','Reason for declining'+dashRequired,'<textarea required minlength="10" maxlength="300" rows="4" placeholder="For example, the requested harvest is no longer available."></textarea>','Give a clear reason with at least 10 characters.',true)+'</div><div class="detail-actions"><button type="button" class="control" data-close-dialog>Keep order</button><button type="submit" class="control danger">Decline order</button></div></form>');
+ dashFocusField('#field-reason');
+}
+function dashSubmitOrderDecline(form:HTMLFormElement):void{
+ const id=form.dataset.order||'';
+ const reason=String(new FormData(form).get('reason')??'').trim();
+ if(!dashShowErrors(form,reason.length>=10?{}:{reason:'Explain why the order was declined in at least 10 characters.'}))return;
+ void dashDo('order.decline',{order:id,reason},form).then(r=>{
+  if(r){dashOrderDetails(id);dashToast('Order declined. The buyer can see your reason in the order details.');}
+ });
+}
 function dashProductDetails(id:string):void{
  const crop=dashboardCrops.find(c=>c.id===id);
  if(!crop)return;
@@ -1172,14 +1241,14 @@ function dashProductDetails(id:string):void{
  const harvest=dashFact('Harvested',dfull(crop.harvested)+' · '+dashAgeText(f.age))+dashFact('Shelf life',dashPlural(crop.shelfLife,'day')+' after harvest')+dashFact('Best before',dfull(dashAddDays(crop.harvested,crop.shelfLife)))+dashFact('Freshness',dashFreshBadge(crop));
  const hero=(note:string)=>'<div class="detail-hero"><img src="'+dashImg(crop.image)+'" alt="'+de(crop.name)+'"><div><h3>'+dp(crop.price)+' / '+de(crop.unit)+'</h3><p>'+note+'</p></div></div>';
  if(isOrgDashboard){
-  dashOpen('<p class="detail-kicker">Product listing · '+crop.id+'</p><h2 id="detail-title">'+de(crop.name)+'</h2><p class="detail-subtitle">'+dashOrgLink(crop.organization)+'</p>'+hero(de(crop.category))+'<dl class="detail-facts">'+dashFact('Available quantity',crop.stock+' '+de(crop.unit))+dashFact('Listing status',ds(dashCropStatus(crop)))+harvest+'</dl><p class="detail-note">Buyers see the harvest date, shelf life and best-before date on this listing.</p><div class="detail-actions"><button class="control" data-toggle-listing="'+crop.id+'"'+(crop.stock===0?' disabled':'')+'>'+(crop.status==='Active'?'Unpublish listing':'Publish listing')+'</button><button class="control primary" data-edit-listing="'+crop.id+'">'+di('edit')+'Edit listing</button></div>');
+   dashOpen('<p class="detail-kicker">Product listing · '+crop.id+'</p><h2 id="detail-title">'+de(crop.name)+'</h2><p class="detail-subtitle">'+dashOrgLink(crop.organization)+'</p>'+hero(de(crop.category))+'<dl class="detail-facts">'+dashFact('Available quantity',crop.stock+' '+de(crop.unit))+dashFact('Listing status',ds(dashCropStatus(crop)))+harvest+'</dl><p class="detail-note">'+(crop.status==='Removed'?'AniBayan removed this listing. Reason: '+de(crop.removalReason||'Contact AniBayan support for details.'):'Buyers see the harvest date, shelf life and best-before date on this listing.')+'</p>'+(crop.status==='Removed'?'':'<div class="detail-actions"><button class="control" data-toggle-listing="'+crop.id+'"'+(crop.stock===0?' disabled':'')+'>'+(crop.status==='Active'?'Unpublish listing':'Publish listing')+'</button><button class="control primary" data-edit-listing="'+crop.id+'">'+di('edit')+'Edit listing</button></div>'));
   return;
  }
  const saved=dashIsSaved(crop.id);
  const buyable=dashIsBuyable(crop);
  const inCart=dashCart().find(l=>l.crop===crop.id);
  const left=crop.stock-(inCart?.quantity||0);
- const buy=!buyable?'':!isGuest&&left<=0?'<div class="qty-add"><p>Your cart has all '+crop.stock+' '+de(crop.unit)+' available.</p></div>':isGuest?'<div class="qty-add"><p>Sign in with a buyer account to order this harvest.</p><a class="control primary" href="login.html" data-sign-in-buyer>Sign in to order '+di('arrow')+'</a></div>':'<div class="qty-add"><label for="detail-qty">Quantity ('+de(crop.unit)+')</label><input type="number" id="detail-qty" min="1" max="'+left+'" step="1" value="1" inputmode="numeric"><button class="control primary" data-add-cart="'+crop.id+'" data-qty-from="detail-qty">'+di('cart')+'Add to cart</button></div>';
+  const buy=!buyable?'':!isGuest&&left<=0?'<div class="qty-add"><p>Your cart has all '+crop.stock+' '+de(crop.unit)+' available.</p></div>':isGuest?'<div class="qty-add"><p>Sign in with a buyer account to order this harvest.</p><a class="control primary" href="login.html" data-sign-in-buyer>Sign in to order '+di('arrow')+'</a></div>':'<form class="qty-add" id="quantity-form" novalidate>'+dashField('quantity','Quantity ('+de(crop.unit)+')','<input type="number" required min="1" max="'+left+'" step="1" value="1" inputmode="numeric">')+'<button type="button" class="control primary" data-add-cart="'+crop.id+'" data-qty-from="field-quantity">'+di('cart')+'Add to cart</button></form>';
  dashOpen('<p class="detail-kicker">Harvest listing</p><h2 id="detail-title">'+de(crop.name)+'</h2><p class="detail-subtitle">'+dashOrgLink(crop.organization)+' · '+de(dashRegion(crop.organization))+'</p>'+hero(de(crop.category)+' · '+(buyable?crop.stock+' '+de(crop.unit)+' available':'Not available right now'))+'<dl class="detail-facts">'+harvest+dashFact('Buyer rating',dashRatingText(crop.organization))+'</dl><p class="detail-note">The organization enters the harvest date when it lists a crop. Shelf life is its estimate for produce stored as recommended, so plan to use it before the best-before date.'+(inCart?' Your cart has '+inCart.quantity+' '+de(crop.unit)+'.':'')+'</p>'+buy+'<div class="detail-actions"><a class="control" href="#org='+dashSlug(crop.organization)+'" data-profile-link>About the grower</a>'+(isGuest?'':'<button class="control" data-save="'+crop.id+'" aria-pressed="'+saved+'">'+di('heart')+(saved?'Saved':'Save harvest')+'</button>')+(inCart?'<button class="control" data-go="cart">View cart '+di('arrow')+'</button>':'')+'</div>');
 }
 // Opens an organization's profile page, closing any open pop-up first.
@@ -1195,6 +1264,24 @@ function dashOpenOrdersFact(a:DashboardAccount):string{
  const cancel=a.role==='Consumer'?count(['Pending']):count(['Pending','Confirmed','Processing']);
  return dashFact('Open orders',String(open.length)+(cancel?'<small class="fact-note">'+cancel+' would be cancelled'+(open.some(o=>['Pending','Confirmed','Processing'].includes(o.status)&&o.funds==='Held')?' and refunded':'')+'</small>':''));
 }
+function dashSuspendForm(email:string):void{
+ const account=dashAccountByEmail(email);if(!account)return;
+ dashOpen('<p class="detail-kicker">Account suspension</p><h2 id="detail-title">Suspend '+de(account.name)+'?</h2><p class="detail-subtitle">They will be signed out. The reason you enter will appear in their account status and sign-in notice.</p><form class="dash-form" id="suspend-form" data-email="'+de(email)+'" novalidate><div class="form-grid single">'+dashField('reason','Suspension reason'+dashRequired,'<textarea required minlength="10" maxlength="500" rows="4"></textarea>','Give a clear reason with at least 10 characters.',true)+'</div><div class="detail-actions"><button type="button" class="control" data-close-dialog>Cancel</button><button type="submit" class="control danger">'+di('lock')+'Suspend account</button></div></form>');
+ dashFocusField('#field-reason');
+}
+function dashSubmitSuspend(form:HTMLFormElement):void{
+ const reason=String(new FormData(form).get('reason')??'').trim();
+ if(!dashShowErrors(form,reason.length>=10?{}:{reason:'Give a reason of at least 10 characters.'}))return;
+ dashRunAccountSuspend(form.dataset.email!,reason);
+}
+function dashRunAccountSuspend(email:string,reason?:string):void{
+ const payload:Record<string,unknown>={email};if(reason)payload.reason=reason;
+ void dashDo('account.suspend',payload).then(r=>{
+  const account=dashAccountByEmail(email);if(!r||!account)return;
+  dashAccountDetails(email);
+  dashToast(account.name+(r.status==='Suspended'?' is suspended and signed out of AniBayan.'+(r.cancelled?' '+dashPlural(r.cancelled,'open order')+' cancelled.':''):' is reactivated.'));
+ });
+}
 function dashAccountDetails(email:string):void{
  const a=dashAccountByEmail(email);
  if(!a)return;
@@ -1202,7 +1289,7 @@ function dashAccountDetails(email:string):void{
  const org=a.organization?dashboardOrganizations.find(o=>o.name===a.organization):undefined;
  const toggle=!self&&a.role!=='Administrator'&&(a.status==='Active'||a.status==='Suspended')?(a.status==='Suspended'?'<button class="control primary" data-suspend="'+de(email)+'">'+di('check')+'Reactivate account</button>':'<button class="control danger" data-suspend="'+de(email)+'">'+di('lock')+'Suspend account</button>'):'';
  const review=a.status==='Pending'&&org?'<button class="control primary" data-organization="'+de(org.name)+'">Review application</button>':'';
- dashOpen('<p class="detail-kicker">'+(a.role==='Consumer'?'Buyer':a.role)+' account</p><h2 id="detail-title">'+de(a.name)+'</h2><p class="detail-subtitle">'+de(email)+'</p><dl class="detail-facts">'+dashFact('Role',a.role==='Consumer'?'Buyer':a.role)+dashFact('Status',ds(a.status))+(a.joined?dashFact('Joined',dfull(a.joined)):'')+(a.lastActive?dashFact('Last active',dfull(a.lastActive)):'')+(a.organization?dashFact('Organization',de(a.organization)):'')+(a.phone?dashFact('Mobile number',de(a.phone)):'')+(a.note?dashFact('Note',de(a.note)):'')+dashOpenOrdersFact(a)+'</dl>'+dashAccountActivity(email)+'<div class="detail-actions">'+(a.role==='Administrator'?'':'<a class="control" href="#user='+dashSlug(a.name)+'" data-profile-link>'+di('user')+'View profile</a>')+(self?'':'<button class="control" data-reset-password="'+de(email)+'">'+di('key')+'Reset password</button>')+toggle+review+'</div>');
+  dashOpen('<p class="detail-kicker">'+(a.role==='Consumer'?'Buyer':a.role)+' account</p><h2 id="detail-title">'+de(a.name)+'</h2><p class="detail-subtitle">'+de(email)+'</p><dl class="detail-facts">'+dashFact('Role',a.role==='Consumer'?'Buyer':a.role)+dashFact('Status',ds(a.status))+(a.suspensionReason?dashFact('Suspension reason',de(a.suspensionReason)):'')+(a.joined?dashFact('Joined',dfull(a.joined)):'')+(a.lastActive?dashFact('Last active',dfull(a.lastActive)):'')+(a.organization?dashFact('Organization',de(a.organization)):'')+(a.phone?dashFact('Mobile number',de(a.phone)):'')+(a.note?dashFact('Note',de(a.note)):'')+dashOpenOrdersFact(a)+'</dl>'+dashAccountActivity(email)+'<div class="detail-actions">'+(a.role==='Administrator'?'':'<a class="control" href="#user='+dashSlug(a.name)+'" data-profile-link>'+di('user')+'View profile</a>')+(self?'':'<button class="control" data-reset-password="'+de(email)+'">'+di('key')+'Reset password</button>')+toggle+review+'</div>');
 }
 // The server sets a new temporary password; it's shown once so the administrator can pass it on.
 async function dashResetPassword(email:string):Promise<void>{
@@ -1220,8 +1307,14 @@ function dashReportDetails(id:string):void{
  const reporter=dashboardAccounts.find(a=>a.name===r.customer);
  const effect=open?dashNextOffence(r.organization):r.status==='Upheld'?'Counts as one of its warnings':'No warning';
  const uphold=s.final?'<button class="control danger" data-terminate="'+de(r.organization)+'" data-terminate-report="'+r.id+'">'+di('lock')+'Uphold and terminate</button>':'<button class="control danger" data-decide="Upheld" data-report-id="'+r.id+'">'+di('flag')+'Uphold report</button>';
- const actions=open?'<button class="control" data-decide="Dismissed" data-report-id="'+r.id+'">Dismiss report</button>'+uphold:'<button class="control" data-decide="Open" data-report-id="'+r.id+'">Reopen report</button><button class="control primary" data-close-dialog>Close</button>';
- dashOpen('<p class="detail-kicker">User report · '+r.id+'</p><h2 id="detail-title">'+de(r.reason)+'</h2><p class="detail-subtitle">'+de(r.customer)+' about '+de(r.organization)+' · '+dfull(r.date)+'</p><blockquote class="report-quote">'+de(r.details)+'</blockquote><dl class="detail-facts">'+dashFact('Status',ds(r.status))+dashFact('Related order',r.order?dashOrderNo(r.order):'Not specified')+dashFact('Organization warnings',dashStandingBadge(r.organization)+' <button class="text-button" data-organization="'+de(r.organization)+'">View</button>')+dashFact(open?'If upheld':'Effect',effect)+(reporter?dashFact('Reporter account',ds(reporter.status)):'')+'</dl><div class="detail-actions">'+actions+'</div>');
+ const actions=isAdminDashboard?(open?'<button class="control" data-decide="Dismissed" data-report-id="'+r.id+'">Dismiss report</button>'+uphold:'<button class="control" data-decide="Open" data-report-id="'+r.id+'">Reopen report</button><button class="control primary" data-close-dialog>Close</button>'):'<button class="control primary" data-close-dialog>Close</button>';
+ dashOpen('<p class="detail-kicker">User report · '+r.id+'</p><h2 id="detail-title">'+de(r.reason)+'</h2><p class="detail-subtitle">'+de(r.customer)+' about '+de(r.organization)+' · '+dfull(r.date)+'</p><blockquote class="report-quote">'+de(r.details)+'</blockquote>'+(r.decisionNote?'<p class="detail-note">AniBayan’s explanation: '+de(r.decisionNote)+'</p>':'')+'<dl class="detail-facts">'+dashFact('Status',ds(r.status))+dashFact('Related order',r.order?dashOrderNo(r.order):'Not specified')+dashFact('Organization warnings',dashStandingBadge(r.organization)+' <button class="text-button" data-organization="'+de(r.organization)+'">View</button>')+dashFact(open?'If upheld':'Effect',effect)+(reporter?dashFact('Reporter account',ds(reporter.status)):'')+'</dl><div class="detail-actions">'+actions+'</div>');
+}
+function dashReportDecisionForm(id:string,decision:string):void{
+ const report=dashboardReports.find(r=>r.id===id);
+ if(!report)return;
+ dashOpen('<p class="detail-kicker">Dismiss report · '+id+'</p><h2 id="detail-title">Explain why this report was dismissed</h2><p class="detail-subtitle">The person who filed it and '+de(report.organization)+' will be able to read this explanation in AniBayan.</p><form class="dash-form" id="report-decision-form" data-report="'+de(id)+'" data-decision="'+de(decision)+'" novalidate><div class="form-grid single">'+dashField('note','Decision explanation'+dashRequired,'<textarea required minlength="10" maxlength="500" rows="4"></textarea>','Give a clear explanation with at least 10 characters.',true)+'</div><div class="detail-actions"><button type="button" class="control" data-close-dialog>Keep report open</button><button type="submit" class="control">Dismiss report</button></div></form>');
+ dashFocusField('#field-note');
 }
 function dashApplicationDetails(name:string):void{
  const o=dashboardOrganizations.find(x=>x.name===name);
@@ -1230,42 +1323,162 @@ function dashApplicationDetails(name:string):void{
  const selling=o.status==='Active'||o.status==='Terminated';
  const s=dashStanding(o.name);
  const rep=dashboardAccounts.find(a=>a.organization===o.name);
+ const requestedBarangay=pending&&!dashBarangays.some(name=>name.toLocaleLowerCase()===o.region.split(',')[0].trim().toLocaleLowerCase())?'<p class="warning-callout"><span>Barangay request: this name is not in the current list. Approving the application will add it to AniBayan’s barangay options.</span></p>':'';
  const warnings=selling?'<h3 class="detail-section">Warnings</h3><div class="warning-summary">'+dashStandingBadge(o.name)+dashWarningMeter(o.name)+'</div>'+(s.count?dashWarningRows(o.name,'feedback-list compact',!s.terminated):''):'';
  const actions=pending?'<button class="control danger" data-review="Declined" data-review-name="'+de(o.name)+'">Decline</button><button class="control primary" data-review="Active" data-review-name="'+de(o.name)+'">'+di('check')+'Approve organization</button>'
   :(o.status==='Active'?(s.final?'<button class="control danger" data-terminate="'+de(o.name)+'">'+di('lock')+'Terminate organization</button>':'<button class="control danger" data-warn="'+de(o.name)+'">'+di('flag')+'Give a warning</button>'):'')+'<button class="control primary" data-close-dialog>Close</button>';
- dashOpen('<p class="detail-kicker">'+(selling?'Organization':'Organization application')+'</p><h2 id="detail-title">'+de(o.name)+'</h2><p class="detail-subtitle">'+de(o.region)+' · submitted '+dfull(o.applied)+'</p><div class="detail-hero"><img src="'+dashImg(o.image)+'" alt="'+de(o.name)+'"><div><h3>'+de(o.crop)+'</h3><p>'+dashPlural(o.members,'member farmer')+' · '+ds(dashAppStatus(o))+'</p></div></div><dl class="detail-facts">'+dashFact('Representative',de(o.representative)+(rep?'<small class="fact-note">'+de(rep.email)+'</small>':''))+dashFact('Documents',dashDocumentLinks(o.documents))+(o.phone?dashFact('Contact number',de(o.phone)):'')+(o.approved?dashFact('Approved on',dfull(o.approved)):'')+(o.terminated?dashFact('Terminated on',dfull(o.terminated)):'')+(o.terminatedFor?dashFact('Final offence',de(o.terminatedFor)):'')+'</dl>'+warnings+'<div class="detail-actions">'+actions+'</div>');
+ dashOpen('<p class="detail-kicker">'+(selling?'Organization':'Organization application')+'</p><h2 id="detail-title">'+de(o.name)+'</h2><p class="detail-subtitle">'+de(o.region)+' · submitted '+dfull(o.applied)+'</p><div class="detail-hero"><img src="'+dashImg(o.image)+'" alt="'+de(o.name)+'"><div><h3>'+de(o.crop)+'</h3><p>'+dashPlural(o.members,'member farmer')+' · '+ds(dashAppStatus(o))+'</p></div></div>'+requestedBarangay+'<dl class="detail-facts">'+dashFact('Representative',de(o.representative)+(rep?'<small class="fact-note">'+de(rep.email)+'</small>':''))+dashFact('Documents',dashDocumentLinks(o.documents))+(o.phone?dashFact('Contact number',de(o.phone)):'')+(o.approved?dashFact('Approved on',dfull(o.approved)):'')+(o.applicationDeclineReason?dashFact('Decline reason',de(o.applicationDeclineReason)):'')+(o.terminated?dashFact('Terminated on',dfull(o.terminated)):'')+(o.terminatedFor?dashFact('Final offence',de(o.terminatedFor)):'')+'</dl>'+warnings+'<div class="detail-actions">'+actions+'</div>');
+}
+function dashApplicationDeclineForm(name:string):void{
+ dashOpen('<p class="detail-kicker">Decline application</p><h2 id="detail-title">Explain the decision to '+de(name)+'</h2><p class="detail-subtitle">The representative will see this note when they sign in and know what to correct before contacting support.</p><form class="dash-form" id="application-decline-form" data-organization-name="'+de(name)+'" novalidate><div class="form-grid single">'+dashField('reason','Reason for declining'+dashRequired,'<textarea required minlength="10" maxlength="500" rows="4"></textarea>','Give a clear reason with at least 10 characters.',true)+'</div><div class="detail-actions"><button type="button" class="control" data-close-dialog>Keep application pending</button><button type="submit" class="control danger">Decline application</button></div></form>');
+ dashFocusField('#field-reason');
+}
+function dashSubmitApplicationDecline(form:HTMLFormElement):void{
+ const name=form.dataset.organizationName||'';
+ const reason=String(new FormData(form).get('reason')??'').trim();
+ if(!dashShowErrors(form,reason.length>=10?{}:{reason:'Give a reason of at least 10 characters.'}))return;
+ void dashDo('application.review',{name,decision:'Declined',reason},form).then(r=>{
+  if(r){dashApplicationDetails(name);dashToast(name+' declined. The representative can see your reason when they sign in.');}
+ });
 }
 function dashConfirmReset():void{
  dashOpen('<p class="detail-kicker">Data</p><h2 id="detail-title">Reset all AniBayan data?</h2><p class="detail-subtitle">Every account, listing, order, rating, report and uploaded photo in the database goes back to the starting data, for everyone. Everyone is signed out. This can’t be undone.</p><div class="detail-actions"><button class="control" data-close-dialog>Cancel</button><button class="control danger" data-confirm-reset>Reset data</button></div>');
 }
-// Shown after checkout for card and GCash orders, and from "Pay now" on unpaid ones.
+// AniBayan renders the PayMongo Payment Intent flow in its own payment dialog.
 function dashPaymentDialog(ids:string[]):void{
  const orders=ids.map(id=>dashboardOrders.find(o=>o.id===id)).filter((o):o is DashboardOrder=>!!o&&o.payment==='Unpaid'&&o.status!=='Cancelled');
  if(!orders.length)return;
  const total=orders.reduce((sum,o)=>sum+o.total,0);
  const method=orders[0].method||'GCash';
- dashOpen('<p class="detail-kicker">PayMongo · test mode</p><h2 id="detail-title">Pay '+dp(total)+' with '+de(method)+'</h2><p class="detail-subtitle">'+orders.map(o=>dashOrderNo(o.id)+' · '+de(o.organization)).join('<br>')+'</p>'+(method==='GCash'?'':'<div class="pay-box">'+di('shield')+'<p>Test card <b>4343 4343 4343 4345</b> · any future date · any CVC</p></div>')+'<div class="detail-actions"><button class="control" data-pay-later>Pay later</button><button class="control primary" data-pay="'+orders.map(o=>o.id).join(',')+'">'+di('wallet')+'Pay '+dp(total)+'</button></div>');
+ const paymentLabel=['GCash','GCash or QR Ph','QR Ph'].includes(method)?'GCash / QR Ph':method;
+ const cardFields=method==='Credit or debit card'?'<form id="payment-card-form" class="dash-form" novalidate><div class="form-grid">'
+  +dashField('cardNumber','Card number'+dashRequired,'<input type="text" inputmode="numeric" autocomplete="cc-number" maxlength="23" placeholder="Card number" required>','Card details go directly to PayMongo and are not stored by AniBayan.',true)
+  +dashField('cardExpiryMonth','Expiry month'+dashRequired,'<input type="text" inputmode="numeric" autocomplete="cc-exp-month" maxlength="2" placeholder="MM" required>')
+  +dashField('cardExpiryYear','Expiry year'+dashRequired,'<input type="text" inputmode="numeric" autocomplete="cc-exp-year" maxlength="4" placeholder="YYYY" required>')
+  +dashField('cardCvc','Security code'+dashRequired,'<input type="password" inputmode="numeric" autocomplete="cc-csc" maxlength="4" required>')
+  +'</div></form>':'';
+ dashOpen('<p class="detail-kicker">AniBayan secure payment</p><h2 id="detail-title">Pay '+dp(total)+' with '+de(paymentLabel)+'</h2><p class="detail-subtitle">'+orders.map(o=>dashOrderNo(o.id)+' · '+de(o.organization)).join('<br>')+'</p>'+cardFields+'<div class="detail-actions"><button class="control" data-pay-later>Pay later</button><button type="button" class="control primary" data-pay="'+orders.map(o=>o.id).join(',')+'">'+di('wallet')+'Pay '+dp(total)+'</button></div>');
+ const detail=document.getElementById('detail-content')!;
+ const notes:Record<string,string>={
+  'GCash':'Scan the QR Ph code with GCash to approve the payment in the app, then return to AniBayan.',
+  'GCash or QR Ph':'Scan the QR Ph code with GCash, a bank app, or another QR Ph-enabled wallet. The code appears in AniBayan.',
+  'Credit or debit card':'Card details are tokenized by PayMongo from this page. Your bank may open a separate 3D Secure verification step.',
+  'QR Ph':'A single-use QR Ph code will appear here. Scan it with a banking or e-wallet app; it expires after about 30 minutes.',
+ };
+ const note=document.createElement('p');note.className='detail-note';note.textContent=notes[method]||'Your payment is processed securely by PayMongo.';
+ const progress=document.createElement('p');progress.id='payment-progress';progress.className='payment-status';progress.setAttribute('role','status');progress.hidden=true;
+ const error=document.createElement('p');error.id='payment-error';error.className='form-error';error.setAttribute('role','alert');error.hidden=true;
+ detail.querySelector('.detail-actions')?.before(note,progress,error);
 }
-// Opens PayMongo's checkout for the orders. The server builds it from the orders in the database; the secret key
-// stays there (PaymentController).
+// Creates an intent on AniBayan's server, tokenizes payment details with PayMongo's public key, then attaches it.
 async function dashStartPayment(ids:string[],button:HTMLButtonElement):Promise<void>{
- const label=button.innerHTML;button.disabled=true;button.textContent='Opening PayMongo…';
+ const order=dashboardOrders.find(o=>o.id===ids[0]);
+ const method=order?.method||'GCash';
+ const progress=document.getElementById('payment-progress'),error=document.getElementById('payment-error');if(progress){progress.hidden=false;progress.textContent='Preparing secure payment in AniBayan…';}if(error)error.hidden=true;
+ const label=button.innerHTML;button.disabled=true;button.textContent='Preparing payment…';
+ let paymentAttributes:Record<string,unknown>={};
+ const account=dashAccount();
+ const billing={name:account.name,email:account.email,phone:order?.phone||account.phone||''};
+ if(method==='Credit or debit card'){
+  const form=document.getElementById('payment-card-form') as HTMLFormElement|null;
+  if(!form){button.disabled=false;button.innerHTML=label;return;}
+  const value=(name:string)=>String(new FormData(form).get(name)||'').trim();
+  const cardNumber=value('cardNumber').replace(/\D/g,'');
+  const expMonth=value('cardExpiryMonth');
+  const expYear=value('cardExpiryYear');
+  const cvc=value('cardCvc');
+  const errors:Record<string,string>={};
+  if(!/^\d{12,19}$/.test(cardNumber))errors.cardNumber='Enter a valid card number.';
+  if(!/^(0?[1-9]|1[0-2])$/.test(expMonth))errors.cardExpiryMonth='Enter a month from 1 to 12.';
+  if(!/^\d{4}$/.test(expYear)||Number(expYear)<new Date().getFullYear()||Number(expYear)===new Date().getFullYear()&&Number(expMonth)<new Date().getMonth()+1)errors.cardExpiryYear='Enter a valid future expiry year.';
+  if(!/^\d{3,4}$/.test(cvc))errors.cardCvc='Enter the 3 or 4 digit security code.';
+  if(!dashShowErrors(form,errors)){button.disabled=false;button.innerHTML=label;if(progress)progress.hidden=true;return;}
+  paymentAttributes={type:'card',details:{card_number:cardNumber,exp_month:Number(expMonth),exp_year:Number(expYear),cvc},billing};
+ }
+
  const r=await dashApi('payments',{orders:ids});
- if(r.ok&&r.data.checkoutUrl){location.href=String(r.data.checkoutUrl);return;}
- button.disabled=false;button.innerHTML=label;
- dashToast(dashMessage(r,'Online payment isn’t available right now. Try again in a moment.'));
+ if(!r.ok||!r.data.intentId||!r.data.publicKey){dashPaymentError(button,label,progress,error,dashMessage(r,'Online payment isn’t available right now. Try again in a moment.'));return;}
+ const publicKey=String(r.data.publicKey),intentId=String(r.data.intentId),intentMethod=String(r.data.method|| (method==='Credit or debit card'?'card':'qrph'));
+ if(publicKey.startsWith('pk_test_')){const kicker=document.querySelector<HTMLElement>('#detail-content .detail-kicker');if(kicker)kicker.textContent='AniBayan secure payment · test mode';}
+ if(r.data.existing){
+  if(r.data.status==='succeeded'){if(progress)progress.textContent='Payment received. Updating your order…';await dashRefreshPaymentStatus(false);return;}
+  if(r.data.status==='processing'){if(progress){progress.hidden=false;progress.textContent='Payment is still processing. AniBayan will update your order when it is confirmed.';}button.disabled=false;button.innerHTML=label;dashWatchPayments();return;}
+  const nextAction=r.data.nextAction;
+  if(r.data.status==='awaiting_next_action'&&intentMethod==='qrph'&&typeof nextAction?.code?.image_url==='string'&&nextAction.code.image_url.startsWith('data:image/')){dashShowQrPh(nextAction.code.image_url,ids);dashWatchPayments();return;}
+  const resumeUrl=nextAction?.redirect?.url;
+  if(r.data.status==='awaiting_next_action'&&intentMethod==='card'&&typeof resumeUrl==='string')try{if(new URL(resumeUrl).protocol==='https:'){if(progress)progress.textContent='Returning to bank verification…';location.assign(resumeUrl);return;}}catch{}
+  dashPaymentError(button,label,progress,error,'The earlier payment needs another moment to update. Check your orders shortly, then try again.');return;
+ }
+ if(!r.data.clientKey){dashPaymentError(button,label,progress,error,'AniBayan could not prepare the secure payment. Please try again.');return;}
+ const clientKey=String(r.data.clientKey);
+ if(method!=='Credit or debit card')paymentAttributes={type:intentMethod};
+ const paymentMethod=await dashPayMongoPost(publicKey,'payment_methods',{data:{attributes:paymentAttributes}});
+ const paymentMethodId=paymentMethod.data?.data?.id;
+ if(!paymentMethod.ok||!paymentMethodId){dashPaymentError(button,label,progress,error,paymentMethod.message||'PayMongo could not prepare that payment method. Check the details and try again.');return;}
+ const attached=await dashPayMongoPost(publicKey,'payment_intents/'+encodeURIComponent(intentId)+'/attach',{data:{attributes:{payment_method:paymentMethodId,client_key:clientKey,return_url:String(r.data.returnUrl)}}});
+ if(!attached.ok){dashPaymentError(button,label,progress,error,attached.message||'PayMongo could not start the payment. Check the details and try again.');return;}
+ const attributes=attached.data?.data?.attributes||{};
+ if(attributes.status==='succeeded'){if(progress)progress.textContent='Payment received. Updating your order…';await dashRefreshPaymentStatus(false);return;}
+ if(attributes.status==='processing'){if(progress){progress.hidden=false;progress.textContent='PayMongo is processing your payment. AniBayan will update when it is confirmed.';}button.disabled=false;button.innerHTML=label;dashWatchPayments();return;}
+ if(attributes.status==='awaiting_next_action'&&intentMethod==='qrph'){
+  const image=attributes.next_action?.code?.image_url;
+  if(typeof image!=='string'||!image.startsWith('data:image/')){dashPaymentError(button,label,progress,error,'PayMongo did not return a QR image. Please try again.');return;}
+  dashShowQrPh(image,ids);
+  dashWatchPayments();
+  return;
+ }
+ if(attributes.status==='awaiting_next_action'&&intentMethod==='card'){
+  const redirect=attributes.next_action?.redirect?.url;
+  if(typeof redirect==='string')try{if(new URL(redirect).protocol==='https:'){
+    if(progress)progress.textContent='Opening your bank’s secure verification…';
+    location.assign(redirect);return;
+   }}catch{}
+ }
+ const detail=attributes.last_payment_error?.message;
+ dashPaymentError(button,label,progress,error,typeof detail==='string'&&detail?detail:'Payment could not be completed. Check the details and try again.');
 }
-// When PayMongo sends the buyer back, and on every later visit, the server asks PayMongo whether each open
-// checkout was paid and marks those orders paid.
-async function dashCheckPayments():Promise<void>{
- const params=new URLSearchParams(location.search);const outcome=params.get('payment');
- if(outcome){params.delete('payment');history.replaceState(null,'',location.pathname+(params.toString()?'?'+params:'')+location.hash);}
- if(!dashRoleOrders().some(o=>o.checkout&&o.payment==='Unpaid')){if(outcome==='cancelled')dashToast('Payment cancelled.');return;}
- const r=await dashApi('payments/check',{cancelled:outcome==='cancelled'});
+function dashPaymentError(button:HTMLButtonElement,label:string,progress:HTMLElement|null,error:HTMLElement|null,message:string):void{
+ if(progress)progress.hidden=true;button.disabled=false;button.innerHTML=label;
+ if(error){error.hidden=false;error.textContent=message;}else dashToast(message);
+}
+async function dashPayMongoPost(publicKey:string,path:string,body:Record<string,unknown>):Promise<{ok:boolean;data:any;message:string}>{
+ try{
+  const response=await fetch('https://api.paymongo.com/v1/'+path,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json',Authorization:'Basic '+btoa(publicKey+':')},body:JSON.stringify(body)});
+  const data=await response.json().catch(()=>({}));
+  const message=data?.errors?.[0]?.detail;
+  return {ok:response.ok,data,message:typeof message==='string'?message:''};
+ }catch{return {ok:false,data:{},message:'PayMongo could not be reached. Check your connection and try again.'};}
+}
+function dashShowQrPh(image:string,ids:string[]):void{
+ dashOpen('<p class="detail-kicker">AniBayan · GCash / QR Ph</p><h2 id="detail-title">Scan to pay</h2><p class="detail-subtitle">'+ids.map(dashOrderNo).join(', ')+' · this single-use code expires in about 30 minutes.</p><div class="qrph-payment"><div id="qrph-image-slot" class="qrph-image-slot"></div><p>Open GCash, your bank, or another QR Ph-enabled wallet, scan this code, and approve the amount shown.</p></div><p id="qrph-status" class="payment-status" role="status">Waiting for payment confirmation…</p><div class="detail-actions"><button class="control" data-close-dialog>Close</button><button class="control primary" data-payment-check>Check payment status</button></div>');
+ const img=document.createElement('img');img.src=image;img.alt='Single-use QR Ph payment code';img.width=250;img.height=250;
+ document.getElementById('qrph-image-slot')?.append(img);
+}
+let dashPaymentPoll=0;
+let dashPaymentChecking=false;
+function dashWatchPayments():void{
+ if(dashPaymentPoll)window.clearInterval(dashPaymentPoll);
+ dashPaymentPoll=window.setInterval(()=>{void dashRefreshPaymentStatus(false);},5000);
+}
+async function dashRefreshPaymentStatus(manual:boolean):Promise<void>{
+ if(dashPaymentChecking)return;
+ dashPaymentChecking=true;
+ const r=await dashApi('payments/check');
+ dashPaymentChecking=false;
  if(r.data.state){dashApplyState(r.data.state as DashServerState);dashRender();}
  const paid=(r.data.result?.paid||[]) as string[];
- if(paid.length){dashReceiptDialog(paid.map(n=>'AB-2026-'+n.replace('#','')),'Payment received');dashToast('Payment received for '+paid.join(', ')+'.');}
- else if(outcome==='cancelled')dashToast('Payment cancelled.');
+ if(paid.length){if(dashPaymentPoll)window.clearInterval(dashPaymentPoll);dashPaymentPoll=0;dashDialog.close();dashReceiptDialog(paid.map(n=>'AB-2026-'+n.replace('#','')),'Payment received');dashToast('Payment received for '+paid.join(', ')+'.');return;}
+ const stillOpen=dashRoleOrders().some(o=>o.checkout&&o.payment==='Unpaid');
+ if(!stillOpen&&dashPaymentPoll){window.clearInterval(dashPaymentPoll);dashPaymentPoll=0;const status=document.getElementById('qrph-status');if(status)status.textContent='This payment attempt expired or was not completed. You can try again from My orders.';}
+ else if(manual){const status=document.getElementById('qrph-status');if(status)status.textContent='Payment is still processing or has not been confirmed yet.';else dashToast('Payment is still processing or has not been confirmed yet.');}
+}
+// Reconciles in-app Payment Intents after a provider return and whenever the buyer reopens the orders page.
+async function dashCheckPayments():Promise<void>{
+ const params=new URLSearchParams(location.search);const outcome=params.get('payment');const returnedIntent=params.get('payment_intent_id');
+ if(outcome||returnedIntent){params.delete('payment');params.delete('payment_intent_id');history.replaceState(null,'',location.pathname+(params.toString()?'?'+params:'')+location.hash);}
+ if(!dashRoleOrders().some(o=>o.checkout&&o.payment==='Unpaid')){if(outcome==='cancelled')dashToast('Payment cancelled.');return;}
+ await dashRefreshPaymentStatus(false);
+ if(dashRoleOrders().some(o=>o.checkout&&o.payment==='Unpaid'))dashWatchPayments();
 }
 
 /* ---------- Dialog forms ---------- */
@@ -1345,12 +1558,60 @@ function dashConfirmRemoveListing(id:string):void{
  if(!crop)return;
  dashOpen('<p class="detail-kicker">Remove listing · '+crop.id+'</p><h2 id="detail-title">Remove '+de(crop.name)+'?</h2><p class="detail-subtitle">Buyers will no longer see this listing and it is taken out of their carts. Orders already placed aren’t affected.</p><div class="detail-actions"><button class="control" data-edit-listing="'+crop.id+'">Keep listing</button><button class="control danger" data-confirm-remove="'+crop.id+'">Remove listing</button></div>');
 }
+function dashAdminListingRemoveForm(id:string):void{
+ const crop=dashboardCrops.find(c=>c.id===id);
+ if(!crop||crop.status==='Removed')return;
+ dashOpen('<p class="detail-kicker">Admin listing review · '+crop.id+'</p><h2 id="detail-title">Remove '+de(crop.name)+'?</h2><p class="detail-subtitle">The listing will leave the shop. Existing orders remain active, and the seller will see the reason you provide.</p><form class="dash-form" id="admin-listing-remove-form" data-crop="'+crop.id+'" novalidate><div class="form-grid single">'+dashField('reason','Reason for removal'+dashRequired,'<textarea rows="4" required minlength="10" maxlength="500"></textarea>','This message will appear in the seller’s listing details.',true)+'</div><div class="detail-actions"><button type="button" class="control" data-close-dialog>Cancel</button><button type="submit" class="control danger">Remove listing</button></div></form>');
+ dashFocusField('#field-reason');
+}
+function dashSubmitAdminListingRemove(form:HTMLFormElement):void{
+ const reason=String(new FormData(form).get('reason')??'').trim();
+ if(!dashShowErrors(form,reason.length>=10?{}:{reason:'Give a reason of at least 10 characters.'}))return;
+ const crop=dashboardCrops.find(c=>c.id===form.dataset.crop);
+ void dashDo('admin.listing.remove',{id:form.dataset.crop,reason},form).then(r=>{
+  if(r){dashDialog.close();dashToast((crop?.name||'Listing')+' was removed. The seller can see your reason.');}
+ });
+}
+function dashBarangayForm():void{
+ dashOpen('<p class="detail-kicker">Location settings</p><h2 id="detail-title">Add a barangay</h2><p class="detail-subtitle">The new name will appear in organization and delivery address selectors.</p><form class="dash-form" id="barangay-form" novalidate><div class="form-grid single">'+dashField('municipality','Municipality'+dashRequired,'<select required><option>'+de(dashCityName)+'</option></select>')+dashField('name','Barangay name'+dashRequired,'<input required minlength="2" maxlength="80" autocomplete="off">','Duplicates are checked without regard to capitalization.')+'</div><div class="detail-actions"><button type="button" class="control" data-close-dialog>Cancel</button><button type="submit" class="control primary">Add barangay</button></div></form>');
+ dashFocusField('#field-name');
+}
+function dashSubmitBarangay(form:HTMLFormElement):void{
+ const data=new FormData(form),name=String(data.get('name')??'').trim().replace(/\s+/g,' '),municipality=String(data.get('municipality')??'');
+ const errors:Record<string,string>={};if(name.length<2)errors.name='Enter the barangay name.';
+ if(!dashShowErrors(form,errors))return;
+ void dashDo('barangay.add',{municipality,name},form).then(r=>{
+  if(r){dashDialog.close();dashToast(name+' was added under '+municipality+'.');}
+ });
+}
+function dashBarangayEditForm(current:string):void{
+ dashOpen('<p class="detail-kicker">Location settings · '+de(dashCityName)+'</p><h2 id="detail-title">Rename '+de(current)+'</h2><p class="detail-subtitle">Organizations, member records and saved addresses will follow the new name.</p><form class="dash-form" id="barangay-edit-form" data-current="'+de(current)+'" novalidate><div class="form-grid single">'+dashField('name','Barangay name'+dashRequired,'<input required minlength="2" maxlength="80" value="'+de(current)+'" autocomplete="off">')+'</div><div class="detail-actions"><button type="button" class="control" data-close-dialog>Cancel</button><button type="submit" class="control primary">Save name</button></div></form>');
+ dashFocusField('#field-name');
+}
+function dashSubmitBarangayEdit(form:HTMLFormElement):void{
+ const current=form.dataset.current||'',name=String(new FormData(form).get('name')??'').trim().replace(/\s+/g,' ');
+ if(!dashShowErrors(form,name.length>=2?{}:{name:'Enter a barangay name.'}))return;
+ void dashDo('barangay.update',{municipality:dashCityName,current,name},form).then(r=>{
+  if(r){dashDialog.close();dashToast(current===name?name+' is unchanged.':current+' was renamed to '+name+'. Existing records were updated.');}
+ });
+}
+function dashBarangayRemoveForm(name:string):void{
+ const replacements=dashBarangays.filter(item=>item!==name).map(item=>'<option value="'+de(item)+'">'+de(item)+'</option>').join('');
+ dashOpen('<p class="detail-kicker">Location settings · '+de(dashCityName)+'</p><h2 id="detail-title">Remove '+de(name)+'?</h2><p class="detail-subtitle">If organizations, member records or saved addresses still use it, choose a barangay to move them to. Leave this blank only when it is unused.</p><form class="dash-form" id="barangay-remove-form" data-name="'+de(name)+'" novalidate><div class="form-grid single">'+dashField('replacement','Move existing records to','<select><option value="">Remove only if unused</option>'+replacements+'</select>')+'</div><div class="detail-actions"><button type="button" class="control" data-close-dialog>Cancel</button><button type="submit" class="control danger">Remove barangay</button></div></form>');
+}
+function dashSubmitBarangayRemove(form:HTMLFormElement):void{
+ const name=form.dataset.name||'',replacement=String(new FormData(form).get('replacement')??'');
+ void dashDo('barangay.remove',{municipality:dashCityName,name,replacement},form).then(r=>{
+  if(r){dashDialog.close();const moved=Number(r.organizations||0)+Number(r.members||0)+Number(r.addresses||0);dashToast(name+' was removed.'+(moved?' '+moved+' existing records moved to '+replacement+'.':''));}
+ });
+}
 function dashMemberForm():void{
  dashOpen('<p class="detail-kicker">Member farmers · '+de(dashOrgName)+'</p><h2 id="detail-title">Add a member farmer</h2><p class="detail-subtitle">Members are the growers who supply your organization’s listings.</p><form class="dash-form" id="member-form" novalidate><div class="form-grid">'
   +dashField('name','Full name'+dashRequired,'<input required maxlength="80" autocomplete="off">','',true)
   +dashField('place','Barangay','<input readonly value="'+de(dashMyOrg()?.region||'')+'">')
   +dashField('area','Farm area (hectares)'+dashRequired,'<input type="number" required min="0.1" max="500" step="0.1" inputmode="decimal">')
   +dashField('crops','Crops grown'+dashRequired,'<input required maxlength="80" placeholder="e.g. Rice, calamansi">','',true)
+  +dashField('applicationMessage','Application message'+dashRequired,'<textarea rows="3" required minlength="10" maxlength="500" placeholder="Why would this farmer like to join your organization?"></textarea>','Shown while you review this membership application.',true)
   +'</div><div class="detail-actions"><button type="button" class="control" data-close-dialog>Cancel</button><button type="submit" class="control primary">'+di('plus')+'Add member</button></div></form>');
  dashFocusField('#field-name');
 }
@@ -1362,10 +1623,11 @@ function dashSubmitMember(form:HTMLFormElement):void{
  if(value('name').length<3)errors.name='Enter the farmer’s full name.';
  if(!value('area')||!(area>=0.1&&area<=500))errors.area='Enter the farm area in hectares, from 0.1 to 500.';
  if(value('crops').length<3)errors.crops='Enter the crops they grow.';
+  if(value('applicationMessage').length<10)errors.applicationMessage='Enter a message of at least 10 characters.';
  if(!dashShowErrors(form,errors))return;
- void dashDo('member.add',{name:value('name'),crops:value('crops'),area},form).then(r=>{
+  void dashDo('member.add',{name:value('name'),crops:value('crops'),area,applicationMessage:value('applicationMessage')},form).then(r=>{
   if(!r)return;
-  dashDialog.close();dashToast(value('name')+' was added as a member farmer.');
+   dashDialog.close();dashToast(value('name')+' membership application is waiting for your confirmation.');
  });
 }
 function dashOrgProfileForm():void{
@@ -1428,9 +1690,9 @@ function dashSubmitPassword(form:HTMLFormElement):void{
   if(r){dashDialog.close();dashToast('Password changed.');}
  });
 }
-const dashPaymentMethods=[['Cash on delivery','Pay the organization when your order arrives.'],['GCash','Pay now through PayMongo.'],['Credit or debit card','Pay now through PayMongo.']];
+const dashPaymentMethods=[['Cash on delivery','Pay the organization when your order arrives.'],['GCash or QR Ph','Scan a single-use QR Ph code in AniBayan with GCash or another supported wallet.'],['Credit or debit card','Enter card details securely in AniBayan; bank verification may be needed.']];
 function dashCheckoutForm():void{
- const entries=dashCartEntries();
+ const entries=dashCartEntries().filter(e=>dashCartSelection.has(e.crop.id));
  if(!entries.length||entries.some(e=>dashCartProblem(e)))return;
  const me=dashAccount();
  const saved=me.addresses||[];
@@ -1441,13 +1703,15 @@ function dashCheckoutForm():void{
  dashOpen('<p class="detail-kicker">Checkout</p><h2 id="detail-title">Place your order'+(orgs.length>1?'s':'')+'</h2><p class="detail-subtitle">'+dashPlural(entries.length,'harvest')+' · '+dp(total)+(orgs.length>1?' · '+orgs.length+' orders, one per organization':'')+'</p><form class="dash-form" id="checkout-form" novalidate><div class="form-grid single">'
   +choices+fresh
   +dashField('phone','Mobile number'+dashRequired,'<input '+dashPhoneInput+' value="'+de(me.phone||'')+'">','The organization calls this number to arrange delivery.')
-  +'<div class="form-field"><span class="form-label" id="method-label">Payment method'+dashRequired+'</span><div class="choice-list" role="radiogroup" aria-labelledby="method-label">'+dashPaymentMethods.map((m,i)=>'<label class="choice"><input type="radio" name="method" value="'+m[0]+'"'+(i===0?' checked':'')+'><span><strong>'+m[0]+'</strong><small>'+m[1]+'</small></span></label>').join('')+'</div></div>'
+   +'<div class="form-field"><span class="form-label" id="method-label">Payment method'+dashRequired+'</span><div class="choice-list" role="radiogroup" aria-labelledby="method-label">'+dashPaymentMethods.map((m,i)=>'<label class="choice"><input type="radio" name="method" value="'+m[0]+'"'+(i===0?' checked':'')+'><span><strong>'+m[0]+'</strong><small>'+m[1]+'</small></span></label>').join('')+'</div></div>'
   +dashField('note','Note for the organization','<textarea rows="2" maxlength="200" placeholder="Gate code, preferred delivery time…"></textarea>')
   +'</div><p class="form-error" id="checkout-error" role="alert" hidden></p><div class="detail-actions"><button type="button" class="control" data-close-dialog>Back to cart</button><button type="submit" class="control primary">Place order'+(orgs.length>1?'s':'')+' · '+dp(total)+'</button></div></form>');
  if(!saved.length)void dashMountMap();
  dashFocusField(saved.length?'[type=submit]':'#field-barangay');
 }
 function dashSubmitCheckout(form:HTMLFormElement):void{
+ const entries=dashCartEntries().filter(e=>dashCartSelection.has(e.crop.id));
+ if(!entries.length){dashDialog.close();dashToast('Select at least one harvest in your cart before checking out.');return;}
  const data=new FormData(form);
  const phone=String(data.get('phone')??'').trim(),note=String(data.get('note')??'').trim();
  const method=String(data.get('method')||'Cash on delivery');
@@ -1458,7 +1722,7 @@ function dashSubmitCheckout(form:HTMLFormElement):void{
  if(!dashShowErrors(form,errors))return;
  const error=document.getElementById('checkout-error')!;
  // The server checks stock again, places one order per organization and empties the cart.
- void dashApi('actions/checkout',{...place,phone,method,note}).then(r=>{
+  void dashApi('actions/checkout',{...place,phone,method,note,crops:entries.map(e=>e.crop.id)}).then(r=>{
   if(r.data.state)dashApplyState(r.data.state as DashServerState);
   dashRender();
   if(!r.ok){
@@ -1469,7 +1733,7 @@ function dashSubmitCheckout(form:HTMLFormElement):void{
   }
   const placed=(r.data.result.orders||[]) as {id:string;organization:string}[];
   const numbers=placed.map(o=>dashOrderNo(o.id)).join(', ');
-  if(method!=='Cash on delivery'){dashPaymentDialog(placed.map(o=>o.id));dashToast('Order'+(placed.length>1?'s ':' ')+numbers+' placed. Complete the payment to finish.');return;}
+  if(method!=='Cash on delivery'){dashPaymentDialog(placed.map(o=>o.id));return;}
   dashNavigate('orders');
   dashReceiptDialog(placed.map(o=>o.id),'Order placed');
   dashToast(placed.length===1?'Order '+numbers+' placed with '+placed[0].organization+'.':placed.length+' orders placed: '+numbers+'.');
@@ -1594,7 +1858,7 @@ function dashRefundReview(orderId:string):void{
  const r=o?.refund;
  if(!o||!r)return;
  const open=r.status==='Requested'||r.status==='Disputed';
- const decide=open?'<form class="dash-form" id="refund-decide-form" data-refund="'+r.id+'" data-order="'+o.id+'" novalidate><div class="form-grid single">'+dashField('note','Note for the buyer and the organization','<textarea rows="2" maxlength="300"></textarea>')+'</div><div class="detail-actions"><button type="button" class="control" data-close-dialog>Close</button><button type="submit" class="control" value="release">Release '+dp(o.total)+' to '+de(o.organization)+'</button><button type="submit" class="control primary" value="refund">'+di('check')+'Refund '+dp(o.total)+' to '+de(o.customer)+'</button></div></form>':'<div class="detail-actions"><button class="control primary" data-close-dialog>Close</button></div>';
+ const decide=open?'<form class="dash-form" id="refund-decide-form" data-refund="'+r.id+'" data-order="'+o.id+'" novalidate><div class="form-grid single">'+dashField('note','Decision note','<textarea rows="2" maxlength="300"></textarea>','Required when denying the refund. The buyer and organization can read it.')+'</div><div class="detail-actions"><button type="button" class="control" data-close-dialog>Close</button><button type="submit" class="control" value="release">Release '+dp(o.total)+' to '+de(o.organization)+'</button><button type="submit" class="control primary" value="refund">'+di('check')+'Refund '+dp(o.total)+' to '+de(o.customer)+'</button></div></form>':'<div class="detail-actions"><button class="control primary" data-close-dialog>Close</button></div>';
  dashOpen('<p class="detail-kicker">Refund request · '+r.id+'</p><h2 id="detail-title">'+dp(o.total)+' · '+de(o.crop)+'</h2><p class="detail-subtitle">'+dashUserLink(o.customer)+' → '+dashOrgLink(o.organization)+' · order '+dashOrderNo(o.id)+'</p>'
   +'<dl class="detail-facts">'+dashFact('Status',ds(dashRefundStage(r)))+dashFact('Reason',de(r.reason))+dashFact('Requested',dtime(r.requestedAt))+(r.status==='Requested'?dashFact('Organization answers by',ddate(r.respondBy)):'')+(r.disputedAt?dashFact('Disputed',dtime(r.disputedAt)):'')+(r.decidedAt?dashFact('Settled',ddate(r.decidedAt)+(r.decidedBy?'<small class="fact-note">'+({admin:'By an administrator',organization:'By the organization',automatic:'No answer in time'} as Record<string,string>)[r.decidedBy]+'</small>':'')):'')+dashFact('Payment',de(o.method||'')+(o.paymentRef?'<small class="fact-note">'+de(o.paymentRef)+'</small>':''))+(o.deliveredAt?dashFact('Delivered',dtime(o.deliveredAt)):'')+'</dl>'
   +'<h3 class="detail-section">What the buyer says</h3><p class="detail-lead">'+de(r.details)+'</p>'+dashRefundMedia(r)
@@ -1817,7 +2081,13 @@ function dashSubmitTerminate(form:HTMLFormElement):void{
 }
 
 let dashToastTimeout:number|undefined;
-function dashToast(message:string):void{const el=document.getElementById('dashboard-toast')!;el.textContent=message;el.classList.add('visible');window.clearTimeout(dashToastTimeout);dashToastTimeout=window.setTimeout(()=>el.classList.remove('visible'),3600);}
+function dashToast(message:string):void{
+ if(dashDialog.open){
+  const host=document.getElementById('detail-content');
+  if(host){host.querySelector('.detail-toast')?.remove();const notice=document.createElement('p');notice.className='detail-toast';notice.setAttribute('role','status');notice.textContent=message;host.prepend(notice);window.setTimeout(()=>notice.remove(),3600);return;}
+ }
+ const el=document.getElementById('dashboard-toast')!;el.textContent=message;el.classList.add('visible');window.clearTimeout(dashToastTimeout);dashToastTimeout=window.setTimeout(()=>el.classList.remove('visible'),3600);
+}
 function dashExportRows():[string,(string|number)[][]]{
  const view=dashState.view;
  if(isAdminDashboard){
@@ -1825,7 +2095,9 @@ function dashExportRows():[string,(string|number)[][]]{
   if(view==='refunds')return ['refunds',[['Refund ID','Order','Buyer','Organization','Amount PHP','Reason','Status','Requested','Organization’s answer','Administrator’s note'],...dashRefundList().map(({o,r})=>[r.id,o.id,o.customer,o.organization,o.total,r.reason,dashRefundStage(r),r.requestedAt.slice(0,10),r.disputeReason||'',r.adminNote||''])]];
   if(view==='reports')return ['user-reports',[['Report ID','Organization','Reported by','Reason','Details','Order','Filed','Status'],...dashReportList().map(r=>[r.id,r.organization,r.customer,r.reason,r.details,r.order||'',r.date,r.status])]];
   if(view==='applications')return ['organization-applications',[['Organization','Region','Main crops','Representative','Members','Documents','Submitted','Status'],...dashApplicationList().map(o=>[o.name,o.region,o.crop,o.representative,o.members,o.documents.map(d=>d.type).join('; '),o.applied,dashAppStatus(o)])]];
-  if(view==='health')return ['health-checks',[['Checked at','Service','Result','Response time (ms)','Error'],...dashboardHealthLog.slice().reverse().flatMap(run=>run.results.map(r=>[run.time,r.service,r.ok?'Passed':'Failed',r.latency,r.error||'']))]];
+   if(view==='health')return ['health-checks',[['Checked at','Service','Result','Response time (ms)','Error'],...dashboardHealthLog.slice().reverse().flatMap(run=>run.results.map(r=>[run.time,r.service,r.ok?'Passed':'Failed',r.latency,r.error||'']))]];
+   if(view==='listings')return ['listings',[['Product ID','Name','Organization','Category','Price PHP','Unit','Available quantity','Status','Removal reason'],...dashAdminListings().map(c=>[c.id,c.name,c.organization,c.category,c.price,c.unit,c.stock,dashCropStatus(c),c.removalReason||''])]];
+   if(view==='barangays')return ['barangays',[['Barangay','Municipality'],...dashBarangays.filter(name=>dashMatching(name)).map(name=>[name,dashCityName])]];
   return ['accounts',[['Name','Email','Role','Organization','Joined','Last active','Status'],...dashAccountList().map(a=>[a.name,a.email,a.role==='Consumer'?'Buyer':a.role,a.organization||'',a.joined,a.lastActive,a.status])]];
  }
  if(view==='listings')return ['listings',[['Product ID','Name','Category','Price PHP','Unit','Available quantity','Harvest date','Shelf life (days)','Best before','Status'],...dashListingCrops().map(c=>[c.id,c.name,c.category,c.price,c.unit,c.stock,c.harvested,c.shelfLife,dashAddDays(c.harvested,c.shelfLife),dashCropStatus(c)])]];
@@ -1838,7 +2110,7 @@ function dashExportRows():[string,(string|number)[][]]{
 }
 // What an export says above its table: the page it came from, who exported it and when, and the filters in use.
 function dashExportMeta(recordType:string):{title:string;scope:string;by:string;when:string;filters:string}{
- const titles:Record<string,string>={'activity-log':'Activity log','user-reports':'User reports',refunds:'Refunds','organization-applications':'Organization applications','health-checks':'Site health checks',accounts:'Accounts',listings:'Listings',members:'Member farmers',feedback:'Ratings and feedback',orders:dashState.view==='payments'?'Payments':isConsumerDashboard?'My orders':'Orders'};
+  const titles:Record<string,string>={'activity-log':'Activity log','user-reports':'User reports',refunds:'Refunds','organization-applications':'Organization applications','health-checks':'Site health checks',accounts:'Accounts',listings:'Listings',barangays:'Barangays',members:'Member farmers',feedback:'Ratings and feedback',orders:dashState.view==='payments'?'Payments':isConsumerDashboard?'My orders':'Orders'};
  const filters:string[]=[];
  if(isOrgDashboard&&dashState.view==='overview')filters.push('Period: '+(dashState.period==='week'?'last 7 days':'last 4 weeks'));
  if(dashState.filter&&dashState.filter!=='All')filters.push((dashState.view==='listings'?'Show: ':'Status: ')+dashState.filter);
@@ -1851,7 +2123,7 @@ const dashExportFooter='AniBayan · '+dashCityName+', Oriental Mindoro';
 // unit, application members), the average rating for feedback, and the number of rows everywhere.
 function dashExportTotals(recordType:string,table:(string|number)[][]):(string|number)[]{
  const head=table[0].map(String),body=table.slice(1);
- const nouns:Record<string,string>={refunds:'refund request',orders:'order',listings:'listing',members:'member farmer',feedback:'review',accounts:'account','user-reports':'report','organization-applications':'application','activity-log':'event','health-checks':'check'};
+  const nouns:Record<string,string>={refunds:'refund request',orders:'order',listings:'listing',barangays:'barangay',members:'member farmer',feedback:'review',accounts:'account','user-reports':'report','organization-applications':'application','activity-log':'event','health-checks':'check'};
  const sum=(column:string)=>body.reduce((total,row)=>total+Number(row[head.indexOf(column)]||0),0);
  const values:Record<string,string|number>={};
  let label='Total';
@@ -1998,6 +2270,7 @@ function dashReadHash():void{
  const profile=/^(org|user)=([a-z0-9-]+)$/.exec(requested);
  if(profile)dashState.profile={kind:profile[1]==='user'?'user':'org',slug:profile[2]};
  dashState.view=profile?'profile':allowed.includes(requested)?requested:dashRole.nav[0][0];
+ const search=document.getElementById('dashboard-search');if(search)search.setAttribute('placeholder',dashState.view==='cart'?'Search items in your cart':isAdminDashboard&&dashState.view==='listings'?'Search listings':isAdminDashboard&&dashState.view==='barangays'?'Search barangays':dashRole.search);
  dashRepositioning=null;
  dashState.filter=dashState.nextFilter||'All';dashState.nextFilter='';dashState.query='';
  dashClosePopovers();document.body.classList.remove('sidebar-open');dashRender();window.scrollTo(0,0);
@@ -2045,7 +2318,6 @@ function dashStart():void{
  document.addEventListener('input',event=>{
   const input=event.target as HTMLInputElement;
   if(input.type==='tel')dashLimitPhone(input);
-  if(input.id==='detail-qty'&&input.value!==''){const max=Number(input.max),value=Math.floor(Number(input.value));if(value>max)input.value=String(max);else if(value<1)input.value='1';}
   if(input.dataset.tableSearch!==undefined){dashState.query=input.value;dashRender();return;}
   const key=input.dataset.shop as keyof DashShopFilters|undefined;
   if(key){dashState.shop[key]=input.value;dashRefreshShop();return;}
@@ -2072,6 +2344,8 @@ function dashStart():void{
  document.addEventListener('pointerup',endDrag);document.addEventListener('pointercancel',endDrag);
  document.addEventListener('change',event=>{
   const input=event.target as HTMLInputElement;
+   if(input.dataset.cartSelect!==undefined){if(input.checked)dashCartSelection.add(input.dataset.cartSelect);else dashCartSelection.delete(input.dataset.cartSelect);dashRender();return;}
+   if(input.dataset.cartSelectAll!==undefined){dashCartEntries().filter(e=>dashMatching(e.crop.name+' '+e.crop.organization+' '+e.crop.category)).forEach(e=>input.checked?dashCartSelection.add(e.crop.id):dashCartSelection.delete(e.crop.id));dashRender();return;}
   if(input.dataset.upload){void dashUploadLook(input);return;}
   if(input.id==='field-media'){dashAddRefundFiles(input);return;}
   if(input.name==='barangay'&&input.form?.querySelector('#map-picker')){dashMapControls?.fly(input.value);}
@@ -2102,12 +2376,29 @@ function dashStart():void{
   if(form.id==='listing-form')void dashSubmitListing(form);
   else if(form.id==='feedback-form')dashSubmitFeedback(form);
   else if(form.id==='report-form')dashSubmitReport(form);
+  else if(form.id==='order-decline-form')dashSubmitOrderDecline(form);
+  else if(form.id==='application-decline-form')dashSubmitApplicationDecline(form);
+  else if(form.id==='report-decision-form'){
+   const id=form.dataset.report||'',decision=form.dataset.decision||'';
+   const note=String(new FormData(form).get('note')??'').trim();
+   if(!dashShowErrors(form,note.length>=10?{}:{note:'Give an explanation of at least 10 characters.'}))return;
+   void dashDo('report.decide',{id,decision,note},form).then(r=>{
+    if(!r)return;
+    dashReportDetails(id);
+    dashToast('Report dismissed. The reporter can see your explanation in AniBayan.');
+   });
+  }
   else if(form.id==='warning-form')dashSubmitWarning(form);
   else if(form.id==='terminate-form')dashSubmitTerminate(form);
   else if(form.id==='checkout-form')dashSubmitCheckout(form);
   else if(form.id==='profile-form')dashSubmitProfile(form);
   else if(form.id==='org-profile-form')dashSubmitOrgProfile(form);
   else if(form.id==='member-form')dashSubmitMember(form);
+   else if(form.id==='admin-listing-remove-form')dashSubmitAdminListingRemove(form);
+  else if(form.id==='barangay-form')dashSubmitBarangay(form);
+  else if(form.id==='barangay-edit-form')dashSubmitBarangayEdit(form);
+  else if(form.id==='barangay-remove-form')dashSubmitBarangayRemove(form);
+   else if(form.id==='suspend-form')dashSubmitSuspend(form);
   else if(form.id==='password-form')dashSubmitPassword(form);
   else if(form.id==='address-form')dashSubmitAddress(form);
   else if(form.id==='refund-form')dashSubmitRefund(form);
@@ -2115,8 +2406,10 @@ function dashStart():void{
   else if(form.id==='refund-decide-form'){
    const decision=((event as SubmitEvent).submitter as HTMLButtonElement|null)?.value==='release'?'release':'refund';
    const order=form.dataset.order!;
-   void dashDo('refund.decide',{id:form.dataset.refund,decision,note:String(new FormData(form).get('note')??'').trim()},form).then(r=>{
-    if(r){dashRefundReview(order);dashToast(decision==='refund'?(r.status==='Refunded'?'Refund sent to the buyer.':'Refund approved. PayMongo is still processing it.'):'Payment released to the organization.');}
+   const note=String(new FormData(form).get('note')??'').trim();
+   if(decision==='release'&&!dashShowErrors(form,note.length>=10?{}:{note:'Explain why the refund was denied in at least 10 characters.'}))return;
+   void dashDo('refund.decide',{id:form.dataset.refund,decision,note},form).then(r=>{
+    if(r){dashRefundReview(order);dashToast(decision==='refund'?(r.status==='Refunded'?'Refund sent to the buyer.':'Refund approved. PayMongo is still processing it.'):'Refund denied with your note. Payment released to the organization.');}
    });
   }
  });
@@ -2146,27 +2439,30 @@ function dashHandleClick(event:MouseEvent):void{
  }
  if(data.shopType){dashState.shop.type=dashState.shop.type===data.shopType?'All':data.shopType;dashRender();return;}
  if(data.go){dashState.nextFilter=data.goFilter||'';if(dashDialog.open)dashDialog.close();dashNavigate(data.go);return;}
- if(data.advance||data.decline||data.cancelOrder){
-  const id=(data.advance||data.decline||data.cancelOrder)!;
-  const action=data.advance?'order.advance':data.decline?'order.decline':'order.cancel';
+ if(data.decline){
+  const id=data.decline;
+  const order=dashboardOrders.find(o=>o.id===id);
+  if(order?.status==='Pending'&&!order.buyerSuspended){dashOrderDeclineForm(id);return;}
+  void dashDo('order.decline',{order:id}).then(r=>{
+   if(!r)return;
+   if(dashDialog.open&&order)dashOrderDetails(id);
+   dashToast('Order '+dashOrderNo(id)+' cancelled. AniBayan recorded why it was blocked.');
+  });
+  return;
+ }
+ if(data.advance||data.cancelOrder){
+  const id=(data.advance||data.cancelOrder)!;
+  const action=data.advance?'order.advance':'order.cancel';
   void dashDo(action,{order:id}).then(r=>{
    if(!r)return;
    const order=dashboardOrders.find(o=>o.id===id);
    if(dashDialog.open&&order)dashOrderDetails(id);
-   dashToast('Order '+dashOrderNo(id)+' '+(data.cancelOrder?'cancelled.':'marked '+(order?.status||'updated').toLowerCase()+'.'));
+   dashToast(data.cancelOrder?'Order '+dashOrderNo(id)+' cancelled at your request.':'Order '+dashOrderNo(id)+' marked '+(order?.status||'updated').toLowerCase()+'.');
   });
   return;
  }
- if(data.toggleListing){
-  const id=data.toggleListing;
-  void dashDo('listing.toggle',{id}).then(r=>{
-   const crop=dashboardCrops.find(c=>c.id===id);
-   if(!r||!crop)return;
-   if(dashDialog.open)dashProductDetails(id);
-   dashToast(crop.name+(crop.status==='Active'?' is published. Buyers can see and order it.':' is unpublished. Buyers can’t see or order it until you publish it again.'));
-  });
-  return;
- }
+  if(data.toggleConfirm){dashToggleListing(data.toggleConfirm,true);return;}
+  if(data.toggleListing){dashToggleListing(data.toggleListing);return;}
  if(data.editListing){dashListingForm(data.editListing);return;}
  if(data.removeListing){dashConfirmRemoveListing(data.removeListing);return;}
  if(data.confirmRemove){
@@ -2176,6 +2472,10 @@ function dashHandleClick(event:MouseEvent):void{
   return;
  }
  if(data.addMember!==undefined){dashMemberForm();return;}
+  if(data.adminRemoveListing){dashAdminListingRemoveForm(data.adminRemoveListing);return;}
+  if(data.addBarangay!==undefined){dashBarangayForm();return;}
+ if(data.barangayEdit){dashBarangayEditForm(data.barangayEdit);return;}
+ if(data.barangayRemove){dashBarangayRemoveForm(data.barangayRemove);return;}
  if(data.memberConfirm){
   const member=dashboardMembers.find(m=>m.id===data.memberConfirm);
   if(member)void dashDo('member.confirm',{id:member.id}).then(r=>{if(r)dashToast(member.name+' is now an active member.');});
@@ -2193,6 +2493,7 @@ function dashHandleClick(event:MouseEvent):void{
  }
  if(data.review&&data.reviewName){
   const name=data.reviewName,approve=data.review==='Active';
+  if(!approve){dashApplicationDeclineForm(name);return;}
   void dashDo('application.review',{name,decision:data.review}).then(r=>{
    if(!r)return;
    dashDialog.close();
@@ -2202,6 +2503,7 @@ function dashHandleClick(event:MouseEvent):void{
  }
  if(data.decide&&data.reportId){
   const id=data.reportId,decision=data.decide;
+  if(decision==='Dismissed'){dashReportDecisionForm(id,decision);return;}
   void dashDo('report.decide',{id,decision}).then(r=>{
    const report=dashboardReports.find(x=>x.id===id);
    if(!r||!report)return;
@@ -2220,16 +2522,7 @@ function dashHandleClick(event:MouseEvent):void{
   return;
  }
  if(data.reportId){dashReportDetails(data.reportId);return;}
- if(data.suspend){
-  const email=data.suspend;
-  void dashDo('account.suspend',{email}).then(r=>{
-   const account=dashAccountByEmail(email);
-   if(!r||!account)return;
-   dashAccountDetails(email);
-   dashToast(account.name+(r.status==='Suspended'?' is suspended and signed out of AniBayan.'+(r.cancelled?' '+dashPlural(r.cancelled,'open order')+' cancelled.':''):' is reactivated.'));
-  });
-  return;
- }
+  if(data.suspend){const account=dashAccountByEmail(data.suspend);if(account?.status==='Active')dashSuspendForm(data.suspend);else dashRunAccountSuspend(data.suspend);return;}
  if(data.resetPassword){void dashResetPassword(data.resetPassword);return;}
  if(data.copy){
   const text=document.getElementById(data.copy)?.textContent||'';
@@ -2266,6 +2559,7 @@ function dashHandleClick(event:MouseEvent):void{
  if(data.pay){
   void dashStartPayment(data.pay.split(','),target as HTMLButtonElement);return;
  }
+ if(data.paymentCheck!==undefined){void dashRefreshPaymentStatus(true);return;}
  if(data.payLater!==undefined){dashDialog.close();dashNavigate('orders');dashToast('Your order is waiting for payment. Use Pay now in My orders when you’re ready.');return;}
  if(data.addListing!==undefined){dashListingForm();return;}
  if(data.editOrgProfile!==undefined){dashOrgProfileForm();return;}
@@ -2276,7 +2570,7 @@ function dashHandleClick(event:MouseEvent):void{
  if(data.addCart){
   const id=data.addCart;
   const input=data.qtyFrom?document.getElementById(data.qtyFrom) as HTMLInputElement|null:null;
-  void dashAddToCart(id,input?Number(input.value):1).then(()=>{if(dashDialog.open&&!isGuest)dashProductDetails(id);});
+   void dashAddToCart(id,input?Number(input.value):1,input?.form||undefined).then(added=>{if(added&&dashDialog.open&&!isGuest)dashProductDetails(id);});
   return;
  }
  if(data.cartStep){void dashDo('cart.step',{crop:data.cartStep,step:Number(data.step)});return;}
@@ -2320,6 +2614,6 @@ function dashHandleClick(event:MouseEvent):void{
 // Admin and organization pages need a matching account. The server signs out an account that was suspended or
 // terminated since it signed in, and says so (dashBlockedStatus). Without the server, the page says it isn't answering.
 if(dashOffline)dashStart();
-else if(dashBlockedStatus)location.replace('login.html?notice='+dashBlockedStatus);
+else if(dashBlockedStatus)location.replace('login.html?notice='+dashBlockedStatus+(dashBlockedReason?'&reason='+encodeURIComponent(dashBlockedReason):''));
 else if(dashNeedsSignIn)location.replace('login.html?next='+encodeURIComponent(dashPageFile()+location.search+location.hash)+'&notice='+(isAdminDashboard?'admin':'organization'));
 else dashStart();

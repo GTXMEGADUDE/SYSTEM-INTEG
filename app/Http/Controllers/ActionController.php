@@ -16,6 +16,7 @@ use App\Models\Report;
 use App\Models\User;
 use App\Models\Warning;
 use App\Support\AppState;
+use App\Support\BarangayDirectory;
 use App\Support\Calapan;
 use App\Support\Documents;
 use App\Support\Escrow;
@@ -53,6 +54,7 @@ class ActionController extends Controller
         // Administrators
         'account.suspend' => 'accountSuspend', 'account.reset-password' => 'accountResetPassword', 'application.review' => 'applicationReview',
         'report.decide' => 'reportDecide', 'warning.create' => 'warningCreate', 'warning.withdraw' => 'warningWithdraw',
+        'admin.listing.remove' => 'adminListingRemove', 'barangay.add' => 'barangayAdd', 'barangay.update' => 'barangayUpdate', 'barangay.remove' => 'barangayRemove',
         'organization.terminate' => 'organizationTerminate', 'refund.decide' => 'refundDecide', 'health.record' => 'healthRecord', 'data.reset' => 'dataReset',
         // Everyone signed in
         'password.change' => 'passwordChange', 'preferences' => 'preferences',
@@ -61,7 +63,7 @@ class ActionController extends Controller
 
     private const REPORT_REASONS = ['Short or wrong quantity', 'Poor quality or spoiled', 'Harvest date not as listed', 'Late or no fulfillment', 'Payment or refund problem', 'Other'];
 
-    private const PAYMENT_METHODS = ['Cash on delivery', 'GCash', 'Credit or debit card'];
+    private const PAYMENT_METHODS = ['Cash on delivery', 'GCash', 'GCash or QR Ph', 'Credit or debit card', 'QR Ph'];
 
     // A Philippine mobile number: 0917 555 0148 or +63 917 555 0148 (at most 12 digits).
     public const PHONE = '/^(\+63[\s-]?|0)9\d{2}[\s-]?\d{3}[\s-]?\d{4}$/';
@@ -117,9 +119,13 @@ class ActionController extends Controller
         return $org->representativeAccount()?->email;
     }
 
-    private function buyableCrop(string $id): Crop
+    private function buyableCrop(string $id, bool $lock = false): Crop
     {
-        $crop = Crop::with('organization')->find($id);
+        $query = Crop::with('organization')->whereKey($id);
+        if ($lock) {
+            $query->lockForUpdate();
+        }
+        $crop = $query->first();
         if (! $crop || ! $crop->isBuyable()) {
             $this->fail('This harvest isn’t available right now.');
         }
@@ -133,16 +139,22 @@ class ActionController extends Controller
     {
         $this->buyer($user);
         $data = $request->validate(['crop' => 'required|string', 'quantity' => 'required|integer|min:1|max:100000']);
-        $crop = $this->buyableCrop($data['crop']);
+        $crop = $this->buyableCrop($data['crop'], true);
+        if (! $crop || ! $crop->isBuyable()) {
+            $this->fail('This harvest isn’t available right now.');
+        }
         $inCart = (int) DB::table('cart_lines')->where(['user_id' => $user->id, 'crop_id' => $crop->id])->value('quantity');
         $room = $crop->stock - $inCart;
         if ($room <= 0) {
             $this->fail('Your cart already has all '.$crop->stock.' '.$crop->unit.' of '.$crop->name.'.');
         }
-        $amount = min($data['quantity'], $room);
+        if ($data['quantity'] > $room) {
+            $this->fail('Only '.$room.' '.$crop->unit.' of '.$crop->name.' can be added. Update the quantity and try again.');
+        }
+        $amount = $data['quantity'];
         DB::table('cart_lines')->updateOrInsert(['user_id' => $user->id, 'crop_id' => $crop->id], ['quantity' => $inCart + $amount]);
 
-        return ['added' => $amount, 'allLeft' => $amount < $data['quantity']];
+        return ['added' => $amount];
     }
 
     private function cartStep(Request $request, User $user): void
@@ -191,7 +203,7 @@ class ActionController extends Controller
         $this->buyer($user);
         $data = $request->validate([
             'address' => 'nullable|integer', 'phone' => ['required', 'regex:'.self::PHONE], 'method' => ['required', Rule::in(self::PAYMENT_METHODS)],
-            'note' => 'nullable|string|max:200', 'save' => 'boolean',
+            'note' => 'nullable|string|max:200', 'save' => 'boolean', 'crops' => 'required|array|min:1|max:100', 'crops.*' => 'required|string|distinct',
         ], ['phone.regex' => 'Enter a mobile number like 0917 555 0148.']);
         if (! empty($data['address'])) {
             $saved = $user->addresses()->find($data['address']) ?? $this->fail('Choose one of your saved addresses.');
@@ -200,7 +212,11 @@ class ActionController extends Controller
             $new = $this->addressInput($request);
             $place = ['text' => Address::text($new['details'] ?? '', $new['barangay'], isset($new['lat'])), 'lat' => $new['lat'] ?? null, 'lng' => $new['lng'] ?? null];
         }
-        $lines = DB::table('cart_lines')->where('user_id', $user->id)->get();
+        $selected = array_values(array_unique($data['crops']));
+        $lines = DB::table('cart_lines')->where('user_id', $user->id)->whereIn('crop_id', $selected)->get();
+        if ($lines->count() !== count($selected)) {
+            $this->fail('Some selected items are no longer in your cart. Review your cart and try again.');
+        }
         if ($lines->isEmpty()) {
             $this->fail('Your cart is empty.');
         }
@@ -232,7 +248,7 @@ class ActionController extends Controller
             Activity::record('order-placed', $user->email, $order->number().' · '.$this->money($total).' · '.$first['crop']->organization->name);
             $placed[] = ['id' => $order->id, 'organization' => $first['crop']->organization->name];
         }
-        DB::table('cart_lines')->where('user_id', $user->id)->delete();
+        DB::table('cart_lines')->where('user_id', $user->id)->whereIn('crop_id', $selected)->delete();
         if (isset($new) && ! empty($data['save'])) {
             $this->storeAddress($user, $new);
         }
@@ -249,7 +265,7 @@ class ActionController extends Controller
     private function addressInput(Request $request): array
     {
         $data = $request->validate([
-            'label' => 'nullable|string|max:40', 'details' => 'nullable|string|max:120', 'barangay' => ['required', Rule::in(config('anibayan.barangays'))],
+            'label' => 'nullable|string|max:40', 'details' => 'nullable|string|max:120', 'barangay' => ['required', Rule::in(BarangayDirectory::names())],
             'lat' => 'nullable|numeric|required_with:lng', 'lng' => 'nullable|numeric|required_with:lat',
         ], ['barangay.*' => 'Choose a barangay in Calapan City.', 'lat.*' => 'Pin a place in Calapan City.', 'lng.*' => 'Pin a place in Calapan City.']);
         if (isset($data['lat'], $data['lng'])) {
@@ -372,6 +388,11 @@ class ActionController extends Controller
         Activity::record('refund-requested', $user->email, $order->number().' · '.$refund->id.' · '.$refund->reason);
         // Nobody can answer for a terminated or suspended organization, so the refund is granted straight away.
         if ($order->organization->isStopped()) {
+            $stopReason = $order->organization->status === 'Terminated'
+                ? $order->organization->terminated_for
+                : $order->organization->representativeAccount()?->suspension_reason;
+            $note = $order->organization->name.' can’t respond to refund requests right now.'.($stopReason ? ' Reason: '.$stopReason.'.' : '').' AniBayan approved this refund automatically.';
+            $refund->update(['admin_note' => mb_substr($note, 0, 300)]);
             Escrow::refund($refund->load('order'), 'automatic');
         }
 
@@ -385,8 +406,13 @@ class ActionController extends Controller
         if ($order->status !== 'Pending') {
             $this->fail('Only orders still waiting for confirmation can be cancelled.');
         }
+        $reason = 'Cancelled at the buyer’s request.';
+        $order->cancel_reason = $reason;
         $order->moveTo('Cancelled');
-        Activity::record('order-cancelled', $user->email, $order->number());
+        if ($order->payment === 'Paid' && $order->funds === 'Held') {
+            Escrow::refundOrder($order, $reason);
+        }
+        Activity::record('order-cancelled', $user->email, $order->number().' · '.$reason);
     }
 
     private function feedbackCreate(Request $request, User $user): array
@@ -464,12 +490,22 @@ class ActionController extends Controller
             $this->fail('Only new orders can be declined.');
         }
         if ($order->status === 'Pending' && ! $buyerSuspended) {
+            $reason = trim((string) $request->validate(['reason' => 'required|string|min:10|max:300'], ['reason.*' => 'Explain why the order was declined in at least 10 characters.'])['reason']);
+            if (mb_strlen($reason) < 10) {
+                throw ValidationException::withMessages(['reason' => 'Explain why the order was declined in at least 10 characters.']);
+            }
+            $order->cancel_reason = 'Declined by '.$org->name.': '.$reason;
             $order->moveTo('Cancelled');
-            Activity::record('order-cancelled', $user->email, $order->number().' · declined by '.$org->name);
+            if ($order->payment === 'Paid' && $order->funds === 'Held') {
+                Escrow::refundOrder($order, $order->cancel_reason);
+            }
+            Activity::record('order-cancelled', $user->email, $order->number().' · '.$order->cancel_reason, $order->user?->email);
 
             return;
         }
-        Suspensions::cancel($order, 'Cancelled by '.$org->name.' because the buyer’s account is suspended.');
+        $accountReason = trim((string) $order->user?->suspension_reason);
+        $reason = 'Cancelled by '.$org->name.' because the buyer’s account is suspended.'.($accountReason ? ' Reason: '.$accountReason : '');
+        Suspensions::cancel($order, mb_substr($reason, 0, 200));
     }
 
     private function orgRefund(Request $request, Organization $org): RefundRequest
@@ -513,6 +549,9 @@ class ActionController extends Controller
     {
         $org = $this->myOrg($user);
         $editing = $request->filled('id') ? $this->orgCrop($request, $org) : null;
+        if ($editing?->status === 'Removed') {
+            $this->fail('This listing was removed by AniBayan and can’t be edited or published again.');
+        }
         $data = $request->validate([
             'name' => 'required|string|min:2|max:80', 'category' => 'required|in:Vegetables,Fruits,Rice & grains',
             'unit' => 'required|in:kg,piece,bundle,sack', 'price' => 'required|integer|min:1|max:1000000',
@@ -555,19 +594,35 @@ class ActionController extends Controller
     private function listingToggle(Request $request, User $user): array
     {
         $crop = $this->orgCrop($request, $this->myOrg($user));
+        $crop = Crop::whereKey($crop->id)->lockForUpdate()->firstOrFail();
+        if ($crop->status === 'Removed') {
+            $this->fail('This listing was removed by AniBayan and can’t be published again.');
+        }
         if ($crop->status !== 'Active' && $crop->stock === 0) {
             $this->fail('Add stock before publishing this listing.');
+        }
+        $activeOrders = 0;
+        if ($crop->status === 'Active') {
+            $activeOrders = DB::table('order_items')->join('orders', 'orders.id', '=', 'order_items.order_id')
+                ->where('order_items.crop_id', $crop->id)->whereNotIn('orders.status', ['Completed', 'Cancelled', 'Refunded'])
+                ->distinct()->count('orders.id');
+            if ($activeOrders && ! $request->boolean('confirmActiveOrders')) {
+                $this->fail('This listing has '.$activeOrders.' active '.($activeOrders === 1 ? 'order' : 'orders').'. Confirm that you want to unpublish it; existing orders will stay active.');
+            }
         }
         $crop->update(['status' => $crop->status === 'Active' ? 'Unavailable' : 'Active']);
         Activity::record($crop->status === 'Active' ? 'listing-resumed' : 'listing-paused', $user->email, $crop->name);
 
-        return ['status' => $crop->status];
+        return ['status' => $crop->status, 'activeOrders' => $activeOrders ?? 0];
     }
 
     // Removing a listing also takes it out of carts and saved harvests; placed orders keep their items.
     private function listingRemove(Request $request, User $user): array
     {
         $crop = $this->orgCrop($request, $this->myOrg($user));
+        if ($crop->status === 'Removed') {
+            $this->fail('This listing was removed by AniBayan. Contact support if you need help.');
+        }
         $name = $crop->name;
         Photos::delete($crop->image);
         $crop->delete();
@@ -579,9 +634,20 @@ class ActionController extends Controller
     private function memberAdd(Request $request, User $user): void
     {
         $org = $this->myOrg($user);
-        $data = $request->validate(['name' => 'required|string|min:3|max:80', 'area' => 'required|numeric|min:0.1|max:500', 'crops' => 'required|string|min:3|max:80']);
+        $data = $request->validate([
+            'name' => 'required|string|min:3|max:80', 'area' => 'required|numeric|min:0.1|max:500',
+            'crops' => 'required|string|min:3|max:80', 'applicationMessage' => 'required|string|min:10|max:500',
+        ]);
+        $message = trim($data['applicationMessage']);
+        if (mb_strlen($message) < 10) {
+            throw ValidationException::withMessages(['applicationMessage' => 'Enter an application message of at least 10 characters.']);
+        }
         // Only farmers from the organization's own barangay can be members, so the barangay is always the organization's.
-        Member::create(['id' => Member::nextId('MB-', 3), 'organization_id' => $org->id, 'name' => $data['name'], 'place' => $org->barangay, 'crops' => $data['crops'], 'area' => round($data['area'], 1), 'joined' => (string) today()->year, 'status' => 'Active']);
+        Member::create([
+            'id' => Member::nextId('MB-', 3), 'organization_id' => $org->id, 'name' => $data['name'], 'place' => $org->barangay,
+            'crops' => $data['crops'], 'area' => round($data['area'], 1), 'joined' => (string) today()->year,
+            'status' => 'Pending', 'application_message' => $message,
+        ]);
     }
 
     private function orgMember(Request $request, Organization $org): Member
@@ -606,7 +672,7 @@ class ActionController extends Controller
     {
         $org = $this->myOrg($user);
         $data = $request->validate([
-            'crop' => 'required|string|min:3|max:80', 'barangay' => ['required', Rule::in(config('anibayan.barangays'))],
+            'crop' => 'required|string|min:3|max:80', 'barangay' => ['required', Rule::in(BarangayDirectory::names())],
             'phone' => ['required', 'regex:'.self::PHONE], 'description' => 'nullable|string|max:240',
         ], ['barangay.in' => 'Choose your barangay.', 'phone.regex' => 'Enter a mobile number like 0917 555 0148.']);
         $org->update(['crop' => $data['crop'], 'barangay' => $data['barangay'], 'phone' => $data['phone'], 'description' => $data['description'] ?? '']);
@@ -624,23 +690,144 @@ class ActionController extends Controller
         return $account;
     }
 
+    private function adminListingRemove(Request $request, User $admin): array
+    {
+        $this->admin($admin);
+        $data = $request->validate(['id' => 'required|string', 'reason' => 'required|string|min:10|max:500']);
+        $crop = Crop::with('organization')->find($data['id']) ?? $this->fail('That listing wasn’t found.', 404);
+        if ($crop->status === 'Removed') {
+            $this->fail('That listing has already been removed.');
+        }
+        $reason = trim($data['reason']);
+        if (mb_strlen($reason) < 10) {
+            throw ValidationException::withMessages(['reason' => 'Give a reason of at least 10 characters.']);
+        }
+        $crop->update(['status' => 'Removed', 'removal_reason' => $reason, 'removed_by' => $admin->id, 'removed_at' => now()]);
+        DB::table('cart_lines')->where('crop_id', $crop->id)->delete();
+        DB::table('saved_crops')->where('crop_id', $crop->id)->delete();
+        Activity::record('listing-removed', $admin->email, $crop->name.' · '.Str::limit($reason, 200), $crop->organization->name);
+
+        return ['name' => $crop->name, 'organization' => $crop->organization->name];
+    }
+
+    private function barangayAdd(Request $request, User $admin): array
+    {
+        $this->admin($admin);
+        $data = $request->validate([
+            'municipality' => ['required', Rule::in([config('anibayan.city')])],
+            'name' => 'required|string|min:2|max:80',
+        ]);
+        $name = trim(preg_replace('/\s+/', ' ', $data['name']));
+        if (mb_strlen($name) < 2) {
+            throw ValidationException::withMessages(['name' => 'Enter a barangay name.']);
+        }
+        $key = mb_strtolower($name);
+        if (DB::table('barangays')->where('municipality', $data['municipality'])->where('name_key', $key)->exists()) {
+            $this->fail('That barangay is already listed under '.$data['municipality'].'.');
+        }
+        $inserted = DB::table('barangays')->insertOrIgnore([
+            'municipality' => $data['municipality'], 'name' => $name, 'name_key' => $key, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        if (! $inserted) {
+            $this->fail('That barangay is already listed under '.$data['municipality'].'.');
+        }
+        Activity::record('barangay-added', $admin->email, $name.' · '.$data['municipality']);
+
+        return ['name' => $name, 'municipality' => $data['municipality']];
+    }
+
+    private function barangayUpdate(Request $request, User $admin): array
+    {
+        $this->admin($admin);
+        $data = $request->validate([
+            'municipality' => ['required', Rule::in([config('anibayan.city')])],
+            'current' => 'required|string|max:80', 'name' => 'required|string|min:2|max:80',
+        ]);
+        $currentKey = mb_strtolower(trim($data['current']));
+        $current = DB::table('barangays')->where('municipality', $data['municipality'])->where('name_key', $currentKey)->first();
+        self::refuseUnless($current, 404, 'That barangay wasn’t found. Refresh the list and try again.');
+        $name = trim(preg_replace('/\s+/', ' ', $data['name']));
+        if (mb_strlen($name) < 2) {
+            throw ValidationException::withMessages(['name' => 'Enter a barangay name.']);
+        }
+        $key = mb_strtolower($name);
+        if (DB::table('barangays')->where('municipality', $data['municipality'])->where('name_key', $key)->where('id', '!=', $current->id)->exists()) {
+            $this->fail('That barangay is already listed under '.$data['municipality'].'.');
+        }
+
+        DB::transaction(function () use ($admin, $current, $name, $key) {
+            DB::table('organizations')->where('barangay', $current->name)->update(['barangay' => $name]);
+            DB::table('addresses')->where('barangay', $current->name)->update(['barangay' => $name]);
+            DB::table('members')->where('place', $current->name)->update(['place' => $name]);
+            DB::table('barangays')->where('id', $current->id)->update(['name' => $name, 'name_key' => $key, 'updated_at' => now()]);
+            Activity::record('barangay-updated', $admin->email, $current->name.' → '.$name.' · '.config('anibayan.city'));
+        });
+
+        return ['current' => $current->name, 'name' => $name, 'municipality' => $data['municipality']];
+    }
+
+    private function barangayRemove(Request $request, User $admin): array
+    {
+        $this->admin($admin);
+        $data = $request->validate([
+            'municipality' => ['required', Rule::in([config('anibayan.city')])],
+            'name' => 'required|string|max:80', 'replacement' => 'nullable|string|max:80',
+        ]);
+        $nameKey = mb_strtolower(trim($data['name']));
+        $barangay = DB::table('barangays')->where('municipality', $data['municipality'])->where('name_key', $nameKey)->first();
+        self::refuseUnless($barangay, 404, 'That barangay wasn’t found. Refresh the list and try again.');
+        self::refuseUnless(DB::table('barangays')->where('municipality', $data['municipality'])->count() > 1, 422, 'Keep at least one barangay in '.$data['municipality'].'.');
+
+        $organizations = DB::table('organizations')->where('barangay', $barangay->name)->count();
+        $addresses = DB::table('addresses')->where('barangay', $barangay->name)->count();
+        $members = DB::table('members')->where('place', $barangay->name)->count();
+        $replacement = trim((string) ($data['replacement'] ?? ''));
+        if ($replacement === '' && ($organizations || $addresses || $members)) {
+            $this->fail('This barangay is in use. Choose another barangay to move its organizations, member records and saved addresses.');
+        }
+        if ($replacement !== '') {
+            $replacementRecord = DB::table('barangays')->where('municipality', $data['municipality'])->where('name', $replacement)->first();
+            self::refuseUnless($replacementRecord && $replacementRecord->id !== $barangay->id, 422, 'Choose another barangay from the same municipality.');
+        }
+
+        DB::transaction(function () use ($admin, $barangay, $replacement, $data) {
+            if ($replacement !== '') {
+                DB::table('organizations')->where('barangay', $barangay->name)->update(['barangay' => $replacement]);
+                DB::table('addresses')->where('barangay', $barangay->name)->update(['barangay' => $replacement]);
+                DB::table('members')->where('place', $barangay->name)->update(['place' => $replacement]);
+            }
+            DB::table('barangays')->where('id', $barangay->id)->delete();
+            Activity::record('barangay-removed', $admin->email, $barangay->name.' · '.($replacement !== '' ? 'moved to '.$replacement : 'unused').' · '.$data['municipality']);
+        });
+
+        return ['name' => $barangay->name, 'replacement' => $replacement ?: null, 'organizations' => $organizations, 'addresses' => $addresses, 'members' => $members];
+    }
+
     private function accountSuspend(Request $request, User $user): array
     {
         $this->admin($user);
         $account = $this->otherAccount($request, $user);
         self::refuseIf($account->isAdmin() || ! in_array($account->status, ['Active', 'Suspended'], true), 422, 'This account can’t be suspended.');
         $suspend = $account->status === 'Active';
-        $account->update(['status' => $suspend ? 'Suspended' : 'Active', 'note' => $suspend ? 'Suspended by '.$user->name.' on '.today()->format('M d, Y').'.' : null]);
+        $reason = $suspend ? trim($request->validate(['reason' => 'required|string|min:10|max:500'])['reason']) : null;
+        if ($suspend && mb_strlen((string) $reason) < 10) {
+            throw ValidationException::withMessages(['reason' => 'Give a reason of at least 10 characters.']);
+        }
+        $account->update([
+            'status' => $suspend ? 'Suspended' : 'Active',
+            'note' => $suspend ? 'Suspended by '.$user->name.' on '.today()->format('M d, Y').'.' : null,
+            'suspension_reason' => $reason,
+        ]);
         Activity::record($suspend ? 'account-suspended' : 'account-reactivated', $user->email, $account->name, $account->email);
         // Open orders: see App\Support\Suspensions.
         $cancelled = 0;
         if ($suspend && $account->isBuyer()) {
-            $cancelled = Suspensions::buyerSuspended($account);
+            $cancelled = Suspensions::buyerSuspended($account, (string) $reason);
         } elseif ($suspend && $account->isRepresentative() && $account->organization) {
-            $cancelled = Suspensions::organizationStopped($account->organization, 'was suspended');
+            $cancelled = Suspensions::organizationStopped($account->organization, 'was suspended', (string) $reason);
         }
 
-        return ['status' => $account->status, 'cancelled' => $cancelled];
+        return ['status' => $account->status, 'cancelled' => $cancelled, 'reason' => $reason];
     }
 
     // A new temporary password, shown once so the administrator can pass it on.
@@ -659,28 +846,64 @@ class ActionController extends Controller
     private function applicationReview(Request $request, User $user): array
     {
         $this->admin($user);
-        $data = $request->validate(['name' => 'required|string', 'decision' => 'required|in:Active,Declined']);
+        $data = $request->validate([
+            'name' => 'required|string', 'decision' => 'required|in:Active,Declined',
+            'reason' => 'required_if:decision,Declined|nullable|string|min:10|max:500',
+        ], ['reason.required_if' => 'Add a reason so the representative knows why the application was declined.', 'reason.min' => 'Give a reason of at least 10 characters.']);
         $org = Organization::where('name', $data['name'])->first();
         self::refuseUnless($org && $org->status === 'Pending review', 422, 'This application was already decided.');
-        $org->update(['status' => $data['decision'], 'approved_on' => $data['decision'] === 'Active' ? today() : null]);
+        $reason = $data['decision'] === 'Declined' ? trim((string) $data['reason']) : null;
+        if ($reason !== null && mb_strlen($reason) < 10) {
+            throw ValidationException::withMessages(['reason' => 'Give a reason of at least 10 characters.']);
+        }
+        if ($data['decision'] === 'Active') {
+            $barangayName = trim(preg_replace('/\s+/', ' ', $org->barangay));
+            $barangayKey = mb_strtolower($barangayName);
+            $listed = DB::table('barangays')->where('municipality', config('anibayan.city'))->where('name_key', $barangayKey)->first();
+            if ($listed) {
+                $barangayName = $listed->name;
+            } else {
+                $inserted = DB::table('barangays')->insertOrIgnore([
+                    'municipality' => config('anibayan.city'), 'name' => $barangayName, 'name_key' => $barangayKey, 'created_at' => now(), 'updated_at' => now(),
+                ]);
+                if ($inserted) {
+                    Activity::record('barangay-added', $user->email, $barangayName.' · '.config('anibayan.city').' · from approved application '.$org->name);
+                } else {
+                    $barangayName = DB::table('barangays')->where('municipality', config('anibayan.city'))->where('name_key', $barangayKey)->value('name') ?? $barangayName;
+                }
+            }
+            $org->barangay = $barangayName;
+        }
+        $org->update([
+            'status' => $data['decision'], 'approved_on' => $data['decision'] === 'Active' ? today() : null,
+            'application_decline_reason' => $reason,
+        ]);
         $rep = User::where('organization_id', $org->id)->where('status', 'Pending')->first();
         $rep?->update(['status' => $data['decision'] === 'Active' ? 'Active' : 'Declined']);
-        Activity::record($data['decision'] === 'Active' ? 'application-approved' : 'application-declined', $user->email, $org->name, $rep?->email);
+        Activity::record($data['decision'] === 'Active' ? 'application-approved' : 'application-declined', $user->email, $org->name.($reason ? ' · '.$reason : ''), $rep?->email);
 
-        return ['representative' => $rep?->name];
+        return ['representative' => $rep?->name, 'reason' => $reason];
     }
 
     private function reportDecide(Request $request, User $user): void
     {
         $this->admin($user);
-        $data = $request->validate(['id' => 'required|string', 'decision' => 'required|in:Upheld,Dismissed,Open']);
+        $data = $request->validate([
+            'id' => 'required|string', 'decision' => 'required|in:Upheld,Dismissed,Open',
+            'note' => 'required_if:decision,Dismissed|nullable|string|min:10|max:500',
+        ], ['note.required_if' => 'Explain why the report was dismissed so the reporter understands the decision.', 'note.min' => 'Give an explanation of at least 10 characters.']);
         $report = Report::find($data['id']) ?? $this->fail('That report wasn’t found.', 404);
         $org = Organization::find($report->organization_id);
         if ($data['decision'] === 'Upheld' && $org->onFinalWarning()) {
             $this->fail($org->name.' is on its final warning: uphold this report and terminate the organization instead.');
         }
-        $report->update(['status' => $data['decision'], 'decided_on' => $data['decision'] === 'Open' ? null : today()]);
-        Activity::record(['Upheld' => 'report-upheld', 'Dismissed' => 'report-dismissed', 'Open' => 'report-reopened'][$data['decision']], $user->email, $report->id.' · '.$org->name);
+        $note = $data['decision'] === 'Dismissed' ? trim((string) $data['note']) : null;
+        if ($note !== null && mb_strlen($note) < 10) {
+            throw ValidationException::withMessages(['note' => 'Give an explanation of at least 10 characters.']);
+        }
+        $report->update(['status' => $data['decision'], 'decided_on' => $data['decision'] === 'Open' ? null : today(), 'decision_note' => $note]);
+        $reporterEmail = User::whereKey($report->user_id)->value('email');
+        Activity::record(['Upheld' => 'report-upheld', 'Dismissed' => 'report-dismissed', 'Open' => 'report-reopened'][$data['decision']], $user->email, $report->id.' · '.$org->name.($note ? ' · '.$note : ''), $reporterEmail);
     }
 
     private function namedOrg(string $name): Organization
@@ -722,15 +945,15 @@ class ActionController extends Controller
         if ($request->filled('report')) {
             $report = Report::where('id', $request->input('report'))->where('organization_id', $org->id)->first() ?? $this->fail('That report wasn’t found.', 404);
             $report->update(['status' => 'Upheld', 'decided_on' => today()]);
-            $reason = $report->reason.' (report '.$report->id.')';
+            $reason = mb_substr($report->reason.' (report '.$report->id.'): '.Str::limit(trim($report->details), 100), 0, 200);
             Activity::record('report-upheld', $user->email, $report->id.' · '.$org->name);
         } else {
             $reason = trim((string) $request->validate(['reason' => 'required|string|min:5|max:120'], ['reason.*' => 'Give a reason of at least 5 characters.'])['reason']);
         }
         $org->update(['status' => 'Terminated', 'terminated_on' => today(), 'terminated_for' => $reason]);
-        User::where('organization_id', $org->id)->where('role', 'Representative')->update(['status' => 'Terminated', 'note' => $org->name.' was terminated by '.$user->name.' on '.today()->format('M d, Y').'.']);
+        User::where('organization_id', $org->id)->where('role', 'Representative')->update(['status' => 'Terminated', 'note' => $org->name.' was terminated: '.$reason]);
         Activity::record('org-terminated', $user->email, $org->name.' · '.$reason, $this->repEmail($org));
-        Suspensions::organizationStopped($org, 'was terminated');
+        Suspensions::organizationStopped($org, 'was terminated', $reason);
     }
 
     // An administrator settles a refund request: refund the buyer, or release the held payment to the organization.
@@ -738,11 +961,17 @@ class ActionController extends Controller
     private function refundDecide(Request $request, User $user): array
     {
         $this->admin($user);
-        $data = $request->validate(['id' => 'required|string', 'decision' => 'required|in:refund,release', 'note' => 'nullable|string|max:300'],
-            ['note.max' => 'Keep the note under 300 characters.']);
+        $data = $request->validate([
+            'id' => 'required|string', 'decision' => 'required|in:refund,release',
+            'note' => 'required_if:decision,release|nullable|string|min:10|max:300',
+        ], ['note.required_if' => 'Explain why the refund was denied before releasing the payment.', 'note.min' => 'Give an explanation of at least 10 characters.', 'note.max' => 'Keep the note under 300 characters.']);
         $refund = RefundRequest::with('order.organization')->find($data['id']) ?? $this->fail('That refund request wasn’t found.', 404);
         self::refuseUnless(in_array($refund->status, ['Requested', 'Disputed'], true), 422, 'This refund request was already settled.');
-        $refund->update(['admin_note' => trim($data['note'] ?? '') ?: null]);
+        $note = trim((string) ($data['note'] ?? ''));
+        if ($data['decision'] === 'release' && mb_strlen($note) < 10) {
+            throw ValidationException::withMessages(['note' => 'Explain why the refund was denied in at least 10 characters.']);
+        }
+        $refund->update(['admin_note' => $note ?: null]);
         if ($data['decision'] === 'refund') {
             Escrow::refund($refund, 'admin');
         } else {
@@ -750,7 +979,7 @@ class ActionController extends Controller
             $refund->order->update(['status' => 'Completed']);
             Escrow::release($refund->order);
         }
-        Activity::record('refund-decided', $user->email, $refund->id.' · '.$refund->order->number().' · '.($data['decision'] === 'refund' ? 'refunded to the buyer' : 'released to '.$refund->order->organization->name));
+        Activity::record('refund-decided', $user->email, $refund->id.' · '.$refund->order->number().' · '.($data['decision'] === 'refund' ? 'refunded to the buyer' : 'released to '.$refund->order->organization->name).($note ? ' · '.$note : ''));
 
         return ['status' => $refund->fresh()->status];
     }

@@ -10,7 +10,7 @@ interface DashboardRefund { id:string; reason:string; details:string; status:str
 interface DashboardAddress { id:number; label:string; details:string; barangay:string; lat?:number; lng?:number; isDefault:boolean; text:string }
 // harvested: date the crop was harvested (required on every listing). shelfLife: days the produce keeps well after harvest.
 // image: a file in assets/ or an uploaded photo saved on the server ("uploads/listings/….jpg").
-interface DashboardCrop { id:string; name:string; organization:string; image:string; price:number; unit:string; category:string; stock:number; status:string; harvested:string; shelfLife:number }
+interface DashboardCrop { id:string; name:string; organization:string; image:string; price:number; unit:string; category:string; stock:number; status:string; harvested:string; shelfLife:number; removalReason?:string }
 // status: 'Active' (approved and selling), 'Pending review' (application waiting for an administrator), 'Declined', or
 // 'Terminated' (removed after its final warning; terminated is the date and terminatedFor the offence that ended it).
 // A profile's picture and banner: uploaded photos saved on the server. bannerX/bannerY: the banner's focal point in %.
@@ -20,23 +20,23 @@ interface DashboardPrivacy { profile:boolean; reviews:boolean; city:boolean; gro
 // completedOrders: worked out by the server for the public profile.
 // A file attached to an organization's application; administrators open it from /api/documents/{id}.
 interface DashboardDocument { id:number; type:string; name:string; size:number; mime:string }
-interface DashboardOrganization extends DashboardLook { name:string; region:string; crop:string; image:string; listings:number; status:string; representative:string; applied:string; members:number; stopped?:boolean; farmers?:{name:string;crops:string;area:number;joined:string}[]; documents:DashboardDocument[]; approved?:string; phone?:string; description?:string; terminated?:string; terminatedFor?:string; completedOrders?:number }
+interface DashboardOrganization extends DashboardLook { name:string; region:string; crop:string; image:string; listings:number; status:string; representative:string; applied:string; members:number; stopped?:boolean; farmers?:{name:string;crops:string;area:number;joined:string}[]; documents:DashboardDocument[]; approved?:string; phone?:string; description?:string; terminated?:string; terminatedFor?:string; applicationDeclineReason?:string; completedOrders?:number }
 // Starting accounts use dashDemoPassword until their password is changed or reset. Only administrators and the person
 // themself get email, phone, address and last-active; others get the public profile, trimmed by the buyer's privacy
 // settings. city, completedOrders and growers: a buyer's public profile details, worked out by the server.
 // On a public profile the page sets the missing email, joined and lastActive to ''.
-interface DashboardAccount extends DashboardLook { name:string; email:string; role:string; organization?:string; joined:string; lastActive:string; status:string; note?:string; phone?:string; address?:string; addresses?:DashboardAddress[]; privacy?:Partial<DashboardPrivacy>; city?:string; completedOrders?:number; growers?:string[] }
+interface DashboardAccount extends DashboardLook { name:string; email:string; role:string; organization?:string; joined:string; lastActive:string; status:string; note?:string; suspensionReason?:string; phone?:string; address?:string; addresses?:DashboardAddress[]; privacy?:Partial<DashboardPrivacy>; city?:string; completedOrders?:number; growers?:string[] }
 // Buyer feedback: 1–5 stars for a completed order, with an optional comment.
 interface DashboardFeedback { id:string; organization:string; customer:string; rating:number; comment:string; date:string; order?:string }
 // status: 'Open' (waiting for an administrator), 'Upheld' (counts as a warning against the organization) or 'Dismissed'.
 // decided: the day an administrator upheld or dismissed it.
-interface DashboardReport { id:string; organization:string; customer:string; reason:string; details:string; date:string; status:string; order?:string; decided?:string }
+interface DashboardReport { id:string; organization:string; customer:string; reason:string; details:string; date:string; status:string; order?:string; decided?:string; decisionNote?:string }
 // A warning an administrator gave an organization directly. Upheld reports are warnings too; see dashWarningsFor.
 interface DashboardWarning { id:string; organization:string; reason:string; details:string; date:string; by:string }
 // One event in the administrators' activity log. actor: the email that did it (also an unknown email that tried to
 // sign in). target: the account an administrator acted on. type: a key of dashActivityTypes in dashboards.ts.
 interface DashboardActivity { time:string; actor:string; type:string; detail:string; target?:string }
-interface DashboardMember { id:string; organization:string; name:string; place:string; crops:string; area:number; joined:string; status:string }
+interface DashboardMember { id:string; organization:string; name:string; place:string; crops:string; area:number; joined:string; status:string; applicationMessage?:string }
 interface DashboardCartLine { crop:string; quantity:number }
 // One run of the admin site-health checks.
 interface DashboardHealthResult { service:string; ok:boolean; latency:number; error?:string }
@@ -69,7 +69,7 @@ const dashboardHealthLog:DashboardHealthRun[]=[];
 // AniBayan serves Calapan City, Oriental Mindoro only. Organizations and delivery addresses pick one of its
 // 62 barangays (names from Philippines JSON Maps, PSGC 2026-3q). An organization's region is "<barangay>, Calapan City".
 const dashCityName='Calapan City';
-const dashBarangays=['Balingayan','Balite','Baruyan','Batino','Bayanan I','Bayanan II','Biga','Bondoc','Bucayao','Buhuan','Bulusan','Calero','Camansihan','Camilmil','Canubing I','Canubing II','Comunal','Guinobatan','Gulod','Gutad','Ibaba East','Ibaba West','Ilaya','Lalud','Lazareto','Libis','Lumangbayan','Mahal Na Pangalan','Maidlang','Malad','Malamig','Managpi','Masipit','Nag-Iba I','Nag-Iba II','Navotas','Pachoca','Palhi','Panggalaan','Parang','Patas','Personas','Puting Tubig','Salong','San Antonio','San Vicente Central','San Vicente East','San Vicente North','San Vicente South','San Vicente West','Sapul','Silonay','Sta. Cruz','Sta. Isabel','Sta. Maria Village','Sta. Rita','Sto. Niño','Suqui','Tawagan','Tawiran','Tibag','Wawa'];
+let dashBarangays=['Balingayan','Balite','Baruyan','Batino','Bayanan I','Bayanan II','Biga','Bondoc','Bucayao','Buhuan','Bulusan','Calero','Camansihan','Camilmil','Canubing I','Canubing II','Comunal','Guinobatan','Gulod','Gutad','Ibaba East','Ibaba West','Ilaya','Lalud','Lazareto','Libis','Lumangbayan','Mahal Na Pangalan','Maidlang','Malad','Malamig','Managpi','Masipit','Nag-Iba I','Nag-Iba II','Navotas','Pachoca','Palhi','Panggalaan','Parang','Patas','Personas','Puting Tubig','Salong','San Antonio','San Vicente Central','San Vicente East','San Vicente North','San Vicente South','San Vicente West','Sapul','Silonay','Sta. Cruz','Sta. Isabel','Sta. Maria Village','Sta. Rita','Sto. Niño','Suqui','Tawagan','Tawiran','Tibag','Wawa'];
 // Delivery addresses: "<house and street>, Barangay <name>, Calapan City, Oriental Mindoro".
 const dashJoinAddress=(street:string,barangay:string)=>street+', Barangay '+barangay+', '+dashCityName+', Oriental Mindoro';
 function dashSplitAddress(address?:string):{street:string;barangay:string}{

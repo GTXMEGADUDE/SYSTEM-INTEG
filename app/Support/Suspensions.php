@@ -24,23 +24,27 @@ use App\Models\User;
 class Suspensions
 {
     // Returns how many orders were cancelled.
-    public static function buyerSuspended(User $buyer): int
+    public static function buyerSuspended(User $buyer, string $reason = ''): int
     {
         $orders = Order::where('user_id', $buyer->id)->where('status', 'Pending')->get();
         foreach ($orders as $order) {
-            self::cancel($order, 'The buyer’s account was suspended.');
+            $notice = 'The buyer’s account was suspended.'.($reason !== '' ? ' Reason: '.$reason : '');
+            self::cancel($order, mb_substr($notice, 0, 500));
         }
 
         return $orders->count();
     }
 
-    public static function organizationStopped(Organization $org, string $what): int
+    public static function organizationStopped(Organization $org, string $what, string $reason = ''): int
     {
         $orders = Order::where('organization_id', $org->id)->whereIn('status', ['Pending', 'Confirmed', 'Processing'])->get();
         foreach ($orders as $order) {
-            self::cancel($order, $org->name.' '.$what.'.');
+            $notice = $org->name.' '.$what.'.'.($reason !== '' ? ' Reason: '.$reason : '');
+            self::cancel($order, mb_substr($notice, 0, 500));
         }
         foreach (RefundRequest::with('order.organization')->where('organization_id', $org->id)->where('status', 'Requested')->get() as $request) {
+            $refundNote = $org->name.' '.$what.($reason !== '' ? ' because: '.$reason : '').'. AniBayan approved this refund because the organization can’t respond.';
+            $request->update(['admin_note' => mb_substr($refundNote, 0, 300)]);
             Escrow::refund($request, 'automatic');
         }
 

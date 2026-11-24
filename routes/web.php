@@ -25,7 +25,7 @@ Route::prefix('api')->group(function () {
     Route::get('/refund-media/{id}', [ReceiptController::class, 'media'])->whereNumber('id');
     // Every change: cart, checkout, orders, listings, members, reviews, reports, warnings, accounts, photos.
     Route::post('/actions/{action}', ActionController::class)->where('action', '[a-z.-]+');
-    // Card and GCash payments through PayMongo's hosted checkout (keys in .env).
+    // AniBayan's in-app PayMongo Payment Intent flow (keys in .env).
     Route::post('/payments', [PaymentController::class, 'create']);
     Route::post('/payments/check', [PaymentController::class, 'check']);
     // For the admin's site-health check: how long a database read takes.

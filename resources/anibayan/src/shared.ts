@@ -42,10 +42,11 @@ function dashClearFieldError(input:HTMLInputElement):void{
 // Pages load the signed-in person's data from /api/state and send every change to /api/actions/…; the server
 // checks who may do it, saves it to the database and answers with the fresh data. Nothing is kept in the browser:
 // signing in uses the server's session cookie.
-interface DashServerState{me:string|null;blocked?:string;preferences?:{compact?:boolean;contrast?:boolean};orders:DashboardOrder[];crops:DashboardCrop[];organizations:DashboardOrganization[];accounts:DashboardAccount[];feedback:DashboardFeedback[];reports:DashboardReport[];warnings:DashboardWarning[];activity:DashboardActivity[];members:DashboardMember[];saved:Record<string,string[]>;carts:Record<string,DashboardCartLine[]>;healthLog:DashboardHealthRun[]}
+interface DashServerState{me:string|null;blocked?:string;blockedReason?:string|null;barangays?:string[];preferences?:{compact?:boolean;contrast?:boolean};orders:DashboardOrder[];crops:DashboardCrop[];organizations:DashboardOrganization[];accounts:DashboardAccount[];feedback:DashboardFeedback[];reports:DashboardReport[];warnings:DashboardWarning[];activity:DashboardActivity[];members:DashboardMember[];saved:Record<string,string[]>;carts:Record<string,DashboardCartLine[]>;healthLog:DashboardHealthRun[]}
 let dashSessionMe='';
 // Set when the server signed this person out because the account is no longer active ("suspended", "terminated").
 let dashBlockedStatus='';
+let dashBlockedReason='';
 // True when the server couldn't be reached when the page loaded.
 let dashOffline=false;
 let dashPrefs:{compact?:boolean;contrast?:boolean}={};
@@ -59,7 +60,7 @@ function dashApplyState(s:DashServerState):void{
  dashReplaceList(dashboardAccounts,(s.accounts||[]).map(a=>({...a,email:a.email||'',joined:a.joined||'',lastActive:a.lastActive||''})));dashReplaceList(dashboardFeedback,s.feedback);dashReplaceList(dashboardReports,s.reports);
  dashReplaceList(dashboardWarnings,s.warnings);dashReplaceList(dashboardActivity,s.activity);dashReplaceList(dashboardMembers,s.members);
  dashReplaceList(dashboardHealthLog,s.healthLog);dashReplaceRecord(dashboardSaved,s.saved);dashReplaceRecord(dashboardCarts,s.carts);
- dashSessionMe=s.me||'';dashBlockedStatus=s.blocked||'';dashPrefs=s.preferences||{};
+ dashSessionMe=s.me||'';dashBlockedStatus=s.blocked||'';dashBlockedReason=s.blockedReason||'';if(Array.isArray(s.barangays)&&s.barangays.length)dashReplaceList(dashBarangays,s.barangays);dashPrefs=s.preferences||{};
 }
 // The dashboards' loader (in their HTML) fetches the data before the script runs; this applies it.
 function dashLoadStore():void{

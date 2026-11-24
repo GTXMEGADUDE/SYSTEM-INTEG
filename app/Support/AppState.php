@@ -71,7 +71,9 @@ class AppState
                 $viewer !== null => Report::where('user_id', $viewer->id),
                 default => Report::whereRaw('1 = 0'),
             },
-            'crops' => Crop::whereIn('organization_id', $visible)->orderBy('created_at', 'desc')->orderBy('id'),
+            'crops' => Crop::whereIn('organization_id', $visible)
+                ->when(! $admin && $ownOrg === null, fn ($q) => $q->where('status', '!=', 'Removed'))
+                ->orderBy('created_at', 'desc')->orderBy('id'),
             'feedback' => Feedback::whereIn('organization_id', $visible)->orderByDesc('given_on'),
             'warnings' => Warning::query()->when(! $admin, fn ($q) => $q->where('organization_id', $ownOrg ?? 0)),
             'members' => Member::orderBy('id')->when(! $admin, fn ($q) => $q->where('organization_id', $ownOrg ?? 0)),
@@ -116,11 +118,12 @@ class AppState
             'organizations' => $orgs->map(fn ($o) => self::organization($o, $admin || $o->id === $ownOrg))->values(),
             'accounts' => $people->filter(fn ($u) => $admin || $u->id === $viewer?->id || ($u->role !== 'Administrator' && $u->status === 'Active'))
                 ->map(fn ($u) => self::account($u, $viewer))->values(),
-            'crops' => $data['crops']->map(fn ($c) => [
+            'crops' => $data['crops']->map(fn ($c) => array_filter([
                 'id' => $c->id, 'name' => $c->name, 'organization' => $names[$c->organization_id] ?? '', 'image' => $c->image, 'price' => $c->price,
                 'unit' => $c->unit, 'category' => $c->category, 'stock' => $c->stock, 'status' => $c->status,
                 'harvested' => $c->harvested_on->toDateString(), 'shelfLife' => $c->shelf_life,
-            ])->values(),
+                'removalReason' => ($admin || $c->organization_id === $ownOrg) ? $c->removal_reason : null,
+            ], fn ($value) => $value !== null))->values(),
             'orders' => $orders->sortByDesc(fn ($o) => [$o->placed_on->toDateString(), (int) substr($o->id, 8)])->map(fn ($o) => array_filter([
                 'id' => $o->id, 'customer' => $personName[$o->user_id] ?? '', 'organization' => $names[$o->organization_id] ?? '', 'crop' => $o->crop,
                 'image' => $o->image, 'quantity' => $o->quantity, 'total' => $o->total, 'date' => $o->placed_on->toDateString(),
@@ -142,7 +145,7 @@ class AppState
             'reports' => $reports->map(fn ($r) => array_filter([
                 'id' => $r->id, 'organization' => $names[$r->organization_id] ?? '', 'customer' => $personName[$r->user_id] ?? '', 'reason' => $r->reason,
                 'details' => $r->details, 'date' => $r->filed_on->toDateString(), 'status' => $r->status, 'order' => $r->order_id,
-                'decided' => $r->decided_on?->toDateString(),
+                'decided' => $r->decided_on?->toDateString(), 'decisionNote' => $r->decision_note,
             ], fn ($v) => $v !== null))->values(),
             'warnings' => $data['warnings']->map(fn ($w) => [
                 'id' => $w->id, 'organization' => $names[$w->organization_id] ?? '', 'reason' => $w->reason, 'details' => $w->details,
@@ -150,7 +153,7 @@ class AppState
             ])->values(),
             'members' => $data['members']->map(fn ($m) => [
                 'id' => $m->id, 'organization' => $names[$m->organization_id] ?? '', 'name' => $m->name, 'place' => $m->place, 'crops' => $m->crops,
-                'area' => $m->area, 'joined' => $m->joined, 'status' => $m->status,
+                'area' => $m->area, 'joined' => $m->joined, 'status' => $m->status, 'applicationMessage' => $m->application_message,
             ])->values(),
             'activity' => $admin ? $data['activity']->map(fn ($a) => array_filter([
                 'time' => $a->happened_at->toIso8601String(), 'actor' => $a->actor, 'type' => $a->type, 'detail' => $a->detail, 'target' => $a->target,
@@ -160,6 +163,7 @@ class AppState
             'healthLog' => $admin ? $data['health']->reverse()->map(fn ($h) => array_filter([
                 'time' => $h->ran_at->toIso8601String(), 'results' => $h->results, 'hardware' => $h->hardware, 'hardwareError' => $h->hardware_error,
             ], fn ($v) => $v !== null))->values() : [],
+            'barangays' => BarangayDirectory::names(),
         ];
     }
 
@@ -216,6 +220,7 @@ class AppState
             'documents' => $full ? $o->documents->map(fn ($d) => Documents::forPage($d))->values() : [], 'approved' => $o->approved_on?->toDateString(),
             'phone' => $full ? $o->phone : null, 'description' => $o->description,
             'terminated' => $o->terminated_on?->toDateString(), 'terminatedFor' => $full ? $o->terminated_for : null,
+            'applicationDeclineReason' => $full ? $o->application_decline_reason : null,
             'avatar' => $o->avatar, 'banner' => $o->banner, 'bannerX' => $o->banner_x, 'bannerY' => $o->banner_y,
         ], fn ($v) => $v !== null);
     }
@@ -229,7 +234,7 @@ class AppState
         if ($viewer && ($viewer->isAdmin() || $viewer->id === $u->id)) {
             return array_filter($base + $look + [
                 'email' => $u->email, 'joined' => $u->joined_on->toDateString(), 'lastActive' => $u->last_active_on->toDateString(),
-                'note' => $u->note, 'phone' => $u->phone, 'privacy' => $u->privacySettings(),
+                'note' => $u->note, 'suspensionReason' => $u->suspension_reason, 'phone' => $u->phone, 'privacy' => $u->privacySettings(),
                 // Their saved delivery addresses for themself; administrators see the default one.
                 'addresses' => $viewer->id === $u->id && $u->isBuyer() ? self::addressesOf($u)->map(fn ($a) => $a->forPage())->values() : null,
                 'address' => $viewer->id !== $u->id ? self::addressesOf($u)->first()?->fullText() : null,

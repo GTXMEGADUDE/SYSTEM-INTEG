@@ -23,7 +23,7 @@ const dashboardHealthLog = [];
 // AniBayan serves Calapan City, Oriental Mindoro only. Organizations and delivery addresses pick one of its
 // 62 barangays (names from Philippines JSON Maps, PSGC 2026-3q). An organization's region is "<barangay>, Calapan City".
 const dashCityName = 'Calapan City';
-const dashBarangays = ['Balingayan', 'Balite', 'Baruyan', 'Batino', 'Bayanan I', 'Bayanan II', 'Biga', 'Bondoc', 'Bucayao', 'Buhuan', 'Bulusan', 'Calero', 'Camansihan', 'Camilmil', 'Canubing I', 'Canubing II', 'Comunal', 'Guinobatan', 'Gulod', 'Gutad', 'Ibaba East', 'Ibaba West', 'Ilaya', 'Lalud', 'Lazareto', 'Libis', 'Lumangbayan', 'Mahal Na Pangalan', 'Maidlang', 'Malad', 'Malamig', 'Managpi', 'Masipit', 'Nag-Iba I', 'Nag-Iba II', 'Navotas', 'Pachoca', 'Palhi', 'Panggalaan', 'Parang', 'Patas', 'Personas', 'Puting Tubig', 'Salong', 'San Antonio', 'San Vicente Central', 'San Vicente East', 'San Vicente North', 'San Vicente South', 'San Vicente West', 'Sapul', 'Silonay', 'Sta. Cruz', 'Sta. Isabel', 'Sta. Maria Village', 'Sta. Rita', 'Sto. Niño', 'Suqui', 'Tawagan', 'Tawiran', 'Tibag', 'Wawa'];
+let dashBarangays = ['Balingayan', 'Balite', 'Baruyan', 'Batino', 'Bayanan I', 'Bayanan II', 'Biga', 'Bondoc', 'Bucayao', 'Buhuan', 'Bulusan', 'Calero', 'Camansihan', 'Camilmil', 'Canubing I', 'Canubing II', 'Comunal', 'Guinobatan', 'Gulod', 'Gutad', 'Ibaba East', 'Ibaba West', 'Ilaya', 'Lalud', 'Lazareto', 'Libis', 'Lumangbayan', 'Mahal Na Pangalan', 'Maidlang', 'Malad', 'Malamig', 'Managpi', 'Masipit', 'Nag-Iba I', 'Nag-Iba II', 'Navotas', 'Pachoca', 'Palhi', 'Panggalaan', 'Parang', 'Patas', 'Personas', 'Puting Tubig', 'Salong', 'San Antonio', 'San Vicente Central', 'San Vicente East', 'San Vicente North', 'San Vicente South', 'San Vicente West', 'Sapul', 'Silonay', 'Sta. Cruz', 'Sta. Isabel', 'Sta. Maria Village', 'Sta. Rita', 'Sto. Niño', 'Suqui', 'Tawagan', 'Tawiran', 'Tibag', 'Wawa'];
 // Delivery addresses: "<house and street>, Barangay <name>, Calapan City, Oriental Mindoro".
 const dashJoinAddress = (street, barangay) => street + ', Barangay ' + barangay + ', ' + dashCityName + ', Oriental Mindoro';
 function dashSplitAddress(address) {
@@ -85,6 +85,7 @@ function dashClearFieldError(input) {
 let dashSessionMe = '';
 // Set when the server signed this person out because the account is no longer active ("suspended", "terminated").
 let dashBlockedStatus = '';
+let dashBlockedReason = '';
 // True when the server couldn't be reached when the page loaded.
 let dashOffline = false;
 let dashPrefs = {};
@@ -109,6 +110,9 @@ function dashApplyState(s) {
     dashReplaceRecord(dashboardCarts, s.carts);
     dashSessionMe = s.me || '';
     dashBlockedStatus = s.blocked || '';
+    dashBlockedReason = s.blockedReason || '';
+    if (Array.isArray(s.barangays) && s.barangays.length)
+        dashReplaceList(dashBarangays, s.barangays);
     dashPrefs = s.preferences || {};
 }
 // The dashboards' loader (in their HTML) fetches the data before the script runs; this applies it.
@@ -212,8 +216,9 @@ const authInitials = (name) => name.split(' ').map(part => part[0]).join('').sli
 const authArrow = '<svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12h14 m-5-5 5 5-5 5"/></svg>';
 function authSignInView() {
     const notice = authNotices[authParams.get('notice') || ''];
+    const reason = authParams.get('reason');
     const samples = authSamples.map(([email, name, label, role]) => '<button class="demo-account" data-sample="' + de(email) + '"><span class="avatar ' + authAvatarClass(role) + '">' + (role === 'Administrator' ? 'AD' : authInitials(name)) + '</span><span><strong>' + de(name) + '</strong><small>' + de(label) + '</small></span>' + authArrow + '</button>').join('');
-    return '<form class="auth-form" id="signin-form" novalidate><h1>Welcome back</h1><p class="auth-lead">Sign in to shop fresh harvests or manage your organization.</p>' + (notice ? '<p class="auth-notice">' + notice + '</p>' : '') + '<div class="form-grid single">'
+    return '<form class="auth-form" id="signin-form" novalidate><h1>Welcome back</h1><p class="auth-lead">Sign in to shop fresh harvests or manage your organization.</p>' + (notice ? '<p class="auth-notice">' + de(notice) + (reason ? ' Reason: ' + de(reason) : '') + '</p>' : '') + '<div class="form-grid single">'
         + dashField('email', 'Email', '<input type="email" required autocomplete="email" placeholder="name@example.com">')
         + dashField('password', 'Password', '<input type="password" required autocomplete="current-password">')
         + '</div><p class="form-error" id="signin-error" role="alert" hidden></p><button type="submit" class="control primary auth-submit">Sign in</button><p class="auth-switch">New to AniBayan? <button type="button" class="text-button" data-auth-view="register">Create an account</button></p></form>'
@@ -222,6 +227,7 @@ function authSignInView() {
 function authRegisterView() {
     const organization = authParams.get('type') === 'organization';
     const choice = (value, title, text, checked) => '<label class="choice"><input type="radio" name="type" value="' + value + '"' + (checked ? ' checked' : '') + '><span><strong>' + title + '</strong><small>' + text + '</small></span></label>';
+    const barangayOther = dashField('barangayOther', 'Barangay name' + dashRequired, '<input required minlength="2" maxlength="80" autocomplete="address-level3">', 'An administrator will check it with your application.', true).replace('<div class="form-field wide">', '<div class="form-field wide" id="barangay-other-wrap" hidden>');
     return '<form class="auth-form" id="register-form" novalidate><h1>Create your account</h1><p class="auth-lead">Buy fresh harvests, or apply to sell for your farmer organization.</p>'
         + '<div class="form-field auth-type"><span class="form-label" id="type-label">I want to</span><div class="choice-list two" role="radiogroup" aria-labelledby="type-label">' + choice('buyer', 'Buy harvests', 'Shop from local growing communities.', !organization) + choice('organization', 'Sell for my organization', 'An administrator reviews new organizations.', organization) + '</div></div>'
         + '<div class="form-grid">'
@@ -232,14 +238,15 @@ function authRegisterView() {
         + dashField('password_confirmation', 'Confirm password' + dashRequired, '<input type="password" required minlength="8" maxlength="200" autocomplete="new-password">')
         + '</div><div class="form-grid org-fields"' + (organization ? '' : ' hidden') + '><h2 class="form-section">Your organization</h2>'
         + dashField('orgName', 'Organization name' + dashRequired, '<input required maxlength="80">', '', true)
-        + dashField('barangay', 'Barangay, ' + dashCityName + dashRequired, '<select required>' + dashBarangayOptions('') + '</select>')
+        + dashField('barangayChoice', 'Barangay, ' + dashCityName + dashRequired, '<select required>' + dashBarangayOptions('') + '<option value="__other__">My barangay is not listed</option></select>', 'If it is missing, choose the last option to request it.')
+        + barangayOther
         + dashField('crops', 'Main crops' + dashRequired, '<input required maxlength="80" placeholder="e.g. Rice, calamansi">', '', true)
         + '<div class="form-field wide"><span class="form-label" id="documents-label">Documents' + dashRequired + '</span><div class="choice-list" role="group" aria-labelledby="documents-label" aria-describedby="error-documents">' + authDocuments.map(([key, label]) => '<div class="choice doc-upload" data-doc="' + key + '"><span><strong>' + de(label) + '</strong><small data-doc-file>' + authDocumentHint + '</small></span><label class="control small file-button"><span data-doc-action>Attach</span><input type="file" name="documents[' + key + ']" accept="' + authDocumentTypes.join(',') + '" aria-label="Attach ' + de(label) + '"></label><button type="button" class="control small" data-doc-remove="' + key + '" aria-label="Remove ' + de(label) + '" hidden>Remove</button></div>').join('') + '</div><small class="field-error" id="error-documents" data-error-for="documents"></small></div>'
         + '</div><p class="form-error" id="register-error" role="alert" hidden></p><button type="submit" class="control primary auth-submit" id="register-submit">' + (organization ? 'Submit application' : 'Create account') + '</button><p class="auth-switch">Already have an account? <button type="button" class="text-button" data-auth-view="signin">Sign in</button></p></form>';
 }
 function authSubmittedView() {
     const account = authSubmitted;
-    return '<div class="auth-done"><svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg><h1>Application submitted</h1><p><strong>' + de(account.organization) + '</strong> is waiting for review. An AniBayan administrator checks your documents, then approves or declines the application.</p><p>Once it’s approved, sign in as <strong>' + de(account.email) + '</strong> to add your crop listings.</p><div class="detail-actions"><a class="control" href="index.html">Back to homepage</a><button class="control primary" data-auth-view="signin">Go to sign in</button></div></div>';
+    return '<div class="auth-done"><svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg><h1>Application submitted</h1><p><strong>' + de(account.organization) + '</strong> is waiting for review. An AniBayan administrator checks your documents, then approves or declines the application.</p>' + (account.requestedBarangay ? '<p class="auth-notice">Your barangay was not in the list. It will be added to AniBayan’s options if your application is approved.</p>' : '') + '<p>Once it’s approved, sign in as <strong>' + de(account.email) + '</strong> to add your crop listings.</p><div class="detail-actions"><a class="control" href="index.html">Back to homepage</a><button class="control primary" data-auth-view="signin">Go to sign in</button></div></div>';
 }
 function authRender() {
     const current = dashAccountByEmail(dashSessionEmail());
@@ -294,6 +301,8 @@ async function authRegister(form) {
     const data = new FormData(form);
     const value = (name) => String(data.get(name) ?? '').trim();
     const organization = value('type') === 'organization';
+    const barangayChoice = value('barangayChoice');
+    const barangay = barangayChoice === '__other__' ? value('barangayOther').replace(/\s+/g, ' ') : barangayChoice;
     const password = String(data.get('password') ?? ''), confirm = String(data.get('password_confirmation') ?? '');
     const files = organization ? authDocumentInputs(form).filter(input => input.files?.length) : [];
     const errors = {};
@@ -312,8 +321,14 @@ async function authRegister(form) {
     if (organization) {
         if (value('orgName').length < 3)
             errors.orgName = 'Enter your organization’s name.';
-        if (!dashBarangays.includes(value('barangay')))
-            errors.barangay = 'Choose your barangay.';
+        if (barangayChoice === '__other__') {
+            if (barangay.length < 2)
+                errors.barangayOther = 'Enter your barangay name.';
+            else if (dashBarangays.some(name => name.toLocaleLowerCase() === barangay.toLocaleLowerCase()))
+                errors.barangayOther = 'This barangay is already listed. Choose it from the list.';
+        }
+        else if (!dashBarangays.includes(barangayChoice))
+            errors.barangayChoice = 'Choose your barangay.';
         if (value('crops').length < 3)
             errors.crops = 'Enter your main crops.';
         if (!files.length)
@@ -328,7 +343,9 @@ async function authRegister(form) {
         return;
     }
     const body = new FormData();
-    (organization ? ['type', 'name', 'email', 'phone', 'orgName', 'barangay', 'crops'] : ['type', 'name', 'email', 'phone']).forEach(name => body.append(name, value(name)));
+    (organization ? ['type', 'name', 'email', 'phone', 'orgName', 'crops'] : ['type', 'name', 'email', 'phone']).forEach(name => body.append(name, value(name)));
+    if (organization)
+        body.append('barangay', barangay);
     body.append('password', password);
     body.append('password_confirmation', confirm);
     files.forEach(input => body.append(input.name, input.files[0]));
@@ -347,7 +364,7 @@ async function authRegister(form) {
         location.href = next === 'consumer.html' ? 'consumer.html#shop' : next;
         return;
     }
-    authSubmitted = { organization: String(r.data.organization), email: String(r.data.email) };
+    authSubmitted = { organization: String(r.data.organization), email: String(r.data.email), requestedBarangay: barangayChoice === '__other__' };
     authView = 'submitted';
     authRender();
     window.scrollTo(0, 0);
@@ -395,6 +412,18 @@ document.addEventListener('input', event => {
 });
 document.addEventListener('change', event => {
     const input = event.target;
+    if (input.name === 'barangayChoice') {
+        const other = document.getElementById('barangay-other-wrap');
+        const show = input.value === '__other__';
+        if (other)
+            other.hidden = !show;
+        const field = document.getElementById('field-barangayOther');
+        if (field) {
+            field.required = show;
+            if (show)
+                field.focus();
+        }
+    }
     if (input.type === 'file' && input.closest('.doc-upload')) {
         const slot = input.form?.querySelector('[data-error-for="documents"]');
         if (slot)
