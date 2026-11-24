@@ -117,7 +117,7 @@ async function dashDo(action:string,payload:Record<string,unknown>={},form?:HTML
   const errors=dashFieldErrors(r.data.errors);
   const shown=form&&Object.keys(errors).some(key=>form.querySelector('[data-error-for="'+key+'"]'));
   if(form&&shown)dashShowErrors(form,errors);
-  else dashToast(String(r.data.message||'That didn’t go through. Try again.'));
+  else dashToast(dashMessage(r,'That didn’t go through. Try again.'));
   return null;
  }
  if(!r.data.state)dashRender();
@@ -140,7 +140,7 @@ const dashFreshBadge=(crop:DashboardCrop)=>{const f=dashFreshness(crop);return '
 const dashHarvestLine=(crop:DashboardCrop,withShelfLife=false)=>{const f=dashFreshness(crop);return '<p class="harvest-line">'+di('calendar')+'<span>Harvested '+dd(crop.harvested)+' · '+dashAgeText(f.age)+(withShelfLife?' · '+f.label.toLowerCase():'')+'</span></p>';};
 const dashShelfDefaults:Record<string,number>={Vegetables:7,Fruits:7,'Rice & grains':180};
 // A terminated organization's listings leave the shop.
-const dashIsBuyable=(crop:DashboardCrop)=>crop.status==='Active'&&crop.stock>0&&dashFreshness(crop).left>=0&&dashboardOrganizations.find(o=>o.name===crop.organization)?.status!=='Terminated';
+const dashIsBuyable=(crop:DashboardCrop)=>{const org=dashboardOrganizations.find(o=>o.name===crop.organization);return crop.status==='Active'&&crop.stock>0&&dashFreshness(crop).left>=0&&org?.status!=='Terminated'&&!org?.stopped;};
 
 /* ---------- Buyer ratings ---------- */
 interface DashRating{rating:number;reviews:number}
@@ -294,7 +294,9 @@ function dashOrgProfileView(slug:string):string{
  const metrics='<div class="metric-grid">'+dashMetric('Harvests listed',String(crops.length),'box','')+dashMetric('Buyer rating',r.reviews?r.rating.toFixed(1)+' ★':'–','star','')+dashMetric('Orders completed',String(completed),'check','')+dashMetric('Member farmers',String(members),'people','')+'</div>';
  const harvests=crops.length?'<div class="product-grid">'+crops.sort(dashShopSorts.fresh[1]).map(c=>dashConsumerTile(c,isConsumerDashboard)).join('')+'</div>':'<section class="panel">'+dashEmpty('No harvests listed right now.','')+'</section>';
  const feedback='<section class="panel">'+dashPanelHead('Buyer reviews','','<span class="filter-summary">'+dashPlural(reviews.length,'review')+'</span>')+'<div class="feedback-list">'+(reviews.length?reviews.map(f=>dashReviewRow(f,'customer')).join(''):dashEmpty('No reviews yet.',''))+'</div></section>';
- return dashOrgCard(o,'h1',actions)+metrics+'<h2 class="section-title">Harvests</h2>'+harvests+feedback;
+ const farmers=o.farmers||[];
+ const farmerList='<section class="panel">'+dashPanelHead('Member farmers','','<span class="filter-summary">'+dashPlural(farmers.length,'farmer')+'</span>')+'<div class="table-wrap">'+(farmers.length?'<table><thead><tr><th scope="col">Farmer</th><th scope="col">Crops</th><th scope="col">Farm area</th><th scope="col">Member since</th></tr></thead><tbody>'+farmers.map(f=>'<tr><td><strong>'+de(f.name)+'</strong></td><td>'+de(f.crops)+'</td><td>'+f.area.toFixed(1)+' ha</td><td>'+de(f.joined)+'</td></tr>').join('')+'</tbody></table>':dashEmpty('No member farmers listed yet.',''))+'</div></section>';
+ return dashOrgCard(o,'h1',actions)+metrics+'<h2 class="section-title">Harvests</h2>'+harvests+'<div class="split two">'+farmerList+feedback+'</div>';
 }
 function dashUserProfileView(slug:string):string{
  const a=dashboardAccounts.find(x=>dashSlug(x.name)===slug&&x.role!=='Administrator');
@@ -414,7 +416,7 @@ async function dashTimedFetch(path:string):Promise<number>{
  if(location.protocol==='file:')throw new Error('Open AniBayan through the web server to check this.');
  const start=performance.now();
  const response=await fetch(path+'?check='+Date.now(),{cache:'no-store'});
- if(!response.ok)throw new Error('The server answered '+response.status+'.');
+ if(!response.ok)throw new Error('Not answering');
  const elapsed=performance.now()-start;
  response.body?.cancel().catch(()=>undefined);
  return elapsed;
@@ -429,7 +431,7 @@ const dashHealthChecks:[string,string,()=>Promise<number>][]=[
 async function dashReadHardware():Promise<DashboardHardware>{
  if(location.protocol==='file:')throw new Error('Open AniBayan through the web server to read the hardware.');
  const response=await fetch('../server-health',{cache:'no-store',headers:{Accept:'application/json'}});
- if(!response.ok)throw new Error('The server answered '+response.status+'.');
+ if(!response.ok)throw new Error('The hardware couldn’t be read.');
  return await response.json() as DashboardHardware;
 }
 // Services AniBayan will connect to, with their current state.
@@ -440,10 +442,10 @@ async function dashRunHealthChecks():Promise<void>{
  const results:DashboardHealthResult[]=[];
  for(const [service,,run] of dashHealthChecks){
   try{results.push({service,ok:true,latency:Math.round(await run())});}
-  catch(error){results.push({service,ok:false,latency:0,error:error instanceof Error?error.message:String(error)});}
+  catch{results.push({service,ok:false,latency:0,error:'Not answering'});}
  }
  let hardware:DashboardHardware|undefined,hardwareError:string|undefined;
- try{hardware=await dashReadHardware();}catch(error){hardwareError=error instanceof Error?error.message:String(error);}
+ try{hardware=await dashReadHardware();}catch{hardwareError='The hardware couldn’t be read.';}
  dashChecking=false;
  // The server keeps the history (the newest 30 runs) and sends it back with the fresh data.
  if(!await dashDo('health.record',{results,hardware:hardware??null,hardwareError:hardwareError??null}))dashRender();
@@ -466,13 +468,13 @@ const dashUserName=dashMe()?.name||'Guest';
 const dashRoles:Record<DashRole,DashRoleConfig>={
  admin:{
   page:'admin.html',workspace:'Admin workspace',navLabel:'Administration',
-  nav:[['overview','grid','Overview'],['accounts','people','Accounts'],['activity','eye','Activity log'],['reports','flag','User reports'],['applications','clipboard','Applications'],['health','pulse','Site health']],
+  nav:[['overview','grid','Overview'],['accounts','people','Accounts'],['activity','eye','Activity log'],['reports','flag','User reports'],['refunds','wallet','Refunds'],['applications','clipboard','Applications'],['health','pulse','Site health']],
   settingsNav:['settings','settings','Settings'],
   user:dashUserName,userRole:'Platform administrator',initials:'AD',
   search:'Search accounts, reports, applications…',
   cardIcon:'shield',cardTitle:'Platform oversight',cardText:'Accounts, user reports, organization applications and site health.',
   shortcut:['Public homepage','index.html','home'],
-  titles:{overview:['Admin overview','Accounts, user reports, organization applications and site health.'],accounts:['Account management','Consumer, representative and administrator accounts.'],activity:['Activity log','Sign-ins, orders, listings and administrator actions, newest first.'],reports:['User reports','Reports buyers filed about organizations.'],applications:['Organization applications','Farmer organizations asking to sell on AniBayan.'],health:['Site health','Live checks of AniBayan’s services, plus the history of recent checks.'],settings:['Workspace settings','Your administrator account and preferences.'],help:dashHelpTitle},
+  titles:{overview:['Admin overview','Accounts, user reports, organization applications and site health.'],refunds:['Refunds','Buyers’ refund requests, and disputes waiting for your decision.'],accounts:['Account management','Consumer, representative and administrator accounts.'],activity:['Activity log','Sign-ins, orders, listings and administrator actions, newest first.'],reports:['User reports','Reports buyers filed about organizations.'],applications:['Organization applications','Farmer organizations asking to sell on AniBayan.'],health:['Site health','Live checks of AniBayan’s services, plus the history of recent checks.'],settings:['Workspace settings','Your administrator account and preferences.'],help:dashHelpTitle},
  },
  organization:{
   page:'organization.html',workspace:'Organization workspace',navLabel:'Your organization',
@@ -497,8 +499,23 @@ const dashRoles:Record<DashRole,DashRoleConfig>={
 };
 const dashRole=dashRoles[dashboardRole];
 // Organization order workflow: current status -> [next status, action label].
-const dashNextStep:Record<string,string[]>={Pending:['Confirmed','Confirm order'],Confirmed:['Processing','Start preparing'],Processing:['Completed','Mark completed']};
+const dashNextStep:Record<string,string[]>={Pending:['Confirmed','Confirm order'],Confirmed:['Processing','Start preparing'],Processing:['Delivered','Mark delivered']};
 const dashOnline=(order:DashboardOrder)=>!!order.method&&order.method!=='Cash on delivery';
+const ddate=(iso:string)=>new Date(iso).toLocaleDateString('en-PH',{month:'short',day:'2-digit',year:'numeric'});
+// An order's place on its way: placed, confirmed, preparing, delivered (by the organization), received (by the buyer).
+const dashOrderStep=(status:string)=>(({Pending:0,Confirmed:1,Processing:2,Delivered:3,'Refund requested':3,Refunded:3,Completed:4} as Record<string,number>)[status]??-1);
+// A refund request the organization still has to accept or dispute.
+const dashRefundOpen=(o:DashboardOrder)=>o.refund?.status==='Requested';
+// Online payments are held for 7 days after delivery; a refund can be asked for in that time.
+const dashCanRefund=(o:DashboardOrder)=>o.status==='Delivered'&&o.funds==='Held'&&!o.refund&&!!o.releaseOn&&new Date(o.releaseOn).getTime()>Date.now();
+const dashHasReceipt=(o:DashboardOrder)=>o.status!=='Cancelled'&&(o.payment==='Paid'||o.method==='Cash on delivery');
+// Where an online payment is: held by AniBayan, released to the organization, or refunded to the buyer.
+function dashFundsText(o:DashboardOrder):string{
+ if(o.funds==='Held')return ds('Held')+(o.releaseOn?'<small class="fact-note">To '+de(o.organization)+' on '+ddate(o.releaseOn)+'</small>':'');
+ if(o.funds==='Refund due')return ds('Refunding')+'<small class="fact-note">Back to '+de(o.customer)+'</small>';
+ if(o.funds==='Released')return ds('Released')+(o.fundsSettledAt?'<small class="fact-note">To '+de(o.organization)+' on '+ddate(o.fundsSettledAt)+'</small>':'');
+ return ds('Refunded')+(o.fundsSettledAt?'<small class="fact-note">To '+de(o.customer)+' on '+ddate(o.fundsSettledAt)+'</small>':'');
+}
 
 // [title, message] when the signed-in account can no longer use this page, otherwise [].
 function dashBlocked():string[]{
@@ -538,6 +555,7 @@ function dashNotifications():string[][]{
   return notes;
  }
  const notes:string[][]=[];
+ orders.filter(o=>o.status==='Delivered').slice(0,2).forEach(o=>notes.push(['Your '+o.crop.toLowerCase()+' from '+o.organization+' was delivered.','orders','Confirm receipt']));
  orders.filter(o=>['Confirmed','Processing'].includes(o.status)).slice(0,2).forEach(o=>notes.push(['Your '+o.crop.toLowerCase()+' is being prepared by '+o.organization+'.','orders','See my orders']));
  orders.filter(o=>o.payment==='Unpaid'&&dashOnline(o)&&o.status!=='Cancelled').slice(0,1).forEach(o=>notes.push(['Order '+dashOrderNo(o.id)+' is waiting for payment.','orders','Pay now']));
  const unrated=orders.find(o=>o.status==='Completed'&&!dashRated(o.id));
@@ -569,12 +587,12 @@ function dashRenderNotifications():void{
 function dashHeading():string{
  const view=dashState.view;
  const [title,sub]=dashRole.titles[view];
- const exportButton='<button class="control" id="export-dashboard">'+di('download')+'Export CSV</button>';
+ const exportButton='<button class="control" id="export-dashboard">'+di('download')+'Export Excel</button><button class="control" id="export-pdf">'+di('download')+'Export PDF</button>';
  let tools='';
  if(isConsumerDashboard)tools='<span class="control static">'+di('calendar')+dashTodayDate.toLocaleDateString('en-PH',{weekday:'long',day:'2-digit',month:'short',year:'numeric'})+'</span>'+(view==='shop'||view==='cart'?'':'<button class="control primary" data-go="shop">'+di('bag')+'Shop the harvest</button>');
  else if(isAdminDashboard){
   if(view==='health'){const latest=dashHealthSummary().latest;tools+='<span class="control static">'+di('clock')+(dashChecking?'Checking now…':latest?'Last checked '+dtime(latest.time):'Not checked yet')+'</span><button class="control" data-health-check'+(dashChecking?' disabled':'')+'>'+di('pulse')+'Run checks</button>';}
-  if(['accounts','reports','applications','health'].includes(view))tools+=exportButton;
+  if(['accounts','reports','refunds','applications','health'].includes(view))tools+=exportButton;
  }else{
   if(view==='overview')tools+='<select class="period-select" id="dashboard-period" aria-label="Reporting period"><option value="week" '+(dashState.period==='week'?'selected':'')+'>Last 7 days</option><option value="month" '+(dashState.period==='month'?'selected':'')+'>Last 4 weeks</option></select>';
   if(['overview','orders','listings','feedback','members','payments'].includes(view))tools+=exportButton;
@@ -628,7 +646,7 @@ function dashRoleCrops():DashboardCrop[]{
 }
 function dashCropStatus(crop:DashboardCrop):string{
  if(crop.stock===0)return 'Out of stock';
- if(crop.status!=='Active')return 'Paused';
+ if(crop.status!=='Active')return 'Unpublished';
  if(dashFreshness(crop).left<0)return 'Past shelf life';
  return isOrgDashboard&&crop.stock<50?'Low stock':'Active';
 }
@@ -639,12 +657,12 @@ function dashOrderTable(mode:'recent'|'all'|'payments'):string{
  const cols:[string,(o:DashboardOrder)=>string][]=[['Order',o=>'<strong>'+dashOrderNo(o.id)+'</strong>'],['Harvest',product]];
  if(isOrgDashboard)cols.push(['Buyer',o=>de(o.customer)]);
  cols.push(['Total',o=>'<strong>'+dp(o.total)+'</strong>']);
- if(mode==='payments')cols.push(['Payment',o=>ds(o.payment)+(o.method?'<small class="cell-note">'+de(o.method)+'</small>':'')],['Order status',o=>ds(o.status)]);else cols.push(['Status',o=>ds(o.status)]);
+ if(mode==='payments')cols.push(['Payment',o=>ds(o.payment)+(o.method?'<small class="cell-note">'+de(o.method)+'</small>':'')],['Funds',o=>o.funds?ds(o.funds):'<small class="cell-note">'+(o.payment==='Paid'?'Cash':'–')+'</small>'],['Order status',o=>ds(o.status)]);else cols.push(['Status',o=>ds(o.status)]);
  cols.push(['Date',o=>dd(o.date)]);
- const actions=(o:DashboardOrder)=>'<div class="row-actions">'+(isOrgDashboard&&mode==='all'&&dashNextStep[o.status]?'<button class="control small" data-advance="'+o.id+'">'+dashNextStep[o.status][1]+'</button>':'')+(isConsumerDashboard&&mode!=='recent'&&o.payment==='Unpaid'&&dashOnline(o)&&o.status!=='Cancelled'?'<button class="control small primary" data-pay-order="'+o.id+'">Pay now</button>':'')+(isConsumerDashboard&&mode==='all'&&o.status==='Completed'&&!dashRated(o.id)?'<button class="control small" data-rate="'+o.id+'">'+di('star')+'Rate</button>':'')+'<button class="table-action" data-order="'+o.id+'" aria-label="View order '+o.id+'">'+di('eye')+'</button></div>';
+ const actions=(o:DashboardOrder)=>'<div class="row-actions">'+(isOrgDashboard&&mode==='all'&&dashNextStep[o.status]?'<button class="control small" data-advance="'+o.id+'">'+dashNextStep[o.status][1]+'</button>':'')+(isOrgDashboard&&mode!=='recent'&&dashRefundOpen(o)?'<button class="control small primary" data-order="'+o.id+'">Answer refund</button>':'')+(isConsumerDashboard&&mode!=='recent'&&o.status==='Delivered'?'<button class="control small primary" data-order-received="'+o.id+'">Order received</button>':'')+(isConsumerDashboard&&mode!=='recent'&&o.payment==='Unpaid'&&dashOnline(o)&&o.status!=='Cancelled'?'<button class="control small primary" data-pay-order="'+o.id+'">Pay now</button>':'')+(isConsumerDashboard&&mode==='all'&&o.status==='Completed'&&!dashRated(o.id)?'<button class="control small" data-rate="'+o.id+'">'+di('star')+'Rate</button>':'')+'<button class="table-action" data-order="'+o.id+'" aria-label="View order '+o.id+'">'+di('eye')+'</button></div>';
  const title=mode==='payments'?(isOrgDashboard?'Payments by order':'Your payment history'):mode==='recent'?(isConsumerDashboard?'Recent purchases':'Recent orders'):(isOrgDashboard?'Orders from your buyers':'Your orders');
  const head=dashPanelHead(title,'',mode==='recent'?'<button class="text-button" data-go="orders">View all '+di('arrow')+'</button>':'');
- const filters=mode==='all'?dashFilters(['All','Pending','Confirmed','Processing','Completed','Cancelled'],dashPlural(orders.length,'order')):'';
+ const filters=mode==='all'?dashFilters(['All','Pending','Confirmed','Processing','Delivered','Refund requested','Completed','Refunded','Cancelled'],dashPlural(orders.length,'order')):'';
  const empty=!dashRoleOrders().length?dashEmpty('No orders yet',isConsumerDashboard?'Orders you place from your cart appear here.':'Orders from buyers appear here.'):dashEmpty('No matching orders','Try another search or order status.');
  const table=orders.length?'<table><thead><tr>'+cols.map(c=>'<th scope="col">'+c[0]+'</th>').join('')+'<th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>'+orders.map(o=>'<tr>'+cols.map(c=>'<td>'+c[1](o)+'</td>').join('')+'<td>'+actions(o)+'</td></tr>').join('')+'</tbody></table>':empty;
  return '<section class="panel">'+head+filters+'<div class="table-wrap">'+table+'</div>'+(mode==='recent'?'':'<div class="table-footer"><span>Showing '+orders.length+' of '+dashPlural(dashRoleOrders().length,'order')+'</span></div>')+'</section>';
@@ -775,6 +793,13 @@ const dashActivityTypes:Record<string,[string,string,string]>={
  'signin-waiting':['Sign-in before approval','muted','Sign-ins'],
  'signout':['Signed out','muted','Sign-ins'],
  'register':['Account created','ok','Accounts'],
+ 'register-refused':['Sign-up refused','flag','Accounts'],
+ 'order-received':['Order received','ok','Orders'],
+ 'refund-requested':['Refund requested','watch','Orders'],
+ 'refund-accepted':['Refund accepted','watch','Orders'],
+ 'refund-disputed':['Refund disputed','flag','Orders'],
+ 'refund-paid':['Refund paid','watch','Orders'],
+ 'refund-decided':['Refund decided','admin','Admin'],
  'password-changed':['Password changed','watch','Accounts'],
  'profile-updated':['Profile updated','muted','Accounts'],
  'order-placed':['Order placed','info','Orders'],
@@ -784,8 +809,8 @@ const dashActivityTypes:Record<string,[string,string,string]>={
  'listing-added':['Listing added','info','Listings'],
  'listing-edited':['Listing edited','muted','Listings'],
  'price-changed':['Price changed','watch','Listings'],
- 'listing-paused':['Listing paused','muted','Listings'],
- 'listing-resumed':['Listing resumed','muted','Listings'],
+ 'listing-paused':['Listing unpublished','muted','Listings'],
+ 'listing-resumed':['Listing published','muted','Listings'],
  'listing-removed':['Listing removed','watch','Listings'],
  'rating':['Order rated','muted','Reports'],
  'report-filed':['Report filed','watch','Reports'],
@@ -848,22 +873,32 @@ function dashAccountActivity(email:string):string{
 function dashOrgOverview():string{
  const p=dashOrgPeriod();
  const orders=dashRoleOrders();const crops=dashRoleCrops();
- const open=orders.filter(o=>dashNextStep[o.status]);
+ const open=orders.filter(o=>dashNextStep[o.status]||dashRefundOpen(o));
  const [valueTrend,valueDown]=dashTrend(p.value,p.previousValue);
  const [orderTrend,orderDown]=dashTrend(p.orders,p.previousOrders);
  const span=dashState.period==='week'?'previous 7 days':'previous 4 weeks';
  const metrics='<div class="metric-grid">'+dashMetric('Order value',dp(p.value),'wallet',p.previousValue?'Compared with the '+span:'Placed with your organization',valueTrend,valueDown)+dashMetric('Orders received',String(p.orders),'bag',p.previousOrders?'Compared with the '+span:dashState.period==='week'?'Last 7 days':'Last 4 weeks',orderTrend,orderDown)+dashMetric('Orders to fulfil',String(open.length),'clock','Waiting on your next step')+dashMetric('Active listings',String(crops.filter(c=>dashIsBuyable(c)).length),'box',dashPlural(crops.length,'listing')+' in total')+'</div>';
- const queue='<section class="panel">'+dashPanelHead('Needs your action','Orders waiting on your next step','<button class="text-button" data-go="orders">All orders '+di('arrow')+'</button>')+'<div class="queue">'+(open.length?open.slice(0,4).map(o=>'<div class="queue-row"><img src="'+dashImg(o.image)+'" alt=""><div><strong>'+de(o.crop)+' · '+de(o.quantity)+'</strong><small>'+dashOrderNo(o.id)+' · '+de(o.customer)+' · '+dp(o.total)+'</small><div class="queue-actions">'+ds(o.status)+'<button class="control small primary" data-advance="'+o.id+'">'+dashNextStep[o.status][1]+'</button></div></div></div>').join(''):dashEmpty('All caught up','No orders are waiting on you.'))+'</div></section>';
+ const queue='<section class="panel">'+dashPanelHead('Needs your action','Orders waiting on your next step','<button class="text-button" data-go="orders">All orders '+di('arrow')+'</button>')+'<div class="queue">'+(open.length?open.slice(0,4).map(o=>'<div class="queue-row"><img src="'+dashImg(o.image)+'" alt=""><div><strong>'+de(o.crop)+' · '+de(o.quantity)+'</strong><small>'+dashOrderNo(o.id)+' · '+de(o.customer)+' · '+dp(o.total)+'</small><div class="queue-actions">'+ds(o.status)+(dashRefundOpen(o)?'<button class="control small primary" data-order="'+o.id+'">Answer refund</button>':'<button class="control small primary" data-advance="'+o.id+'">'+dashNextStep[o.status][1]+'</button>')+'</div></div></div>').join(''):dashEmpty('All caught up','No orders are waiting on you.'))+'</div></section>';
  const stock='<section class="panel">'+dashPanelHead('Stock watch','Lowest stock first','<button class="text-button" data-go="listings">Manage '+di('arrow')+'</button>')+'<div class="stock-list">'+(crops.length?crops.slice().sort((a,b)=>a.stock-b.stock).slice(0,4).map(c=>'<div class="stock-row"><img src="'+dashImg(c.image)+'" alt=""><div><div class="stock-row-top"><strong>'+de(c.name)+'</strong>'+ds(dashCropStatus(c))+'</div><div class="meter" role="img" aria-label="'+c.stock+' '+de(c.unit)+' available"><i style="width:'+Math.min(100,Math.round(c.stock/150*100))+'%"></i></div><small>'+c.stock+' '+de(c.unit)+' available</small></div></div>').join(''):dashEmpty('No listings yet','Add your first crop listing.'))+'</div></section>';
- return dashWarningCallout()+metrics+'<div class="split">'+dashChart(p,'Placed order totals for your organization','Orders placed with your organization')+queue+'</div><div class="split">'+dashOrderTable('recent')+stock+'</div>';
+ const soon=crops.filter(dashSpoilingSoon).sort((a,b)=>dashFreshness(a).left-dashFreshness(b).left);
+ const spoiling='<section class="panel">'+dashPanelHead('Close to spoiling','Soonest first','<button class="text-button" data-go="listings" data-go-filter="Close to spoiling">See all '+di('arrow')+'</button>')+'<div class="stock-list">'+(soon.length?soon.slice(0,4).map(c=>'<div class="stock-row"><img src="'+dashImg(c.image)+'" alt=""><div><div class="stock-row-top"><strong>'+de(c.name)+'</strong>'+dashFreshBadge(c)+'</div><small>'+c.stock+' '+de(c.unit)+' left · best before '+dd(dashAddDays(c.harvested,c.shelfLife))+'</small></div></div>').join(''):dashEmpty('Nothing close to spoiling','')) +'</div></section>';
+ return dashWarningCallout()+metrics+'<div class="split">'+dashChart(p,'Placed order totals for your organization','Orders placed with your organization')+queue+'</div><div class="split three">'+dashOrderTable('recent')+spoiling+stock+'</div>';
 }
-function dashListingCrops():DashboardCrop[]{return dashRoleCrops().filter(c=>dashMatching(c.name+' '+c.organization+' '+c.category));}
+// Listings with 0–2 days of shelf life left and stock still on hand (the shop's "Use soon" badge).
+const dashSpoilingSoon=(c:DashboardCrop)=>{const left=dashFreshness(c).left;return c.stock>0&&left>=0&&left<=2;};
+const dashListingFilters=['All','Active','Low stock','Close to spoiling','Unpublished','Out of stock','Past shelf life'];
+function dashListingCrops():DashboardCrop[]{
+ const f=dashState.filter;
+ return dashRoleCrops().filter(c=>dashMatching(c.name+' '+c.organization+' '+c.category)&&(f==='All'||!dashListingFilters.includes(f)||(f==='Close to spoiling'?dashSpoilingSoon(c):dashCropStatus(c)===f)));
+}
 function dashListingTile(c:DashboardCrop):string{
- return '<article class="product-tile"><img src="'+dashImg(c.image)+'" alt="'+de(c.name)+'"><div class="product-tile-copy"><div class="product-tile-head"><h2>'+de(c.name)+'</h2>'+ds(dashCropStatus(c))+'</div><p>'+de(c.category)+' · '+c.id+'</p><div class="product-price"><strong>'+dp(c.price)+'</strong> / '+de(c.unit)+'</div>'+dashHarvestLine(c,true)+'<div class="product-bottom"><small>'+c.stock+' '+de(c.unit)+' available</small><span class="row-actions"><button class="control small" data-toggle-listing="'+c.id+'"'+(c.stock===0?' disabled':'')+'>'+(c.status==='Active'?'Pause':'Resume')+'</button><button class="control small" data-edit-listing="'+c.id+'">'+di('edit')+'Edit</button><button class="control small primary" data-product="'+c.id+'">Details</button></span></div></div></article>';
+ return '<article class="product-tile"><img src="'+dashImg(c.image)+'" alt="'+de(c.name)+'"><div class="product-tile-copy"><div class="product-tile-head"><h2>'+de(c.name)+'</h2>'+ds(dashCropStatus(c))+'</div><p>'+de(c.category)+' · '+c.id+'</p><div class="product-price"><strong>'+dp(c.price)+'</strong> / '+de(c.unit)+'</div>'+dashHarvestLine(c,true)+'<div class="product-bottom"><small>'+c.stock+' '+de(c.unit)+' available</small><span class="row-actions"><button class="control small" data-toggle-listing="'+c.id+'"'+(c.stock===0?' disabled':'')+'>'+(c.status==='Active'?'Unpublish':'Publish')+'</button><button class="control small" data-edit-listing="'+c.id+'">'+di('edit')+'Edit</button><button class="control small primary" data-product="'+c.id+'">Details</button></span></div></div></article>';
 }
 function dashListingGrid():string{
  const crops=dashListingCrops();
- if(crops.length)return '<div class="product-grid">'+crops.map(dashListingTile).join('')+'</div>';
+ const filters='<div class="filters bare">'+dashListingFilters.map(f=>'<button class="filter-chip" data-filter="'+f+'" aria-pressed="'+(dashState.filter===f)+'">'+f+'</button>').join('')+'<span class="filter-summary">'+dashPlural(crops.length,'listing')+'</span></div>';
+ if(crops.length)return filters+'<div class="product-grid">'+crops.map(dashListingTile).join('')+'</div>';
+ if(dashRoleCrops().length)return filters+'<section class="panel">'+dashEmpty('No matching listings.','Try another filter or search.')+'</section>';
  return '<section class="panel">'+(dashRoleCrops().length?dashEmpty('No matching listings.','Try a different search.'):dashEmpty('No listings yet','Add a crop listing so buyers can find your harvest.')+'<div class="empty-action"><button class="control primary" data-add-listing>'+di('plus')+'Add listing</button></div>')+'</section>';
 }
 function dashOrgFeedbackList():DashboardFeedback[]{
@@ -894,8 +929,10 @@ function dashMembers():string{
 }
 function dashOrgPayments():string{
  const orders=dashRoleOrders().filter(o=>o.status!=='Cancelled');
- const sum=(payment:string)=>orders.filter(o=>o.payment===payment).reduce((total,o)=>total+o.total,0);
- return '<div class="metric-grid three">'+dashMetric('Paid orders',dp(sum('Paid')),'check',dashPlural(orders.filter(o=>o.payment==='Paid').length,'order')+' paid')+dashMetric('Awaiting payment',dp(sum('Unpaid')),'clock',dashPlural(orders.filter(o=>o.payment==='Unpaid').length,'order')+' unpaid')+dashMetric('Open orders',String(orders.filter(o=>o.status!=='Completed').length),'bag','Not yet completed')+'</div>'+dashOrderTable('payments');
+ const sum=(list:DashboardOrder[])=>list.reduce((total,o)=>total+o.total,0);
+ const received=orders.filter(o=>o.funds==='Released'||(o.payment==='Paid'&&!dashOnline(o)));
+ const held=orders.filter(o=>o.funds==='Held'),refunded=orders.filter(o=>o.funds==='Refunded'),unpaid=orders.filter(o=>o.payment==='Unpaid');
+ return '<div class="metric-grid">'+dashMetric('Received',dp(sum(received)),'check',dashPlural(received.length,'order'))+dashMetric('Held by AniBayan',dp(sum(held)),'clock',dashPlural(held.length,'order'))+dashMetric('Refunded',dp(sum(refunded)),'flag',dashPlural(refunded.length,'order'))+dashMetric('Awaiting payment',dp(sum(unpaid)),'wallet',dashPlural(unpaid.length,'order'))+'</div>'+dashOrderTable('payments');
 }
 
 /* ---------- Consumer: shop, cart, saved harvests and growers ---------- */
@@ -925,7 +962,7 @@ function dashShopList():DashboardCrop[]{
 function dashConsumerTile(c:DashboardCrop,actions=true):string{
  const saved=dashIsSaved(c.id);
  const buyable=dashIsBuyable(c);
- const badge=buyable?dashFreshBadge(c):ds(c.stock===0?'Out of stock':c.status!=='Active'?'Paused':'Past shelf life');
+ const badge=buyable?dashFreshBadge(c):ds(c.stock===0?'Out of stock':c.status!=='Active'?'Unpublished':'Past shelf life');
  return '<article class="product-tile"><div class="product-media"><img src="'+dashImg(c.image)+'" alt="'+de(c.name)+'">'+badge+'</div><div class="product-tile-copy"><div class="product-tile-head"><h2>'+de(c.name)+'</h2>'+(actions?'<button class="save-button" data-save="'+c.id+'" aria-pressed="'+saved+'" aria-label="'+(saved?'Unsave ':'Save ')+de(c.name)+'">'+di('heart')+'</button>':'')+'</div><p>'+de(c.organization)+' · '+dashRatingText(c.organization)+'<br>'+de(c.category)+' · '+de(dashRegion(c.organization))+'</p><div class="product-price"><strong>'+dp(c.price)+'</strong> / '+de(c.unit)+'</div>'+dashHarvestLine(c)+(actions?'<div class="product-bottom"><span class="row-actions"><button class="control small" data-product="'+c.id+'">Details</button>'+(buyable?'<button class="control small primary" data-add-cart="'+c.id+'">'+di('cart')+'Add to cart</button>':'')+'</span></div>':'')+'</div></article>';
 }
 const dashShopSummary=(shown:number)=>shown+' of '+dashPlural(dashShopCrops().length,'harvest');
@@ -934,7 +971,7 @@ function dashShopGrid(crops:DashboardCrop[]):string{
  const [min,max]=dashPriceBounds();
  const reversed=min!==null&&max!==null&&min>max;
  const unavailable=dashState.query.trim()?dashboardCrops.filter(c=>!dashIsBuyable(c)&&dashMatching(c.name+' '+c.organization+' '+c.category)):[];
- const description=reversed?'Swap the two prices or clear one of them.':unavailable.length?unavailable.map(c=>c.name+' is '+(c.stock===0?'out of stock':c.status!=='Active'?'paused by its grower':'past its shelf life')).join('. ')+' right now.':'Try a wider price range, another crop type, harvest time or location.';
+ const description=reversed?'Swap the two prices or clear one of them.':unavailable.length?unavailable.map(c=>c.name+' is '+(c.stock===0?'out of stock':c.status!=='Active'?'unpublished by its grower':'past its shelf life')).join('. ')+' right now.':'Try a wider price range, another crop type, harvest time or location.';
  return '<section class="panel">'+dashEmpty(reversed?'The minimum price is higher than the maximum.':'No harvests match these filters.',de(description))+'<div class="empty-action"><button class="control" data-shop-reset>Clear filters</button></div></section>';
 }
 // The banner over the shop: what's on offer and quick crop-type buttons.
@@ -973,7 +1010,8 @@ async function dashAddToCart(id:string,quantity:number):Promise<void>{
  if(!dashRequireBuyer())return;
  const crop=dashboardCrops.find(c=>c.id===id);
  if(!crop)return;
- const r=await dashDo('cart.add',{crop:id,quantity:Math.max(1,Math.floor(quantity)||1)});
+ const left=crop.stock-(dashCart().find(l=>l.crop===id)?.quantity||0);
+ const r=await dashDo('cart.add',{crop:id,quantity:Math.min(Math.max(1,Math.floor(quantity)||1),Math.max(1,left))});
  if(r)dashToast(r.added+' '+crop.unit+' of '+crop.name+' added to your cart.'+(r.allLeft?' That’s all the stock left.':''));
 }
 function dashCartView():string{
@@ -1000,11 +1038,11 @@ function dashOrganizationGrid():string{
  return orgs.length?'<div class="org-grid">'+orgs.map(o=>'<article class="org-card"><img src="'+dashImg(o.image)+'" alt="'+de(o.name)+'"><div><h2>'+de(o.name)+'</h2><p>'+de(o.region)+' · '+de(o.crop)+'</p><p class="org-rating">'+dashRatingText(o.name)+'</p><footer><span class="filter-summary">'+dashPlural(dashListingCount(o.name),'listing')+'</span><a class="control" href="#org='+dashSlug(o.name)+'" data-profile-link>View community '+di('up')+'</a></footer></div></article>').join('')+'</div>':'<section class="panel">'+dashEmpty('No matching communities','Try a different place or name.')+'</section>';
 }
 function dashActiveOrder():string{
- const order=dashRoleOrders().find(o=>!['Completed','Cancelled'].includes(o.status));
+ const order=dashRoleOrders().find(o=>!['Completed','Cancelled','Refunded'].includes(o.status));
  if(!order)return '<section class="panel">'+dashPanelHead('Nothing on its way right now.','')+'<div class="active-order"><div class="active-order-foot"><p>Fresh harvests are waiting in the shop.<br>Your next order will show up here.</p><button class="control primary" data-go="shop">Shop the harvest '+di('arrow')+'</button></div></div></section>';
- const step=['Pending','Confirmed','Processing','Completed'].indexOf(order.status);
- const message=order.status==='Pending'?'Waiting for your grower to confirm your order.':order.status==='Confirmed'?'Your grower confirmed your order.':'Your grower is preparing your order.';
- return '<section class="panel">'+dashPanelHead('Your harvest is coming together.','','<span class="filter-summary">'+dashOrderNo(order.id)+'</span>')+'<div class="active-order"><div class="active-order-top"><img src="'+dashImg(order.image)+'" alt="'+de(order.crop)+'"><div><h3>'+de(order.crop)+'</h3><p>'+de(order.organization)+' · '+de(order.quantity)+'</p></div>'+ds(order.status)+'</div><div class="order-progress">'+['Placed','Confirmed','Preparing','Completed'].map((s,i)=>'<div class="progress-step '+(i<step?'done':i===step?'current':'')+'"><i></i>'+s+'</div>').join('')+'</div><div class="active-order-foot"><p>Good things take a little care.<br>'+message+'</p><button class="control primary" data-order="'+order.id+'">View order '+di('arrow')+'</button></div></div></section>';
+ const step=dashOrderStep(order.status);
+ const message=order.status==='Pending'?'Waiting for your grower to confirm your order.':order.status==='Confirmed'?'Your grower confirmed your order.':order.status==='Delivered'?'Your order was delivered. Did it arrive?':order.status==='Refund requested'?'Your refund request is with your grower.':'Your grower is preparing your order.';
+ return '<section class="panel">'+dashPanelHead('Your harvest is coming together.','','<span class="filter-summary">'+dashOrderNo(order.id)+'</span>')+'<div class="active-order"><div class="active-order-top"><img src="'+dashImg(order.image)+'" alt="'+de(order.crop)+'"><div><h3>'+de(order.crop)+'</h3><p>'+de(order.organization)+' · '+de(order.quantity)+'</p></div>'+ds(order.status)+'</div><div class="order-progress">'+['Placed','Confirmed','Preparing','Delivered','Received'].map((s,i)=>'<div class="progress-step '+(i<step?'done':i===step?'current':'')+'"><i></i>'+s+'</div>').join('')+'</div><div class="active-order-foot"><p>Good things take a little care.<br>'+message+'</p><button class="control primary" data-order="'+order.id+'">View order '+di('arrow')+'</button></div></div></section>';
 }
 function dashConsumerOverview():string{
  const own=dashRoleOrders();
@@ -1025,7 +1063,7 @@ function dashSettings():string{
   const org=dashMyOrg();
   if(org)return dashOrgCard(org,'h2','<a class="control" href="#org='+dashSlug(org.name)+'" data-profile-link>'+di('user')+'View profile</a>')+'<div class="settings-grid">'+account+appearance+'</div>';
  }else{
-  account='<section class="panel settings-panel"><h2>Your account</h2>'+facts([['Name',me.name],['Email',me.email],['Mobile number',me.phone||'Not added yet'],['Member since',dmonth(me.joined)],['Delivery address',me.address||'Not added yet']])+'<div class="detail-actions">'+common+'<button class="control primary" data-edit-profile>'+di('edit')+'Edit delivery details</button></div></section>';
+  account='<section class="panel settings-panel"><h2>Your account</h2>'+facts([['Name',me.name],['Email',me.email],['Mobile number',me.phone||'Not added yet'],['Member since',dmonth(me.joined)]])+'<div class="detail-actions">'+common+'<button class="control" data-edit-profile>'+di('edit')+'Edit mobile number</button></div></section>'+dashAddressBook(me);
   const p=dashPrivacy(me);
   const toggle=(key:keyof DashboardPrivacy,label:string)=>'<div class="settings-row"><label for="privacy-'+key+'">'+label+'</label><input type="checkbox" id="privacy-'+key+'" data-privacy="'+key+'"'+(p[key]?' checked':'')+(key!=='profile'&&!p.profile?' disabled':'')+'></div>';
   const privacy='<section class="panel settings-panel"><h2>Privacy</h2>'+toggle('profile','Public profile')+toggle('reviews','Show my reviews')+toggle('city','Show my city')+toggle('growers','Show the growers I buy from')+'</section>';
@@ -1035,17 +1073,17 @@ function dashSettings():string{
 }
 function dashHelp():string{
  const rows=isAdminDashboard?[['Suspend, reactivate or reset accounts','accounts','Accounts'],['Watch sign-ins and other activity','activity','Activity log'],['Uphold or dismiss buyer reports, and warn organizations','reports','User reports'],['Approve or decline organization applications','applications','Applications'],['Check that AniBayan’s services are up','health','Site health']]
-  :isOrgDashboard?[['Confirm and prepare incoming orders','orders','Incoming orders'],['Add, edit or pause crop listings','listings','My listings'],['See your ratings and any warnings','feedback','Ratings & feedback'],['Add or confirm member farmers','members','Member farmers'],['Update your organization profile','settings','Organization profile']]
+  :isOrgDashboard?[['Confirm and prepare incoming orders','orders','Incoming orders'],['Add, edit, publish or unpublish crop listings','listings','My listings'],['See your ratings and any warnings','feedback','Ratings & feedback'],['Add or confirm member farmers','members','Member farmers'],['Update your organization profile','settings','Organization profile']]
   :isGuest?[['Browse and filter harvests','shop','Shop'],['Meet the growing communities','growers','Growers']]
   :[['Browse and filter harvests','shop','Shop'],['Check out your cart','cart','Cart'],['Follow, pay, rate or report your orders','orders','My orders'],['Update your delivery details','settings','My profile']];
  return '<section class="panel settings-panel"><h2>Here to help you grow.</h2><p>Where to go for each task.</p>'+rows.map(r=>'<div class="settings-row"><span>'+r[0]+'</span><button class="control" data-go="'+r[1]+'">'+r[2]+' '+di('arrow')+'</button></div>').join('')+(isGuest?'<div class="settings-row"><span>Order harvests, save favourites and rate growers</span><a class="control primary" href="login.html" data-sign-in>Sign in '+di('arrow')+'</a></div>':'')+'</section>';
 }
 // Sidebar badges: open reports and pending applications for admins, orders needing attention otherwise, cart lines for buyers.
 function dashNavCounts():Record<string,number>{
- if(isAdminDashboard)return {activity:dashFlaggedToday(),reports:dashOpenReports(),applications:dashPendingApplications()};
+ if(isAdminDashboard)return {activity:dashFlaggedToday(),reports:dashOpenReports(),refunds:dashboardOrders.filter(o=>o.refund?.status==='Disputed').length,applications:dashPendingApplications()};
  const orders=dashRoleOrders();
  if(isOrgDashboard)return {orders:orders.filter(o=>o.status==='Pending').length,members:dashMyMembers().filter(m=>m.status==='Pending').length};
- return {orders:orders.filter(o=>!['Completed','Cancelled'].includes(o.status)).length,cart:dashCart().length};
+ return {orders:orders.filter(o=>!['Completed','Cancelled','Refunded'].includes(o.status)).length,cart:dashCart().length};
 }
 function dashRender():void{
  // A table's search box is redrawn with the table; keep the cursor in it, even when a health check finishes mid-typing.
@@ -1067,6 +1105,7 @@ function dashRender():void{
  else if(view==='overview')content=isAdminDashboard?dashAdminOverview():isOrgDashboard?dashOrgOverview():dashConsumerOverview();
  else if(view==='accounts')content=dashAccountsView();
  else if(view==='reports')content=dashReportsView();
+ else if(view==='refunds')content=dashRefundsView();
  else if(view==='applications')content=dashApplicationsView();
  else if(view==='health')content=dashHealthView();
  else if(view==='activity')content=dashActivityView();
@@ -1091,16 +1130,21 @@ function dashNavigate(view:string):void{if(location.hash.slice(1)===view)dashRea
 function dashOpen(html:string):void{document.getElementById('detail-content')!.innerHTML=html;if(!dashDialog.open)dashDialog.showModal();}
 function dashFocusField(selector:string):void{document.querySelector<HTMLElement>('#detail-content '+selector)?.focus();}
 const dashFact=(label:string,value:string)=>'<div><dt>'+label+'</dt><dd>'+value+'</dd></div>';
+const dashFileSize=(bytes:number)=>bytes<1024*1024?Math.max(1,Math.round(bytes/1024))+' KB':(bytes/1024/1024).toFixed(1)+' MB';
+// Each file an organization attached to its application, opened in a new tab from the server (administrators only).
+const dashDocumentLinks=(documents:DashboardDocument[])=>documents.length?documents.map(d=>'<a class="profile-link" href="../api/documents/'+d.id+'" target="_blank" rel="noopener">'+de(d.type)+'</a><small class="fact-note">'+de(d.name)+' · '+dashFileSize(d.size)+'</small>').join(''):'None';
 
 /* ---------- Detail dialogs ---------- */
 function dashOrderDetails(id:string):void{
  const order=dashRoleOrders().find(o=>o.id===id);
  if(!order)return;
- const current=['Pending','Confirmed','Processing','Completed'].indexOf(order.status);
+ const current=dashOrderStep(order.status);
  const next=isOrgDashboard?dashNextStep[order.status]:undefined;
- let actions='<button class="control primary" data-close-dialog>Close</button>';
+ const receipt=dashHasReceipt(order)?'<button class="control" data-receipt="'+order.id+'">'+di('clipboard')+'Receipt</button>':'';
+ let actions=receipt+'<button class="control primary" data-close-dialog>Close</button>';
  let notes='';
- if(next)actions=(order.status==='Pending'?'<button class="control danger" data-decline="'+order.id+'">Decline order</button>':'')+'<button class="control primary" data-advance="'+order.id+'">'+next[1]+'</button>';
+ if(next)actions=receipt+(order.status==='Pending'?'<button class="control danger" data-decline="'+order.id+'">Decline order</button>':order.buyerSuspended&&['Confirmed','Processing'].includes(order.status)?'<button class="control danger" data-decline="'+order.id+'">Cancel order</button>':'')+'<button class="control primary" data-advance="'+order.id+'">'+next[1]+'</button>';
+ if(isOrgDashboard&&dashRefundOpen(order))actions=receipt+'<button class="control danger" data-dispute-refund="'+order.id+'">Dispute</button><button class="control primary" data-accept-refund-ask="'+order.id+'">Accept refund</button>';
  if(isConsumerDashboard){
   const feedback=dashboardFeedback.find(f=>f.order===order.id);
   const report=dashMyReport(order.id);
@@ -1108,12 +1152,18 @@ function dashOrderDetails(id:string):void{
   const canPay=order.payment==='Unpaid'&&dashOnline(order)&&order.status!=='Cancelled';
   if(feedback)notes+='<p class="detail-note">You rated this order '+dashStars(feedback.rating)+(feedback.comment?' · “'+de(feedback.comment)+'”':'')+'</p>';
   if(report)notes+='<p class="detail-note">Your report '+report.id+' ('+de(report.reason.toLowerCase())+') is '+(report.status==='Open'?'under review':report.status.toLowerCase())+'.</p>';
-  actions=(order.status==='Pending'?'<button class="control danger" data-cancel-order="'+order.id+'">Cancel order</button>':'')+(report?'':'<button class="control" data-report-order="'+order.id+'">'+di('flag')+'Report a problem</button>')+(canPay?'<button class="control primary" data-pay-order="'+order.id+'">Pay '+dp(order.total)+'</button>':canRate?'<button class="control primary" data-rate="'+order.id+'">'+di('star')+'Rate this order</button>':actions);
+  const main=canPay?'<button class="control primary" data-pay-order="'+order.id+'">Pay '+dp(order.total)+'</button>':order.status==='Delivered'?'<button class="control primary" data-order-received="'+order.id+'">'+di('check')+'Order received</button>':canRate?'<button class="control primary" data-rate="'+order.id+'">'+di('star')+'Rate this order</button>':'<button class="control primary" data-close-dialog>Close</button>';
+  actions=(order.status==='Pending'?'<button class="control danger" data-cancel-order="'+order.id+'">Cancel order</button>':'')+(report?'':'<button class="control" data-report-order="'+order.id+'">'+di('flag')+'Report a problem</button>')+receipt+(dashCanRefund(order)?'<button class="control" data-request-refund="'+order.id+'">Request refund</button>':'')+main;
  }
  const items=order.items?'<h3 class="detail-section">Items</h3><dl class="summary-lines">'+order.items.map(i=>'<div><dt>'+de(i.name)+' · '+i.quantity+' '+de(i.unit)+'</dt><dd>'+dp(i.quantity*i.price)+'</dd></div>').join('')+'<div class="summary-total"><dt>Total</dt><dd>'+dp(order.total)+'</dd></div></dl>':'';
- const delivery=order.address?dashFact('Deliver to',de(order.address))+dashFact('Contact number',de(order.phone||''))+dashFact('Payment method',de(order.method||''))+(order.note?dashFact('Note',de(order.note)):''):'';
- const timeline=order.status==='Cancelled'?'<p class="detail-note">This order was cancelled and will not be fulfilled.</p>':'<ol class="timeline">'+['Order placed','Confirmed by grower','Harvest being prepared','Order completed'].map((s,i)=>'<li class="'+(i>current?'future':'')+'"><strong>'+s+'</strong><p>'+(i>current?'Not reached yet':i===current?'Current status':'Completed step')+'</p></li>').join('')+'</ol>';
- dashOpen('<p class="detail-kicker">'+(isOrgDashboard?'Incoming order':'Your order')+'</p><h2 id="detail-title">'+order.id+'</h2><p class="detail-subtitle">'+dashOrgLink(order.organization)+'</p><div class="detail-hero"><img src="'+dashImg(order.image)+'" alt="'+de(order.crop)+'"><div><h3>'+de(order.crop)+'</h3><p>'+de(order.quantity)+' · '+dp(order.total)+'</p></div></div><dl class="detail-facts">'+dashFact('Order status',ds(order.status))+dashFact('Payment',ds(order.payment))+dashFact('Placed on',dfull(order.date))+dashFact('Buyer',dashUserLink(order.customer))+delivery+'</dl>'+items+timeline+notes+'<div class="detail-actions">'+actions+'</div>');
+ const pin=order.lat!==undefined&&order.lng!==undefined?'<a class="profile-link fact-note" href="https://www.google.com/maps?q='+order.lat+','+order.lng+'" target="_blank" rel="noopener">'+di('pin')+'Open the pin in Google Maps</a>':'';
+ const delivery=order.address?dashFact('Deliver to',de(order.address)+pin)+dashFact('Contact number',de(order.phone||''))+dashFact('Payment method',de(order.method||''))+(order.note?dashFact('Note',de(order.note)):''):'';
+ const dates=(order.deliveredAt?dashFact('Delivered',dtime(order.deliveredAt)):'')+(order.receivedAt?dashFact('Received',dtime(order.receivedAt)):'');
+ const r=order.refund;
+ const refund=r?'<h3 class="detail-section">Refund request · '+r.id+'</h3><dl class="detail-facts">'+dashFact('Status',ds(dashRefundStage(r)))+dashFact('Reason',de(r.reason))+dashFact('Requested',dtime(r.requestedAt))+(r.status==='Requested'?dashFact(isOrgDashboard?'Answer by':'Answer due',ddate(r.respondBy)):r.status==='Disputed'&&r.disputedAt?dashFact('Disputed',ddate(r.disputedAt)):r.decidedAt?dashFact('Settled',ddate(r.decidedAt)+(r.decidedBy==='automatic'?'<small class="fact-note">No answer in time</small>':r.decidedBy==='admin'?'<small class="fact-note">By AniBayan</small>':'')):'')+'</dl><p class="detail-lead">'+de(r.details)+'</p>'+dashRefundMedia(r)+(r.disputeReason?'<p class="detail-note">'+de(order.organization)+': “'+de(r.disputeReason)+'”</p>':'')+(r.adminNote?'<p class="detail-note">AniBayan: “'+de(r.adminNote)+'”</p>':''):'';
+ const steps=['Order placed','Confirmed by grower','Harvest being prepared','Delivered','Order received'];
+ const timeline=order.status==='Cancelled'?'<p class="detail-note">'+(order.cancelReason?de(order.cancelReason)+' ':'')+'This order was cancelled and will not be fulfilled.</p>':'<ol class="timeline">'+steps.map((s,i)=>'<li class="'+(i>current?'future':'')+'"><strong>'+s+'</strong><p>'+(i>current?'Not reached yet':i===current?'Current status':'Completed step')+'</p></li>').join('')+'</ol>';
+ dashOpen('<p class="detail-kicker">'+(isOrgDashboard?'Incoming order':'Your order')+'</p><h2 id="detail-title">'+order.id+'</h2><p class="detail-subtitle">'+dashOrgLink(order.organization)+'</p><div class="detail-hero"><img src="'+dashImg(order.image)+'" alt="'+de(order.crop)+'"><div><h3>'+de(order.crop)+'</h3><p>'+de(order.quantity)+' · '+dp(order.total)+'</p></div></div><dl class="detail-facts">'+dashFact('Order status',ds(order.status))+dashFact('Payment',ds(order.payment))+(order.funds?dashFact('Funds',dashFundsText(order)):'')+dashFact('Placed on',dfull(order.date))+dashFact('Buyer',dashUserLink(order.customer)+(order.buyerSuspended?' '+ds('Suspended'):''))+dates+delivery+'</dl>'+items+refund+timeline+notes+'<div class="detail-actions">'+actions+'</div>');
 }
 function dashProductDetails(id:string):void{
  const crop=dashboardCrops.find(c=>c.id===id);
@@ -1122,19 +1172,28 @@ function dashProductDetails(id:string):void{
  const harvest=dashFact('Harvested',dfull(crop.harvested)+' · '+dashAgeText(f.age))+dashFact('Shelf life',dashPlural(crop.shelfLife,'day')+' after harvest')+dashFact('Best before',dfull(dashAddDays(crop.harvested,crop.shelfLife)))+dashFact('Freshness',dashFreshBadge(crop));
  const hero=(note:string)=>'<div class="detail-hero"><img src="'+dashImg(crop.image)+'" alt="'+de(crop.name)+'"><div><h3>'+dp(crop.price)+' / '+de(crop.unit)+'</h3><p>'+note+'</p></div></div>';
  if(isOrgDashboard){
-  dashOpen('<p class="detail-kicker">Product listing · '+crop.id+'</p><h2 id="detail-title">'+de(crop.name)+'</h2><p class="detail-subtitle">'+dashOrgLink(crop.organization)+'</p>'+hero(de(crop.category))+'<dl class="detail-facts">'+dashFact('Available quantity',crop.stock+' '+de(crop.unit))+dashFact('Listing status',ds(dashCropStatus(crop)))+harvest+'</dl><p class="detail-note">Buyers see the harvest date, shelf life and best-before date on this listing.</p><div class="detail-actions"><button class="control" data-toggle-listing="'+crop.id+'"'+(crop.stock===0?' disabled':'')+'>'+(crop.status==='Active'?'Pause listing':'Resume listing')+'</button><button class="control primary" data-edit-listing="'+crop.id+'">'+di('edit')+'Edit listing</button></div>');
+  dashOpen('<p class="detail-kicker">Product listing · '+crop.id+'</p><h2 id="detail-title">'+de(crop.name)+'</h2><p class="detail-subtitle">'+dashOrgLink(crop.organization)+'</p>'+hero(de(crop.category))+'<dl class="detail-facts">'+dashFact('Available quantity',crop.stock+' '+de(crop.unit))+dashFact('Listing status',ds(dashCropStatus(crop)))+harvest+'</dl><p class="detail-note">Buyers see the harvest date, shelf life and best-before date on this listing.</p><div class="detail-actions"><button class="control" data-toggle-listing="'+crop.id+'"'+(crop.stock===0?' disabled':'')+'>'+(crop.status==='Active'?'Unpublish listing':'Publish listing')+'</button><button class="control primary" data-edit-listing="'+crop.id+'">'+di('edit')+'Edit listing</button></div>');
   return;
  }
  const saved=dashIsSaved(crop.id);
  const buyable=dashIsBuyable(crop);
  const inCart=dashCart().find(l=>l.crop===crop.id);
- const buy=!buyable?'':isGuest?'<div class="qty-add"><p>Sign in with a buyer account to order this harvest.</p><a class="control primary" href="login.html" data-sign-in-buyer>Sign in to order '+di('arrow')+'</a></div>':'<div class="qty-add"><label for="detail-qty">Quantity ('+de(crop.unit)+')</label><input type="number" id="detail-qty" min="1" max="'+crop.stock+'" step="1" value="1" inputmode="numeric"><button class="control primary" data-add-cart="'+crop.id+'" data-qty-from="detail-qty">'+di('cart')+'Add to cart</button></div>';
+ const left=crop.stock-(inCart?.quantity||0);
+ const buy=!buyable?'':!isGuest&&left<=0?'<div class="qty-add"><p>Your cart has all '+crop.stock+' '+de(crop.unit)+' available.</p></div>':isGuest?'<div class="qty-add"><p>Sign in with a buyer account to order this harvest.</p><a class="control primary" href="login.html" data-sign-in-buyer>Sign in to order '+di('arrow')+'</a></div>':'<div class="qty-add"><label for="detail-qty">Quantity ('+de(crop.unit)+')</label><input type="number" id="detail-qty" min="1" max="'+left+'" step="1" value="1" inputmode="numeric"><button class="control primary" data-add-cart="'+crop.id+'" data-qty-from="detail-qty">'+di('cart')+'Add to cart</button></div>';
  dashOpen('<p class="detail-kicker">Harvest listing</p><h2 id="detail-title">'+de(crop.name)+'</h2><p class="detail-subtitle">'+dashOrgLink(crop.organization)+' · '+de(dashRegion(crop.organization))+'</p>'+hero(de(crop.category)+' · '+(buyable?crop.stock+' '+de(crop.unit)+' available':'Not available right now'))+'<dl class="detail-facts">'+harvest+dashFact('Buyer rating',dashRatingText(crop.organization))+'</dl><p class="detail-note">The organization enters the harvest date when it lists a crop. Shelf life is its estimate for produce stored as recommended, so plan to use it before the best-before date.'+(inCart?' Your cart has '+inCart.quantity+' '+de(crop.unit)+'.':'')+'</p>'+buy+'<div class="detail-actions"><a class="control" href="#org='+dashSlug(crop.organization)+'" data-profile-link>About the grower</a>'+(isGuest?'':'<button class="control" data-save="'+crop.id+'" aria-pressed="'+saved+'">'+di('heart')+(saved?'Saved':'Save harvest')+'</button>')+(inCart?'<button class="control" data-go="cart">View cart '+di('arrow')+'</button>':'')+'</div>');
 }
 // Opens an organization's profile page, closing any open pop-up first.
 function dashOpenOrgProfile(name:string):void{
  if(dashDialog.open)dashDialog.close();
  location.hash='org='+dashSlug(name);
+}
+// Orders still open for an account (as buyer, or its organization's), shown before an administrator suspends it.
+function dashOpenOrdersFact(a:DashboardAccount):string{
+ const open=dashboardOrders.filter(o=>!['Completed','Cancelled','Refunded'].includes(o.status)&&(a.role==='Consumer'?o.customer===a.name:a.role==='Representative'&&o.organization===a.organization));
+ if(!open.length||a.status!=='Active')return '';
+ const count=(statuses:string[])=>open.filter(o=>statuses.includes(o.status)).length;
+ const cancel=a.role==='Consumer'?count(['Pending']):count(['Pending','Confirmed','Processing']);
+ return dashFact('Open orders',String(open.length)+(cancel?'<small class="fact-note">'+cancel+' would be cancelled'+(open.some(o=>['Pending','Confirmed','Processing'].includes(o.status)&&o.funds==='Held')?' and refunded':'')+'</small>':''));
 }
 function dashAccountDetails(email:string):void{
  const a=dashAccountByEmail(email);
@@ -1143,7 +1202,7 @@ function dashAccountDetails(email:string):void{
  const org=a.organization?dashboardOrganizations.find(o=>o.name===a.organization):undefined;
  const toggle=!self&&a.role!=='Administrator'&&(a.status==='Active'||a.status==='Suspended')?(a.status==='Suspended'?'<button class="control primary" data-suspend="'+de(email)+'">'+di('check')+'Reactivate account</button>':'<button class="control danger" data-suspend="'+de(email)+'">'+di('lock')+'Suspend account</button>'):'';
  const review=a.status==='Pending'&&org?'<button class="control primary" data-organization="'+de(org.name)+'">Review application</button>':'';
- dashOpen('<p class="detail-kicker">'+(a.role==='Consumer'?'Buyer':a.role)+' account</p><h2 id="detail-title">'+de(a.name)+'</h2><p class="detail-subtitle">'+de(email)+'</p><dl class="detail-facts">'+dashFact('Role',a.role==='Consumer'?'Buyer':a.role)+dashFact('Status',ds(a.status))+(a.joined?dashFact('Joined',dfull(a.joined)):'')+(a.lastActive?dashFact('Last active',dfull(a.lastActive)):'')+(a.organization?dashFact('Organization',de(a.organization)):'')+(a.phone?dashFact('Mobile number',de(a.phone)):'')+(a.note?dashFact('Note',de(a.note)):'')+'</dl>'+dashAccountActivity(email)+'<div class="detail-actions">'+(a.role==='Administrator'?'':'<a class="control" href="#user='+dashSlug(a.name)+'" data-profile-link>'+di('user')+'View profile</a>')+(self?'':'<button class="control" data-reset-password="'+de(email)+'">'+di('key')+'Reset password</button>')+toggle+review+'</div>');
+ dashOpen('<p class="detail-kicker">'+(a.role==='Consumer'?'Buyer':a.role)+' account</p><h2 id="detail-title">'+de(a.name)+'</h2><p class="detail-subtitle">'+de(email)+'</p><dl class="detail-facts">'+dashFact('Role',a.role==='Consumer'?'Buyer':a.role)+dashFact('Status',ds(a.status))+(a.joined?dashFact('Joined',dfull(a.joined)):'')+(a.lastActive?dashFact('Last active',dfull(a.lastActive)):'')+(a.organization?dashFact('Organization',de(a.organization)):'')+(a.phone?dashFact('Mobile number',de(a.phone)):'')+(a.note?dashFact('Note',de(a.note)):'')+dashOpenOrdersFact(a)+'</dl>'+dashAccountActivity(email)+'<div class="detail-actions">'+(a.role==='Administrator'?'':'<a class="control" href="#user='+dashSlug(a.name)+'" data-profile-link>'+di('user')+'View profile</a>')+(self?'':'<button class="control" data-reset-password="'+de(email)+'">'+di('key')+'Reset password</button>')+toggle+review+'</div>');
 }
 // The server sets a new temporary password; it's shown once so the administrator can pass it on.
 async function dashResetPassword(email:string):Promise<void>{
@@ -1174,7 +1233,7 @@ function dashApplicationDetails(name:string):void{
  const warnings=selling?'<h3 class="detail-section">Warnings</h3><div class="warning-summary">'+dashStandingBadge(o.name)+dashWarningMeter(o.name)+'</div>'+(s.count?dashWarningRows(o.name,'feedback-list compact',!s.terminated):''):'';
  const actions=pending?'<button class="control danger" data-review="Declined" data-review-name="'+de(o.name)+'">Decline</button><button class="control primary" data-review="Active" data-review-name="'+de(o.name)+'">'+di('check')+'Approve organization</button>'
   :(o.status==='Active'?(s.final?'<button class="control danger" data-terminate="'+de(o.name)+'">'+di('lock')+'Terminate organization</button>':'<button class="control danger" data-warn="'+de(o.name)+'">'+di('flag')+'Give a warning</button>'):'')+'<button class="control primary" data-close-dialog>Close</button>';
- dashOpen('<p class="detail-kicker">'+(selling?'Organization':'Organization application')+'</p><h2 id="detail-title">'+de(o.name)+'</h2><p class="detail-subtitle">'+de(o.region)+' · submitted '+dfull(o.applied)+'</p><div class="detail-hero"><img src="'+dashImg(o.image)+'" alt="'+de(o.name)+'"><div><h3>'+de(o.crop)+'</h3><p>'+dashPlural(o.members,'member farmer')+' · '+ds(dashAppStatus(o))+'</p></div></div><dl class="detail-facts">'+dashFact('Representative',de(o.representative)+(rep?'<small class="fact-note">'+de(rep.email)+'</small>':''))+dashFact('Submitted documents',o.documents.map(de).join(', '))+(o.phone?dashFact('Contact number',de(o.phone)):'')+(o.approved?dashFact('Approved on',dfull(o.approved)):'')+(o.terminated?dashFact('Terminated on',dfull(o.terminated)):'')+(o.terminatedFor?dashFact('Final offence',de(o.terminatedFor)):'')+'</dl>'+warnings+'<div class="detail-actions">'+actions+'</div>');
+ dashOpen('<p class="detail-kicker">'+(selling?'Organization':'Organization application')+'</p><h2 id="detail-title">'+de(o.name)+'</h2><p class="detail-subtitle">'+de(o.region)+' · submitted '+dfull(o.applied)+'</p><div class="detail-hero"><img src="'+dashImg(o.image)+'" alt="'+de(o.name)+'"><div><h3>'+de(o.crop)+'</h3><p>'+dashPlural(o.members,'member farmer')+' · '+ds(dashAppStatus(o))+'</p></div></div><dl class="detail-facts">'+dashFact('Representative',de(o.representative)+(rep?'<small class="fact-note">'+de(rep.email)+'</small>':''))+dashFact('Documents',dashDocumentLinks(o.documents))+(o.phone?dashFact('Contact number',de(o.phone)):'')+(o.approved?dashFact('Approved on',dfull(o.approved)):'')+(o.terminated?dashFact('Terminated on',dfull(o.terminated)):'')+(o.terminatedFor?dashFact('Final offence',de(o.terminatedFor)):'')+'</dl>'+warnings+'<div class="detail-actions">'+actions+'</div>');
 }
 function dashConfirmReset():void{
  dashOpen('<p class="detail-kicker">Data</p><h2 id="detail-title">Reset all AniBayan data?</h2><p class="detail-subtitle">Every account, listing, order, rating, report and uploaded photo in the database goes back to the starting data, for everyone. Everyone is signed out. This can’t be undone.</p><div class="detail-actions"><button class="control" data-close-dialog>Cancel</button><button class="control danger" data-confirm-reset>Reset data</button></div>');
@@ -1194,7 +1253,7 @@ async function dashStartPayment(ids:string[],button:HTMLButtonElement):Promise<v
  const r=await dashApi('payments',{orders:ids});
  if(r.ok&&r.data.checkoutUrl){location.href=String(r.data.checkoutUrl);return;}
  button.disabled=false;button.innerHTML=label;
- dashToast(String(r.data.message||'PayMongo didn’t answer ('+r.status+').'));
+ dashToast(dashMessage(r,'Online payment isn’t available right now. Try again in a moment.'));
 }
 // When PayMongo sends the buyer back, and on every later visit, the server asks PayMongo whether each open
 // checkout was paid and marks those orders paid.
@@ -1205,7 +1264,7 @@ async function dashCheckPayments():Promise<void>{
  const r=await dashApi('payments/check',{cancelled:outcome==='cancelled'});
  if(r.data.state){dashApplyState(r.data.state as DashServerState);dashRender();}
  const paid=(r.data.result?.paid||[]) as string[];
- if(paid.length)dashToast('Payment received for '+paid.join(', ')+'.');
+ if(paid.length){dashReceiptDialog(paid.map(n=>'AB-2026-'+n.replace('#','')),'Payment received');dashToast('Payment received for '+paid.join(', ')+'.');}
  else if(outcome==='cancelled')dashToast('Payment cancelled.');
 }
 
@@ -1289,7 +1348,7 @@ function dashConfirmRemoveListing(id:string):void{
 function dashMemberForm():void{
  dashOpen('<p class="detail-kicker">Member farmers · '+de(dashOrgName)+'</p><h2 id="detail-title">Add a member farmer</h2><p class="detail-subtitle">Members are the growers who supply your organization’s listings.</p><form class="dash-form" id="member-form" novalidate><div class="form-grid">'
   +dashField('name','Full name'+dashRequired,'<input required maxlength="80" autocomplete="off">','',true)
-  +dashField('place','Barangay'+dashRequired,'<input required maxlength="60" placeholder="e.g. Canubing I">')
+  +dashField('place','Barangay','<input readonly value="'+de(dashMyOrg()?.region||'')+'">')
   +dashField('area','Farm area (hectares)'+dashRequired,'<input type="number" required min="0.1" max="500" step="0.1" inputmode="decimal">')
   +dashField('crops','Crops grown'+dashRequired,'<input required maxlength="80" placeholder="e.g. Rice, calamansi">','',true)
   +'</div><div class="detail-actions"><button type="button" class="control" data-close-dialog>Cancel</button><button type="submit" class="control primary">'+di('plus')+'Add member</button></div></form>');
@@ -1301,11 +1360,10 @@ function dashSubmitMember(form:HTMLFormElement):void{
  const area=Number(value('area'));
  const errors:Record<string,string>={};
  if(value('name').length<3)errors.name='Enter the farmer’s full name.';
- if(value('place').length<3)errors.place='Enter the barangay.';
  if(!value('area')||!(area>=0.1&&area<=500))errors.area='Enter the farm area in hectares, from 0.1 to 500.';
  if(value('crops').length<3)errors.crops='Enter the crops they grow.';
  if(!dashShowErrors(form,errors))return;
- void dashDo('member.add',{name:value('name'),place:value('place'),crops:value('crops'),area},form).then(r=>{
+ void dashDo('member.add',{name:value('name'),crops:value('crops'),area},form).then(r=>{
   if(!r)return;
   dashDialog.close();dashToast(value('name')+' was added as a member farmer.');
  });
@@ -1317,7 +1375,7 @@ function dashOrgProfileForm():void{
  dashOpen('<p class="detail-kicker">Organization profile</p><h2 id="detail-title">'+de(org.name)+'</h2><p class="detail-subtitle">Buyers see this on your storefront and listings.</p><form class="dash-form" id="org-profile-form" novalidate><div class="form-grid">'
   +dashField('crop','Main crops'+dashRequired,'<input required maxlength="80" value="'+de(org.crop)+'">','',true)
   +dashField('barangay','Barangay, '+dashCityName+dashRequired,'<select required>'+dashBarangayOptions(dashBarangays.includes(barangay)?barangay:'')+'</select>')
-  +dashField('phone','Contact number'+dashRequired,'<input type="tel" required maxlength="20" autocomplete="tel" value="'+de(org.phone||'')+'">')
+  +dashField('phone','Contact number'+dashRequired,'<input '+dashPhoneInput+' value="'+de(org.phone||'')+'">')
   +dashField('description','About your organization','<textarea rows="3" maxlength="240">'+de(org.description||'')+'</textarea>','',true)
   +'</div><div class="detail-actions"><button type="button" class="control" data-close-dialog>Cancel</button><button type="submit" class="control primary">'+di('check')+'Save profile</button></div></form>');
  dashFocusField('#field-crop');
@@ -1334,36 +1392,18 @@ function dashSubmitOrgProfile(form:HTMLFormElement):void{
   if(r){dashDialog.close();dashToast('Organization profile saved.');}
  });
 }
-// Delivery address fields: house and street, plus a barangay of Calapan City (AniBayan delivers only there).
-function dashAddressFields(address?:string):string{
- const a=dashSplitAddress(address);
- return dashField('street','House number and street'+dashRequired,'<input required maxlength="120" autocomplete="address-line1" placeholder="e.g. 12 J.P. Rizal Street" value="'+de(a.street)+'">')
-  +dashField('barangay','Barangay, '+dashCityName+dashRequired,'<select required>'+dashBarangayOptions(a.barangay)+'</select>');
-}
-// Reads those fields back as one address, adding any problems to errors.
-function dashReadAddress(data:FormData,errors:Record<string,string>):string{
- const street=String(data.get('street')??'').trim(),barangay=String(data.get('barangay')??'').trim();
- if(street.length<4)errors.street='Enter the house number and street.';
- if(!dashBarangays.includes(barangay))errors.barangay='Choose a barangay in Calapan City.';
- return dashJoinAddress(street,barangay);
-}
 function dashProfileForm():void{
  const me=dashAccount();
- dashOpen('<p class="detail-kicker">Your profile</p><h2 id="detail-title">Delivery details</h2><p class="detail-subtitle">Used to fill in checkout. Your name and email can’t be changed here.</p><form class="dash-form" id="profile-form" novalidate><div class="form-grid single">'
-  +dashField('phone','Mobile number'+dashRequired,'<input type="tel" required maxlength="20" autocomplete="tel" value="'+de(me.phone||'')+'">')
-  +dashAddressFields(me.address)
-  +'</div><div class="detail-actions"><button type="button" class="control" data-close-dialog>Cancel</button><button type="submit" class="control primary">'+di('check')+'Save details</button></div></form>');
+ dashOpen('<p class="detail-kicker">Your account</p><h2 id="detail-title">Mobile number</h2><form class="dash-form" id="profile-form" novalidate><div class="form-grid single">'
+  +dashField('phone','Mobile number'+dashRequired,'<input '+dashPhoneInput+' value="'+de(me.phone||'')+'">')
+  +'</div><div class="detail-actions"><button type="button" class="control" data-close-dialog>Cancel</button><button type="submit" class="control primary">'+di('check')+'Save</button></div></form>');
  dashFocusField('#field-phone');
 }
 function dashSubmitProfile(form:HTMLFormElement):void{
- const data=new FormData(form);
- const phone=String(data.get('phone')??'').trim();
- const errors:Record<string,string>={};
- if(!dashPhonePattern.test(phone))errors.phone='Enter a mobile number like 0917 555 0148.';
- dashReadAddress(data,errors);
- if(!dashShowErrors(form,errors))return;
- void dashDo('profile.delivery',{phone,street:String(data.get('street')??'').trim(),barangay:String(data.get('barangay')??'')},form).then(r=>{
-  if(r){dashDialog.close();dashToast('Delivery details saved.');}
+ const phone=String(new FormData(form).get('phone')??'').trim();
+ if(!dashShowErrors(form,dashPhonePattern.test(phone)?{}:{phone:'Enter a mobile number like 0917 555 0148.'}))return;
+ void dashDo('profile.contact',{phone},form).then(r=>{
+  if(r){dashDialog.close();dashToast('Mobile number saved.');}
  });
 }
 function dashPasswordForm():void{
@@ -1393,44 +1433,312 @@ function dashCheckoutForm():void{
  const entries=dashCartEntries();
  if(!entries.length||entries.some(e=>dashCartProblem(e)))return;
  const me=dashAccount();
+ const saved=me.addresses||[];
  const total=entries.reduce((sum,e)=>sum+e.line.quantity*e.crop.price,0);
  const orgs=[...new Set(entries.map(e=>e.crop.organization))];
+ const choices=saved.length?'<div class="form-field"><span class="form-label" id="address-label">Deliver to'+dashRequired+'</span><div class="choice-list" role="radiogroup" aria-labelledby="address-label">'+saved.map((a,i)=>'<label class="choice"><input type="radio" name="address" value="'+a.id+'"'+(i===0?' checked':'')+'><span><strong>'+de(a.label)+(a.lat!==undefined?' '+ds('Pinned'):'')+'</strong><small>'+de(a.text)+'</small></span></label>').join('')+'<label class="choice"><input type="radio" name="address" value="new"><span><strong>New address</strong></span></label></div></div>':'';
+ const fresh='<div class="new-address form-grid single"'+(saved.length?' hidden':'')+'>'+(saved.length?'':'<span class="form-label">Deliver to'+dashRequired+'</span>')+dashAddressBlock()+dashField('label','Label','<input maxlength="40" placeholder="Home, Work…">')+'<label class="check-row"><input type="checkbox" name="save" checked> Save to my addresses</label></div>';
  dashOpen('<p class="detail-kicker">Checkout</p><h2 id="detail-title">Place your order'+(orgs.length>1?'s':'')+'</h2><p class="detail-subtitle">'+dashPlural(entries.length,'harvest')+' · '+dp(total)+(orgs.length>1?' · '+orgs.length+' orders, one per organization':'')+'</p><form class="dash-form" id="checkout-form" novalidate><div class="form-grid single">'
-  +dashAddressFields(me.address)
-  +dashField('phone','Mobile number'+dashRequired,'<input type="tel" required maxlength="20" autocomplete="tel" value="'+de(me.phone||'')+'">','The organization calls this number to arrange delivery.')
+  +choices+fresh
+  +dashField('phone','Mobile number'+dashRequired,'<input '+dashPhoneInput+' value="'+de(me.phone||'')+'">','The organization calls this number to arrange delivery.')
   +'<div class="form-field"><span class="form-label" id="method-label">Payment method'+dashRequired+'</span><div class="choice-list" role="radiogroup" aria-labelledby="method-label">'+dashPaymentMethods.map((m,i)=>'<label class="choice"><input type="radio" name="method" value="'+m[0]+'"'+(i===0?' checked':'')+'><span><strong>'+m[0]+'</strong><small>'+m[1]+'</small></span></label>').join('')+'</div></div>'
   +dashField('note','Note for the organization','<textarea rows="2" maxlength="200" placeholder="Gate code, preferred delivery time…"></textarea>')
-  +'<label class="check-row"><input type="checkbox" name="remember" checked> Save this address and number to my profile</label>'
   +'</div><p class="form-error" id="checkout-error" role="alert" hidden></p><div class="detail-actions"><button type="button" class="control" data-close-dialog>Back to cart</button><button type="submit" class="control primary">Place order'+(orgs.length>1?'s':'')+' · '+dp(total)+'</button></div></form>');
- dashFocusField(dashSplitAddress(me.address).barangay?'[type=submit]':'#field-street');
+ if(!saved.length)void dashMountMap();
+ dashFocusField(saved.length?'[type=submit]':'#field-barangay');
 }
 function dashSubmitCheckout(form:HTMLFormElement):void{
  const data=new FormData(form);
  const phone=String(data.get('phone')??'').trim(),note=String(data.get('note')??'').trim();
  const method=String(data.get('method')||'Cash on delivery');
+ const choice=String(data.get('address')||'new');
  const errors:Record<string,string>={};
- dashReadAddress(data,errors);
+ const place:Record<string,unknown>=choice!=='new'?{address:Number(choice)}:{...dashReadAddressBlock(data,errors),label:String(data.get('label')??'').trim(),save:!!data.get('save')};
  if(!dashPhonePattern.test(phone))errors.phone='Enter a mobile number like 0917 555 0148.';
  if(!dashShowErrors(form,errors))return;
  const error=document.getElementById('checkout-error')!;
  // The server checks stock again, places one order per organization and empties the cart.
- void dashApi('actions/checkout',{street:String(data.get('street')??'').trim(),barangay:String(data.get('barangay')??''),phone,method,note,remember:!!data.get('remember')}).then(r=>{
+ void dashApi('actions/checkout',{...place,phone,method,note}).then(r=>{
   if(r.data.state)dashApplyState(r.data.state as DashServerState);
   dashRender();
   if(!r.ok){
    const fields=dashFieldErrors(r.data.errors);
-   if(Object.keys(fields).length)dashShowErrors(form,fields);
-   else{error.hidden=false;error.textContent=String(r.data.message||'Your order couldn’t be placed. Try again.');}
+   if(Object.keys(fields).length&&Object.keys(fields).some(key=>form.querySelector('[data-error-for="'+key+'"]')))dashShowErrors(form,fields);
+   else{error.hidden=false;error.textContent=dashMessage(r,'Your order couldn’t be placed. Try again.');}
    return;
   }
   const placed=(r.data.result.orders||[]) as {id:string;organization:string}[];
   const numbers=placed.map(o=>dashOrderNo(o.id)).join(', ');
   if(method!=='Cash on delivery'){dashPaymentDialog(placed.map(o=>o.id));dashToast('Order'+(placed.length>1?'s ':' ')+numbers+' placed. Complete the payment to finish.');return;}
-  dashDialog.close();
   dashNavigate('orders');
+  dashReceiptDialog(placed.map(o=>o.id),'Order placed');
   dashToast(placed.length===1?'Order '+numbers+' placed with '+placed[0].organization+'.':placed.length+' orders placed: '+numbers+'.');
  });
 }
+
+/* ---------- Electronic receipts ---------- */
+// The receipt page is made by the server (ReceiptController) and shown here in a frame; it has its own print button.
+function dashReceiptDialog(ids:string[],kicker='Electronic receipt'):void{
+ const url='../receipt?orders='+ids.map(encodeURIComponent).join(',');
+ dashOpen('<p class="detail-kicker">'+de(kicker)+'</p><h2 id="detail-title">Receipt '+ids.map(dashOrderNo).join(', ')+'</h2><iframe class="receipt-frame" src="'+url+'" title="Receipt for order '+ids.map(dashOrderNo).join(', ')+'"></iframe><div class="detail-actions"><a class="control" href="'+url+'" target="_blank" rel="noopener">'+di('up')+'Open in a new tab</a><button class="control primary" data-close-dialog>Done</button></div>');
+ const frame=document.querySelector<HTMLIFrameElement>('#detail-content .receipt-frame');
+ frame?.addEventListener('load',()=>{const height=frame.contentDocument?.documentElement.scrollHeight;if(height)frame.style.height=height+'px';});
+}
+
+/* ---------- Order received, refunds and disputes ---------- */
+function dashConfirmReceived(id:string):void{
+ const o=dashRoleOrders().find(x=>x.id===id);
+ if(!o||o.status!=='Delivered')return;
+ dashOpen('<p class="detail-kicker">Order '+dashOrderNo(o.id)+'</p><h2 id="detail-title">Did your order arrive?</h2><p class="detail-subtitle">'+de(o.crop)+' · '+de(o.quantity)+' from '+de(o.organization)+(o.funds==='Held'?'<br>'+dp(o.total)+' goes to '+de(o.organization)+' now.':'')+'</p><div class="detail-actions"><button class="control" data-order="'+o.id+'">Not yet</button><button class="control primary" data-confirm-received="'+o.id+'">'+di('check')+'Order received</button></div>');
+}
+const dashRefundReasons=['Damaged items','Spoiled or poor quality','Wrong items','Missing items','Not delivered','Other'];
+const dashRefundTypes=['image/jpeg','image/png','image/webp','video/mp4','video/webm','video/quicktime'];
+const dashRefundMaxFiles=5,dashRefundMaxBytes=50*1024*1024;
+let dashRefundFiles:File[]=[];
+let dashRefundPreviews:string[]=[];
+function dashRefundForm(id:string):void{
+ const o=dashRoleOrders().find(x=>x.id===id);
+ if(!o||!dashCanRefund(o))return;
+ dashRefundFiles=[];
+ dashOpen('<p class="detail-kicker">Request a refund · '+dashOrderNo(o.id)+'</p><h2 id="detail-title">What went wrong?</h2><p class="detail-subtitle">'+de(o.crop)+' · '+dp(o.total)+' · '+de(o.organization)+'</p><form class="dash-form" id="refund-form" data-order="'+o.id+'" novalidate><div class="form-grid single">'
+  +dashField('reason','Reason'+dashRequired,'<select required><option value="">Choose a reason…</option>'+dashRefundReasons.map(r=>'<option>'+r+'</option>').join('')+'</select>')
+  +dashField('details','Nature of the complaint'+dashRequired,'<textarea rows="4" required minlength="20" maxlength="1000" placeholder="What was wrong with the order when it arrived?"></textarea>')
+  +'<div class="form-field"><span class="form-label" id="media-label">Photo or video proof'+dashRequired+'</span><div class="refund-media" id="media-preview"></div><label class="control small file-button">'+di('camera')+'Add photos or videos<input type="file" name="media" id="field-media" multiple accept="'+dashRefundTypes.join(',')+'" aria-labelledby="media-label" aria-describedby="error-media"></label><small class="field-error" id="error-media" data-error-for="media"></small></div>'
+  +'</div><div class="detail-actions"><button type="button" class="control" data-order="'+o.id+'">Back</button><button type="submit" class="control primary">Request refund</button></div></form>');
+ dashFocusField('#field-reason');
+}
+function dashRenderRefundFiles():void{
+ dashRefundPreviews.forEach(url=>URL.revokeObjectURL(url));
+ dashRefundPreviews=dashRefundFiles.map(f=>URL.createObjectURL(f));
+ const box=document.getElementById('media-preview');
+ if(box)box.innerHTML=dashRefundFiles.map((f,i)=>'<figure class="media-tile">'+(f.type.startsWith('video/')?'<video src="'+dashRefundPreviews[i]+'" muted preload="metadata"></video>':'<img src="'+dashRefundPreviews[i]+'" alt="">')+'<figcaption>'+de(f.name)+'</figcaption><button type="button" class="media-remove" data-media-remove="'+i+'" aria-label="Remove '+de(f.name)+'">'+di('close')+'</button></figure>').join('');
+}
+function dashAddRefundFiles(input:HTMLInputElement):void{
+ let problem='';
+ Array.from(input.files||[]).forEach(f=>{
+  if(!dashRefundTypes.includes(f.type)||!f.size||f.size>dashRefundMaxBytes)problem='Choose JPG, PNG or WebP photos, or MP4, WebM or MOV videos, up to 50 MB each.';
+  else if(dashRefundFiles.length>=dashRefundMaxFiles)problem='Attach up to '+dashRefundMaxFiles+' files.';
+  else dashRefundFiles.push(f);
+ });
+ input.value='';
+ dashRenderRefundFiles();
+ const slot=input.form?.querySelector('[data-error-for="media"]');
+ if(slot)slot.textContent=problem;
+}
+function dashSubmitRefund(form:HTMLFormElement):void{
+ const data=new FormData(form);
+ const reason=String(data.get('reason')??''),details=String(data.get('details')??'').trim();
+ const errors:Record<string,string>={};
+ if(!dashRefundReasons.includes(reason))errors.reason='Choose a reason.';
+ if(details.length<20)errors.details='Describe what went wrong in at least 20 characters.';
+ if(!dashRefundFiles.length)errors.media='Attach at least one photo or video.';
+ if(!dashShowErrors(form,errors))return;
+ const id=form.dataset.order!;
+ const body=new FormData();
+ body.append('order',id);body.append('reason',reason);body.append('details',details);
+ dashRefundFiles.forEach(f=>body.append('media[]',f));
+ void dashDo('refund.request',body as unknown as Record<string,unknown>,form).then(r=>{
+  if(!r)return;
+  dashRefundFiles=[];
+  dashOrderDetails(id);
+  const o=dashRoleOrders().find(x=>x.id===id);
+  dashToast('Refund requested.'+(o?.refund?' '+o.organization+' has until '+ddate(o.refund.respondBy)+' to answer.':''));
+ });
+}
+function dashRefundMedia(r:DashboardRefund):string{
+ return '<div class="refund-media">'+r.media.map(m=>'<figure class="media-tile">'+(m.mime.startsWith('video/')?'<video src="../api/refund-media/'+m.id+'" controls preload="metadata"></video>':'<a href="../api/refund-media/'+m.id+'" target="_blank" rel="noopener"><img src="../api/refund-media/'+m.id+'" alt="'+de(m.name)+'" loading="lazy"></a>')+'<figcaption>'+de(m.name)+'</figcaption></figure>').join('')+'</div>';
+}
+function dashDisputeForm(id:string):void{
+ const o=dashRoleOrders().find(x=>x.id===id);
+ if(!o?.refund||!dashRefundOpen(o))return;
+ dashOpen('<p class="detail-kicker">Dispute refund · '+o.refund.id+'</p><h2 id="detail-title">Keep the payment for '+dashOrderNo(o.id)+'?</h2><p class="detail-subtitle">'+de(o.customer)+' · '+dp(o.total)+' · '+de(o.refund.reason)+'</p><form class="dash-form" id="dispute-form" data-refund="'+o.refund.id+'" data-order="'+o.id+'" novalidate><div class="form-grid single">'
+  +dashField('reason','Why you’re disputing it'+dashRequired,'<textarea rows="3" required minlength="10" maxlength="300"></textarea>')
+  +'</div><div class="detail-actions"><button type="button" class="control" data-order="'+o.id+'">Back</button><button type="submit" class="control danger">Dispute refund</button></div></form>');
+ dashFocusField('#field-reason');
+}
+function dashSubmitDispute(form:HTMLFormElement):void{
+ const reason=String(new FormData(form).get('reason')??'').trim();
+ if(!dashShowErrors(form,reason.length>=10?{}:{reason:'Explain why in at least 10 characters.'}))return;
+ const id=form.dataset.order!;
+ void dashDo('refund.dispute',{id:form.dataset.refund,reason},form).then(r=>{
+  if(r){dashOrderDetails(id);dashToast('Refund disputed. An AniBayan administrator will decide; the payment stays held until then.');}
+ });
+}
+function dashConfirmAcceptRefund(id:string):void{
+ const o=dashRoleOrders().find(x=>x.id===id);
+ if(!o?.refund||!dashRefundOpen(o))return;
+ dashOpen('<p class="detail-kicker">Accept refund · '+o.refund.id+'</p><h2 id="detail-title">Refund '+dp(o.total)+' to '+de(o.customer)+'?</h2><p class="detail-subtitle">'+dashOrderNo(o.id)+' · '+de(o.crop)+' · '+de(o.method||'')+'</p><div class="detail-actions"><button class="control" data-order="'+o.id+'">Back</button><button class="control primary" data-accept-refund="'+o.refund.id+'" data-for-order="'+o.id+'">'+di('check')+'Refund '+dp(o.total)+'</button></div>');
+}
+
+/* ---------- Admin: refunds ---------- */
+// Where a refund request stands, in words: the organization has to answer, an administrator has to decide, or it's settled.
+function dashRefundStage(r:DashboardRefund):string{
+ return ({Requested:'Waiting for organization',Disputed:'Disputed',Refunding:'Refunding',Refunded:'Refunded',Denied:'Released to organization'} as Record<string,string>)[r.status]||r.status;
+}
+function dashRefundList():{o:DashboardOrder;r:DashboardRefund}[]{
+ return dashboardOrders.filter(o=>o.refund).map(o=>({o,r:o.refund!}))
+  .filter(({o,r})=>dashMatching([r.id,o.id,o.customer,o.organization,r.reason,dashRefundStage(r)].join(' '))&&(dashState.filter==='All'||dashRefundStage(r)===dashState.filter))
+  .sort((a,b)=>Number(b.r.status==='Disputed')-Number(a.r.status==='Disputed')||b.r.requestedAt.localeCompare(a.r.requestedAt));
+}
+function dashRefundsView():string{
+ const all=dashboardOrders.filter(o=>o.refund);
+ const of=(status:string[])=>all.filter(o=>status.includes(o.refund!.status));
+ const sum=(list:DashboardOrder[])=>list.reduce((t,o)=>t+o.total,0);
+ const list=dashRefundList();
+ const metrics='<div class="metric-grid">'+dashMetric('Disputed',String(of(['Disputed']).length),'flag',dp(sum(of(['Disputed'])))+' held')+dashMetric('Waiting for organization',String(of(['Requested']).length),'clock',dp(sum(of(['Requested'])))+' held')+dashMetric('Refunded',dp(sum(of(['Refunded','Refunding']))),'check',dashPlural(of(['Refunded','Refunding']).length,'request'))+dashMetric('Released to organization',dp(sum(of(['Denied']))),'wallet',dashPlural(of(['Denied']).length,'request'))+'</div>';
+ const table=list.length?'<table><thead><tr><th scope="col">Refund</th><th scope="col">Order</th><th scope="col">Buyer</th><th scope="col">Organization</th><th scope="col">Amount</th><th scope="col">Reason</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>'+list.map(({o,r})=>'<tr><td><strong>'+r.id+'</strong><small class="cell-note">'+dd(r.requestedAt.slice(0,10))+'</small></td><td>'+dashOrderNo(o.id)+'</td><td>'+de(o.customer)+'</td><td>'+de(o.organization)+'</td><td><strong>'+dp(o.total)+'</strong></td><td>'+de(r.reason)+'</td><td>'+ds(dashRefundStage(r))+'</td><td><div class="row-actions"><button class="control small'+(r.status==='Disputed'?' primary':'')+'" data-refund-review="'+o.id+'">'+(r.status==='Disputed'?'Decide':'View')+'</button></div></td></tr>').join('')+'</tbody></table>':dashEmpty(all.length?'No matching refund requests':'No refund requests yet','');
+ return metrics+'<section class="panel">'+dashPanelHead('Refund requests','Disputes first')+dashFilters(['All','Disputed','Waiting for organization','Refunded','Released to organization'],dashPlural(list.length,'request'),'Search refunds')+'<div class="table-wrap">'+table+'</div></section>';
+}
+function dashRefundReview(orderId:string):void{
+ const o=dashboardOrders.find(x=>x.id===orderId);
+ const r=o?.refund;
+ if(!o||!r)return;
+ const open=r.status==='Requested'||r.status==='Disputed';
+ const decide=open?'<form class="dash-form" id="refund-decide-form" data-refund="'+r.id+'" data-order="'+o.id+'" novalidate><div class="form-grid single">'+dashField('note','Note for the buyer and the organization','<textarea rows="2" maxlength="300"></textarea>')+'</div><div class="detail-actions"><button type="button" class="control" data-close-dialog>Close</button><button type="submit" class="control" value="release">Release '+dp(o.total)+' to '+de(o.organization)+'</button><button type="submit" class="control primary" value="refund">'+di('check')+'Refund '+dp(o.total)+' to '+de(o.customer)+'</button></div></form>':'<div class="detail-actions"><button class="control primary" data-close-dialog>Close</button></div>';
+ dashOpen('<p class="detail-kicker">Refund request · '+r.id+'</p><h2 id="detail-title">'+dp(o.total)+' · '+de(o.crop)+'</h2><p class="detail-subtitle">'+dashUserLink(o.customer)+' → '+dashOrgLink(o.organization)+' · order '+dashOrderNo(o.id)+'</p>'
+  +'<dl class="detail-facts">'+dashFact('Status',ds(dashRefundStage(r)))+dashFact('Reason',de(r.reason))+dashFact('Requested',dtime(r.requestedAt))+(r.status==='Requested'?dashFact('Organization answers by',ddate(r.respondBy)):'')+(r.disputedAt?dashFact('Disputed',dtime(r.disputedAt)):'')+(r.decidedAt?dashFact('Settled',ddate(r.decidedAt)+(r.decidedBy?'<small class="fact-note">'+({admin:'By an administrator',organization:'By the organization',automatic:'No answer in time'} as Record<string,string>)[r.decidedBy]+'</small>':'')):'')+dashFact('Payment',de(o.method||'')+(o.paymentRef?'<small class="fact-note">'+de(o.paymentRef)+'</small>':''))+(o.deliveredAt?dashFact('Delivered',dtime(o.deliveredAt)):'')+'</dl>'
+  +'<h3 class="detail-section">What the buyer says</h3><p class="detail-lead">'+de(r.details)+'</p>'+dashRefundMedia(r)
+  +(r.disputeReason?'<h3 class="detail-section">What '+de(o.organization)+' says</h3><p class="detail-lead">'+de(r.disputeReason)+'</p>':'')
+  +(r.adminNote?'<p class="detail-note">AniBayan: “'+de(r.adminNote)+'”</p>':'')+decide);
+}
+
+/* ---------- Saved delivery addresses and the map ---------- */
+function dashAddressBook(me:DashboardAccount):string{
+ const list=me.addresses||[];
+ const row=(a:DashboardAddress)=>'<div class="address-row"><div><strong>'+de(a.label)+'</strong> '+(a.isDefault?ds('Default'):'')+(a.lat!==undefined?' '+ds('Pinned'):'')+'<p>'+de(a.text)+'</p></div><div class="row-actions">'+(a.isDefault?'':'<button class="control small" data-default-address="'+a.id+'">Make default</button>')+'<button class="control small" data-edit-address="'+a.id+'">'+di('edit')+'Edit</button><button class="control small" data-remove-address="'+a.id+'" aria-label="Remove '+de(a.label)+'">Remove</button></div></div>';
+ return '<section class="panel settings-panel"><h2>Delivery addresses</h2>'+(list.length?'<div class="address-list">'+list.map(row).join('')+'</div>':dashEmpty('No saved addresses yet.',''))+'<div class="detail-actions"><button class="control primary" data-add-address>'+di('plus')+'Add address</button></div></section>';
+}
+// A map to pin the place (it fills in the barangay, and the street when OpenStreetMap knows it), plus the barangay
+// and house/street fields. Either a pin or typed details is enough.
+function dashAddressBlock(a?:DashboardAddress):string{
+ const pinned=a?.lat!==undefined&&a?.lng!==undefined;
+ return '<div class="form-field"><span class="form-label" id="pin-label">Pin on the map</span><div class="map-picker" id="map-picker" aria-labelledby="pin-label"'+(pinned?' data-lat="'+a!.lat+'" data-lng="'+a!.lng+'"':'')+'></div><div class="map-tools"><button type="button" class="control small" data-locate>'+di('pin')+'Use my location</button><button type="button" class="control small" data-clear-pin'+(pinned?'':' hidden')+'>Remove pin</button></div><input type="hidden" name="lat" value="'+(pinned?a!.lat:'')+'"><input type="hidden" name="lng" value="'+(pinned?a!.lng:'')+'"><small class="field-error" id="error-pin" data-error-for="pin"></small></div>'
+  +dashField('barangay','Barangay, '+dashCityName+dashRequired,'<select required>'+dashBarangayOptions(a?.barangay||'')+'</select>')
+  +dashField('details','House number, street or landmark','<input maxlength="120" autocomplete="address-line1" placeholder="e.g. 12 J.P. Rizal Street" value="'+de(a?.details||'')+'">');
+}
+function dashReadAddressBlock(data:FormData,errors:Record<string,string>):Record<string,unknown>{
+ const lat=String(data.get('lat')??''),lng=String(data.get('lng')??''),details=String(data.get('details')??'').trim(),barangay=String(data.get('barangay')??'');
+ const pinned=lat!==''&&lng!=='';
+ if(!dashBarangays.includes(barangay))errors.barangay='Choose a barangay in Calapan City.';
+ if(!pinned&&details.length<4)errors.details='Enter the house number and street, or pin the place on the map.';
+ return pinned?{details,barangay,lat:Number(lat),lng:Number(lng)}:{details,barangay};
+}
+function dashAddressForm(id?:number):void{
+ const list=dashAccount().addresses||[];
+ const a=id?list.find(x=>x.id===id):undefined;
+ if(id&&!a)return;
+ dashOpen('<p class="detail-kicker">Delivery address</p><h2 id="detail-title">'+(a?'Edit '+de(a.label):'Add an address')+'</h2><form class="dash-form" id="address-form"'+(a?' data-id="'+a.id+'"':'')+' novalidate><div class="form-grid single">'+dashAddressBlock(a)
+  +dashField('label','Label','<input maxlength="40" placeholder="Home, Work…" value="'+de(a?.label||'')+'">')
+  +(a?.isDefault||!list.length?'':'<label class="check-row"><input type="checkbox" name="default"> Use as my default address</label>')
+  +'</div><div class="detail-actions"><button type="button" class="control" data-close-dialog>Cancel</button><button type="submit" class="control primary">'+di('check')+'Save address</button></div></form>');
+ void dashMountMap();
+}
+function dashSubmitAddress(form:HTMLFormElement):void{
+ const data=new FormData(form);
+ const errors:Record<string,string>={};
+ const place=dashReadAddressBlock(data,errors);
+ if(!dashShowErrors(form,errors))return;
+ void dashDo('address.save',{...place,id:form.dataset.id?Number(form.dataset.id):undefined,label:String(data.get('label')??'').trim(),default:!!data.get('default')},form).then(r=>{
+  if(r){dashDialog.close();dashToast('Address saved.');}
+ });
+}
+// Leaflet and OpenStreetMap tiles load only when a map is opened; the barangay outlines come with AniBayan.
+declare const L:any;
+let dashLeaflet:Promise<boolean>|null=null;
+let dashCalapan:{name:string;polygons:number[][][][]}[]|null=null;
+let dashMapView:any=null;
+let dashMapControls:{locate:()=>void;clear:()=>void;fly:(barangay:string)=>void}|null=null;
+function dashLoadMap():Promise<boolean>{
+ if(!dashLeaflet)dashLeaflet=new Promise<boolean>(resolve=>{
+  const css=document.createElement('link');css.rel='stylesheet';css.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';css.integrity='sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=';css.crossOrigin='';document.head.appendChild(css);
+  const js=document.createElement('script');js.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';js.integrity='sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=';js.crossOrigin='';
+  js.onload=()=>resolve(true);js.onerror=()=>{dashLeaflet=null;resolve(false);};
+  document.head.appendChild(js);
+ });
+ const shapes=dashCalapan?Promise.resolve(true):fetch('assets/calapan-barangays.json').then(r=>r.json()).then(d=>{dashCalapan=d.barangays;return true;}).catch(()=>false);
+ return Promise.all([dashLeaflet,shapes,dashLoadStreets()]).then(([map,outlines])=>map&&outlines);
+}
+function dashInRing(x:number,y:number,ring:number[][]):boolean{
+ let inside=false;
+ for(let i=0,j=ring.length-1;i<ring.length;j=i++){const [xi,yi]=ring[i],[xj,yj]=ring[j];if((yi>y)!==(yj>y)&&x<(xj-xi)*(y-yi)/(yj-yi)+xi)inside=!inside;}
+ return inside;
+}
+function dashBarangayAt(lat:number,lng:number):string{
+ for(const b of dashCalapan||[])for(const poly of b.polygons)if(dashInRing(lng,lat,poly[0])&&!poly.slice(1).some(hole=>dashInRing(lng,lat,hole)))return b.name;
+ return '';
+}
+// Calapan's named streets and places from OpenStreetMap, shipped with AniBayan (assets/calapan-streets.json), so naming
+// a pin needs no outside service. The street/landmark field follows every pin: the nearest named street within 60 m,
+// else "Near <school, church, sitio…>" within 400 m, else a street within 200 m, else empty for the buyer to type.
+let dashStreets:{streets:{n:string;c:number[][]}[];places:{n:string;p:number[]}[]}|null=null;
+function dashLoadStreets():Promise<boolean>{
+ return dashStreets?Promise.resolve(true):fetch('assets/calapan-streets.json').then(r=>r.json()).then(d=>{dashStreets=d;return true;}).catch(()=>false);
+}
+function dashNameAt(lat:number,lng:number):string{
+ if(!dashStreets)return '';
+ const kx=111320*Math.cos(lat*Math.PI/180),ky=110540;
+ const xy=(p:number[])=>[(p[0]-lng)*kx,(p[1]-lat)*ky];
+ let street=Infinity,streetName='';
+ for(const s of dashStreets.streets)for(let i=1;i<s.c.length;i++){
+  const [ax,ay]=xy(s.c[i-1]),[bx,by]=xy(s.c[i]);const dx=bx-ax,dy=by-ay,len=dx*dx+dy*dy;
+  const t=len?Math.max(0,Math.min(1,-(ax*dx+ay*dy)/len)):0;const d=Math.hypot(ax+t*dx,ay+t*dy);
+  if(d<street){street=d;streetName=s.n;}
+ }
+ if(street<=60)return streetName;
+ let place=Infinity,placeName='';
+ for(const p of dashStreets.places||[]){const [x,y]=xy(p.p);const d=Math.hypot(x,y);if(d<place){place=d;placeName=p.n;}}
+ if(place<=400)return 'Near '+placeName;
+ return street<=200?streetName:'';
+}
+function dashFillStreet(form:HTMLFormElement,lat:number,lng:number):void{
+ const details=form.elements.namedItem('details') as HTMLInputElement|null;
+ if(!details)return;
+ details.value=dashNameAt(lat,lng).slice(0,120);
+ dashClearFieldError(details);
+}
+async function dashMountMap():Promise<void>{
+ const box=document.getElementById('map-picker');
+ if(!box||box.dataset.mounted)return;
+ if(dashMapView){dashMapView.remove();dashMapView=null;dashMapControls=null;}
+ box.dataset.mounted='1';
+ if(!await dashLoadMap()||!document.body.contains(box)){box.closest('.form-field')?.setAttribute('hidden','');return;}
+ const form=box.closest('form')!;
+ const field=(name:string)=>form.elements.namedItem(name) as HTMLInputElement;
+ const slot=form.querySelector<HTMLElement>('[data-error-for="pin"]')!;
+ const clearButton=form.querySelector<HTMLElement>('[data-clear-pin]')!;
+ const map=L.map(box,{scrollWheelZoom:false,maxBounds:[[13.22,121.02],[13.52,121.37]],minZoom:12}).setView([13.401,121.180],13);
+ dashMapView=map;
+ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(map);
+ const outlines:Record<string,any>={};
+ for(const b of dashCalapan||[])outlines[b.name]=L.polygon(b.polygons.map(p=>p.map(r=>r.map(([x,y])=>[y,x]))),{color:'#1c8540',weight:1,opacity:.45,fillColor:'#2eb957',fillOpacity:0,interactive:false}).addTo(map);
+ const highlight=(name:string)=>Object.entries(outlines).forEach(([n,shape])=>shape.setStyle({fillOpacity:n===name?.14:0,weight:n===name?2:1}));
+ let marker:any=null;let last:[number,number]|null=null;
+ const setPin=(lat:number,lng:number,lookup:boolean):void=>{
+  const barangay=dashBarangayAt(lat,lng);
+  if(!barangay){slot.textContent='AniBayan delivers only within Calapan City. Pin a place inside the city.';if(marker&&last)marker.setLatLng(last);return;}
+  slot.textContent='';last=[lat,lng];
+  if(!marker){marker=L.marker([lat,lng],{draggable:true,title:'Delivery pin'}).addTo(map);marker.on('dragend',()=>{const p=marker.getLatLng();setPin(p.lat,p.lng,true);});}
+  else marker.setLatLng([lat,lng]);
+  field('lat').value=lat.toFixed(6);field('lng').value=lng.toFixed(6);
+  field('barangay').value=barangay;dashClearFieldError(field('barangay'));dashClearFieldError(field('details'));
+  highlight(barangay);clearButton.hidden=false;
+  if(lookup)dashFillStreet(form,lat,lng);
+ };
+ const fly=(name:string)=>{if(outlines[name]){map.fitBounds(outlines[name].getBounds(),{maxZoom:16});highlight(name);}};
+ map.on('click',(e:any)=>setPin(e.latlng.lat,e.latlng.lng,true));
+ dashMapControls={
+  locate:()=>{
+   if(!navigator.geolocation){slot.textContent='This browser can’t share your location. Tap the map instead.';return;}
+   navigator.geolocation.getCurrentPosition(p=>{map.setView([p.coords.latitude,p.coords.longitude],17);setPin(p.coords.latitude,p.coords.longitude,true);},()=>{slot.textContent='Your location couldn’t be read. Tap the map instead.';},{enableHighAccuracy:true,timeout:10000});
+  },
+  clear:()=>{if(marker){map.removeLayer(marker);marker=null;last=null;}field('lat').value='';field('lng').value='';clearButton.hidden=true;slot.textContent='';highlight(field('barangay').value);},
+  fly:(name:string)=>{if(last&&dashBarangayAt(last[0],last[1])!==name)dashMapControls!.clear();fly(name);},
+ };
+ if(box.dataset.lat){const lat=Number(box.dataset.lat),lng=Number(box.dataset.lng);map.setView([lat,lng],16);setPin(lat,lng,false);}
+ else if(field('barangay').value)fly(field('barangay').value);
+ window.setTimeout(()=>map.invalidateSize(),50);
+}
+
 const dashRatingWords=['','Very poor','Poor','Okay','Good','Excellent'];
 function dashFeedbackForm(orderId:string):void{
  const o=dashRoleOrders().find(x=>x.id===orderId);
@@ -1514,22 +1822,168 @@ function dashExportRows():[string,(string|number)[][]]{
  const view=dashState.view;
  if(isAdminDashboard){
   if(view==='activity')return ['activity-log',[['Time','Email','Name','Activity','Details'],...dashActivityList().map(e=>[e.time,e.actor,dashAccountByEmail(e.actor)?.name||'',dashActivityInfo(e.type)[0],e.detail])]];
+  if(view==='refunds')return ['refunds',[['Refund ID','Order','Buyer','Organization','Amount PHP','Reason','Status','Requested','Organization’s answer','Administrator’s note'],...dashRefundList().map(({o,r})=>[r.id,o.id,o.customer,o.organization,o.total,r.reason,dashRefundStage(r),r.requestedAt.slice(0,10),r.disputeReason||'',r.adminNote||''])]];
   if(view==='reports')return ['user-reports',[['Report ID','Organization','Reported by','Reason','Details','Order','Filed','Status'],...dashReportList().map(r=>[r.id,r.organization,r.customer,r.reason,r.details,r.order||'',r.date,r.status])]];
-  if(view==='applications')return ['organization-applications',[['Organization','Region','Main crops','Representative','Members','Documents','Submitted','Status'],...dashApplicationList().map(o=>[o.name,o.region,o.crop,o.representative,o.members,o.documents.join('; '),o.applied,dashAppStatus(o)])]];
+  if(view==='applications')return ['organization-applications',[['Organization','Region','Main crops','Representative','Members','Documents','Submitted','Status'],...dashApplicationList().map(o=>[o.name,o.region,o.crop,o.representative,o.members,o.documents.map(d=>d.type).join('; '),o.applied,dashAppStatus(o)])]];
   if(view==='health')return ['health-checks',[['Checked at','Service','Result','Response time (ms)','Error'],...dashboardHealthLog.slice().reverse().flatMap(run=>run.results.map(r=>[run.time,r.service,r.ok?'Passed':'Failed',r.latency,r.error||'']))]];
   return ['accounts',[['Name','Email','Role','Organization','Joined','Last active','Status'],...dashAccountList().map(a=>[a.name,a.email,a.role==='Consumer'?'Buyer':a.role,a.organization||'',a.joined,a.lastActive,a.status])]];
  }
  if(view==='listings')return ['listings',[['Product ID','Name','Category','Price PHP','Unit','Available quantity','Harvest date','Shelf life (days)','Best before','Status'],...dashListingCrops().map(c=>[c.id,c.name,c.category,c.price,c.unit,c.stock,c.harvested,c.shelfLife,dashAddDays(c.harvested,c.shelfLife),dashCropStatus(c)])]];
  if(view==='members')return ['members',[['Farmer','Barangay','Crops','Area ha','Member since','Status'],...dashMyMembers().filter(m=>dashMatching([m.name,m.place,m.crops,m.status].join(' '))).map(m=>[m.name,m.place,m.crops,m.area,m.joined,m.status])]];
  if(view==='feedback')return ['feedback',[['Feedback ID','Date','Buyer','Rating','Comment','Order'],...dashOrgFeedbackList().map(f=>[f.id,f.date,f.customer,f.rating,f.comment,f.order||''])]];
- return ['orders',[['Order ID','Buyer','Organization','Harvest','Quantity','Total PHP','Status','Payment','Date','Delivery address','Contact number','Payment method'],...dashOrders().map(o=>[o.id,o.customer,o.organization,o.crop,o.quantity,o.total,o.status,o.payment,o.date,o.address||'',o.phone||'',o.method||''])]];
+ // The overview follows its reporting period (last 7 days or last 4 weeks).
+ const span=dashState.period==='week'?7:28;
+ const orders=isOrgDashboard&&view==='overview'?dashOrders().filter(o=>{const age=dashAge(o.date);return age>=0&&age<span;}):dashOrders();
+ return ['orders',[['Order ID','Buyer','Organization','Harvest','Quantity','Total PHP','Status','Payment','Date','Delivery address','Contact number','Payment method'],...orders.map(o=>[o.id,o.customer,o.organization,o.crop,o.quantity,o.total,o.status,o.payment,o.date,o.address||'',o.phone||'',o.method||''])]];
 }
-function dashExport():void{
- const [recordType,rows]=dashExportRows();
- // Prefix cells that start like a spreadsheet formula so they open as plain text.
- const cell=(value:string|number)=>{const text=String(value);return '"'+(/^[=+\-@]/.test(text)?"'"+text:text).replace(/"/g,'""')+'"';};
- const csv='﻿'+rows.map(row=>row.map(cell).join(',')).join('\r\n');
- const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download='anibayan-'+recordType+'-'+dashToday+'.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);dashToast(recordType.replace(/-/g,' ').replace(/^./,c=>c.toUpperCase())+' exported as CSV.');
+// What an export says above its table: the page it came from, who exported it and when, and the filters in use.
+function dashExportMeta(recordType:string):{title:string;scope:string;by:string;when:string;filters:string}{
+ const titles:Record<string,string>={'activity-log':'Activity log','user-reports':'User reports',refunds:'Refunds','organization-applications':'Organization applications','health-checks':'Site health checks',accounts:'Accounts',listings:'Listings',members:'Member farmers',feedback:'Ratings and feedback',orders:dashState.view==='payments'?'Payments':isConsumerDashboard?'My orders':'Orders'};
+ const filters:string[]=[];
+ if(isOrgDashboard&&dashState.view==='overview')filters.push('Period: '+(dashState.period==='week'?'last 7 days':'last 4 weeks'));
+ if(dashState.filter&&dashState.filter!=='All')filters.push((dashState.view==='listings'?'Show: ':'Status: ')+dashState.filter);
+ if(dashState.query.trim())filters.push('Search: “'+dashState.query.trim()+'”');
+ const me=dashMe();
+ return {title:titles[recordType]||recordType,scope:isOrgDashboard?dashOrgName:isAdminDashboard?'Administrator workspace':me?.name||'',by:me?.name||'',when:new Date().toLocaleString('en-PH',{year:'numeric',month:'short',day:'2-digit',hour:'numeric',minute:'2-digit'}),filters:filters.join(' · ')};
+}
+const dashExportFooter='AniBayan · '+dashCityName+', Oriental Mindoro';
+// The totals row under an export's table: sums where adding up makes sense (order totals, farm area, stock in one
+// unit, application members), the average rating for feedback, and the number of rows everywhere.
+function dashExportTotals(recordType:string,table:(string|number)[][]):(string|number)[]{
+ const head=table[0].map(String),body=table.slice(1);
+ const nouns:Record<string,string>={refunds:'refund request',orders:'order',listings:'listing',members:'member farmer',feedback:'review',accounts:'account','user-reports':'report','organization-applications':'application','activity-log':'event','health-checks':'check'};
+ const sum=(column:string)=>body.reduce((total,row)=>total+Number(row[head.indexOf(column)]||0),0);
+ const values:Record<string,string|number>={};
+ let label='Total';
+ if(recordType==='orders')values['Total PHP']=sum('Total PHP');
+ if(recordType==='refunds')values['Amount PHP']=sum('Amount PHP');
+ if(recordType==='members')values['Area ha']=Math.round(sum('Area ha')*10)/10;
+ if(recordType==='organization-applications')values.Members=sum('Members');
+ if(recordType==='listings'){const units=[...new Set(body.map(row=>String(row[head.indexOf('Unit')])))];if(units.length===1){values['Available quantity']=sum('Available quantity');values.Unit=units[0];}}
+ if(recordType==='feedback'){label='Average';if(body.length)values.Rating=Math.round(sum('Rating')/body.length*10)/10;}
+ return head.map((column,i)=>i===0?label+' · '+dashPlural(body.length,nouns[recordType]||'row'):column in values?values[column]:'');
+}
+// Excel export (ExcelJS from unpkg, loaded on first use): a tinted header band with the AniBayan logo, name, page
+// title, who exported it and when, and the filters; a dark green table header; striped rows; a totals row; and a
+// dark green footer. It prints on one page width with the same footer and page numbers.
+declare const ExcelJS:any;
+let dashExcelLib:Promise<boolean>|null=null;
+async function dashExport(button:HTMLButtonElement):Promise<void>{
+ button.disabled=true;
+ try{
+  if(!dashExcelLib)dashExcelLib=dashLoadScript('https://unpkg.com/exceljs@4.4.0/dist/exceljs.min.js','sha384-Pqp51FUN2/qzfxZxBCtF0stpc9ONI6MYZpVqmo8m20SoaQCzf+arZvACkLkirlPz').then(ok=>{if(!ok)dashExcelLib=null;return ok;});
+  const assets=await dashExportAssets();
+  if(!await dashExcelLib||!assets){dashToast('The Excel file couldn’t be made right now. Check your connection and try again.');return;}
+  const [recordType,table]=dashExportRows();
+  const meta=dashExportMeta(recordType);
+  const totals=dashExportTotals(recordType,table);
+  const cols=table[0].length,last=Math.max(cols,4),top=7;
+  const color={deep:'FF214C35',green:'FF1C8540',lime:'FFB5E655',tint:'FFEEF6EA',stripe:'FFF5F7F3',ink:'FF1C2A21',muted:'FF5D695F',line:'FFE3E8E1',white:'FFFFFFFF'};
+  const fill=(argb:string)=>({type:'pattern',pattern:'solid',fgColor:{argb}});
+  const thin={style:'thin',color:{argb:color.line}};
+  const wb=new ExcelJS.Workbook();wb.creator='AniBayan';wb.created=new Date();
+  const ws=wb.addWorksheet(meta.title.slice(0,31),{
+   views:[{state:'frozen',ySplit:top,showGridLines:false}],
+   pageSetup:{paperSize:9,orientation:cols>6?'landscape':'portrait',fitToPage:true,fitToWidth:1,fitToHeight:0,margins:{left:.4,right:.4,top:.5,bottom:.6,header:.2,footer:.3}},
+   headerFooter:{oddFooter:'&L&8'+dashExportFooter+'&R&8Page &P of &N'},
+  });
+  ws.columns=table[0].map((_,i)=>({width:Math.min(46,Math.max(i===0?16:10,...[...table,totals].map(r=>String(r[i]??'').length+3)))}));
+  // Header band: rows 1–5 tinted, the logo over the first column, the text beside it.
+  [30,20,18,18,8].forEach((h,i)=>{ws.getRow(i+1).height=h;for(let c=1;c<=last;c++)ws.getCell(i+1,c).fill=fill(color.tint);});
+  const line=(row:number,text:string,font:Record<string,unknown>)=>{ws.mergeCells(row,2,row,last);const cell=ws.getCell(row,2);cell.value=text;cell.font={name:'Calibri',...font};cell.alignment={vertical:'middle',indent:1};};
+  line(1,'AniBayan',{size:22,bold:true,color:{argb:color.deep}});
+  line(2,meta.title+' · '+meta.scope,{size:12,bold:true,color:{argb:color.green}});
+  line(3,'Exported '+meta.when+' by '+meta.by,{size:10,color:{argb:color.muted}});
+  line(4,'Filters: '+(meta.filters||'none'),{size:10,color:{argb:color.muted}});
+  ws.addImage(wb.addImage({base64:assets.logo,extension:'png'}),{tl:{col:0.15,row:0.12},ext:{width:96,height:84},editAs:'oneCell'});
+  ws.getRow(6).height=5;for(let c=1;c<=last;c++)ws.getCell(6,c).fill=fill(color.deep);
+  // The table.
+  const money=table[0].map(String).indexOf('Total PHP');
+  const head=ws.getRow(top);head.values=table[0];head.height=24;
+  head.eachCell((cell:any)=>{cell.fill=fill(color.deep);cell.font={name:'Calibri',bold:true,color:{argb:color.white}};cell.alignment={vertical:'middle',wrapText:true};cell.border={bottom:{style:'medium',color:{argb:color.lime}}};});
+  table.slice(1).forEach((values,i)=>{
+   const row=ws.getRow(top+1+i);row.values=values;
+   for(let c=1;c<=cols;c++){const cell=row.getCell(c);cell.font={name:'Calibri',color:{argb:color.ink}};cell.alignment={vertical:'top',wrapText:true};cell.border={bottom:thin};if(i%2)cell.fill=fill(color.stripe);if(c-1===money)cell.numFmt='"₱"#,##0';}
+  });
+  const sum=ws.getRow(top+table.length);sum.values=totals;sum.height=22;
+  for(let c=1;c<=cols;c++){const cell=sum.getCell(c);cell.fill=fill(color.tint);cell.font={name:'Calibri',bold:true,color:{argb:color.deep}};cell.alignment={vertical:'middle'};cell.border={top:{style:'medium',color:{argb:color.deep}}};if(c-1===money)cell.numFmt='"₱"#,##0';}
+  ws.autoFilter={from:{row:top,column:1},to:{row:top,column:cols}};
+  // Footer band.
+  const foot=top+table.length+2;
+  ws.mergeCells(foot,1,foot,last);ws.getRow(foot).height=24;
+  const end=ws.getCell(foot,1);end.value=dashExportFooter+' · Exported '+meta.when+' by '+meta.by;end.fill=fill(color.deep);end.font={name:'Calibri',bold:true,size:10,color:{argb:color.white}};end.alignment={vertical:'middle',indent:1};
+  ws.mergeCells(foot+1,1,foot+1,last);ws.getRow(foot+1).height=4;ws.getCell(foot+1,1).fill=fill(color.lime);
+  const blob=new Blob([await wb.xlsx.writeBuffer()],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='anibayan-'+recordType+'-'+dashToday+'.xlsx';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  dashToast(meta.title+' exported as Excel.');
+ }finally{button.disabled=false;}
+}
+// PDF export: jsPDF and its table plugin load from unpkg only when someone exports. Each page has the AniBayan
+// logo and name, the page's title, who exported it and when, and the filters in use; each page ends with a footer
+// and page numbers. The text uses AniBayan's own font (Plus Jakarta Sans), so ₱, ñ and quotes print correctly.
+declare const jspdf:any;
+let dashPdfLib:Promise<boolean>|null=null;
+let dashPdfAssets:Promise<{regular:string;bold:string;logo:string}|null>|null=null;
+function dashExportAssets():Promise<{regular:string;bold:string;logo:string}|null>{
+ if(!dashPdfAssets)dashPdfAssets=Promise.all(['assets/jakarta-400.ttf','assets/jakarta-700.ttf','assets/anibayan-logo.png'].map(url=>fetch(url).then(r=>{if(!r.ok)throw new Error(url);return r.arrayBuffer();})))
+  .then(([regular,bold,logo])=>({regular:dashBase64(regular),bold:dashBase64(bold),logo:'data:image/png;base64,'+dashBase64(logo)}))
+  .catch(()=>{dashPdfAssets=null;return null;});
+ return dashPdfAssets;
+}
+function dashLoadScript(src:string,integrity:string):Promise<boolean>{
+ return new Promise(resolve=>{const js=document.createElement('script');js.src=src;js.integrity=integrity;js.crossOrigin='anonymous';js.onload=()=>resolve(true);js.onerror=()=>resolve(false);document.head.appendChild(js);});
+}
+function dashBase64(buffer:ArrayBuffer):string{
+ const bytes=new Uint8Array(buffer);let text='';
+ for(let i=0;i<bytes.length;i+=0x8000)text+=String.fromCharCode.apply(null,Array.from(bytes.subarray(i,i+0x8000)));
+ return btoa(text);
+}
+function dashLoadPdf():Promise<boolean>{
+ if(!dashPdfLib)dashPdfLib=dashLoadScript('https://unpkg.com/jspdf@2.5.2/dist/jspdf.umd.min.js','sha384-en/ztfPSRkGfME4KIm05joYXynqzUgbsG5nMrj/xEFAHXkeZfO3yMK8QQ+mP7p1/')
+  .then(ok=>ok&&dashLoadScript('https://unpkg.com/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js','sha384-Xl/CUCfJbzsngMp0CFxkmF0VW/8C160IsGujqeQlIhaGxKz2+JsIGORFqtCPeldF'))
+  .then(ok=>{if(!ok)dashPdfLib=null;return ok;});
+ return Promise.all([dashPdfLib,dashExportAssets()]).then(([lib,assets])=>lib&&!!assets);
+}
+async function dashExportPdf(button:HTMLButtonElement):Promise<void>{
+ button.disabled=true;
+ try{
+  if(!await dashLoadPdf()){dashToast('The PDF couldn’t be made right now. Check your connection and try again.');return;}
+  const assets=(await dashPdfAssets)!;
+  const [recordType,table]=dashExportRows();
+  const meta=dashExportMeta(recordType);
+  const doc=new jspdf.jsPDF({orientation:table[0].length>6?'landscape':'portrait',unit:'pt',format:'a4'});
+  doc.addFileToVFS('Jakarta-400.ttf',assets.regular);doc.addFont('Jakarta-400.ttf','Jakarta','normal');
+  doc.addFileToVFS('Jakarta-700.ttf',assets.bold);doc.addFont('Jakarta-700.ttf','Jakarta','bold');
+  const width=doc.internal.pageSize.getWidth(),height=doc.internal.pageSize.getHeight(),margin=36,top=112;
+  doc.autoTable({
+   head:[table[0].map(String)],body:table.slice(1).map(row=>row.map(String)),foot:[dashExportTotals(recordType,table).map(v=>typeof v==='number'?v.toLocaleString('en-PH'):String(v))],showFoot:'lastPage',startY:top,margin:{top,bottom:56,left:margin,right:margin},
+   styles:{font:'Jakarta',fontSize:8,cellPadding:4,textColor:[28,42,33],lineColor:[227,232,225],lineWidth:.5,overflow:'linebreak'},
+   headStyles:{fillColor:[33,76,53],textColor:255,fontStyle:'bold'},footStyles:{fillColor:[238,246,234],textColor:[33,76,53],fontStyle:'bold'},alternateRowStyles:{fillColor:[245,247,243]},
+  });
+  const pages=doc.getNumberOfPages();
+  for(let page=1;page<=pages;page++){
+   doc.setPage(page);
+   // Header: a light green band with the logo, a dark green rule and a lime accent under it.
+   doc.setFillColor(238,246,234);doc.rect(0,0,width,88,'F');
+   doc.setFillColor(33,76,53);doc.rect(0,88,width,5,'F');
+   doc.setFillColor(181,230,85);doc.rect(0,93,width,2,'F');
+   doc.addImage(assets.logo,'PNG',margin,10,78,69);
+   doc.setFont('Jakarta','bold');doc.setFontSize(24);doc.setTextColor(33,76,53);doc.text('AniBayan',margin+90,42);
+   doc.setFontSize(11);doc.setTextColor(28,133,64);doc.text(meta.title+' · '+meta.scope,margin+90,62);
+   doc.setFont('Jakarta','normal');doc.setFontSize(9.5);doc.setTextColor(93,105,95);
+   doc.text('Exported '+meta.when,width-margin,36,{align:'right'});
+   doc.text('by '+meta.by,width-margin,50,{align:'right'});
+   doc.text(meta.filters?'Filters: '+meta.filters:'No filters',width-margin,64,{align:'right'});
+   // Footer: a lime line over a dark green band.
+   doc.setFillColor(181,230,85);doc.rect(0,height-34,width,2,'F');
+   doc.setFillColor(33,76,53);doc.rect(0,height-32,width,32,'F');
+   doc.setFont('Jakarta','bold');doc.setFontSize(8.5);doc.setTextColor(255,255,255);
+   doc.text(dashExportFooter+' · '+dashPlural(table.length-1,'row'),margin,height-13);
+   doc.text('Page '+page+' of '+pages,width-margin,height-13,{align:'right'});
+  }
+  doc.save('anibayan-'+recordType+'-'+dashToday+'.pdf');
+  dashToast(meta.title+' exported as PDF.');
+ }finally{button.disabled=false;}
 }
 function dashSetPopover(panelId:string,buttonId:string,open:boolean):void{
  document.getElementById(panelId)!.hidden=!open;
@@ -1590,6 +2044,8 @@ function dashStart():void{
  document.addEventListener('click',dashHandleClick);
  document.addEventListener('input',event=>{
   const input=event.target as HTMLInputElement;
+  if(input.type==='tel')dashLimitPhone(input);
+  if(input.id==='detail-qty'&&input.value!==''){const max=Number(input.max),value=Math.floor(Number(input.value));if(value>max)input.value=String(max);else if(value<1)input.value='1';}
   if(input.dataset.tableSearch!==undefined){dashState.query=input.value;dashRender();return;}
   const key=input.dataset.shop as keyof DashShopFilters|undefined;
   if(key){dashState.shop[key]=input.value;dashRefreshShop();return;}
@@ -1617,6 +2073,14 @@ function dashStart():void{
  document.addEventListener('change',event=>{
   const input=event.target as HTMLInputElement;
   if(input.dataset.upload){void dashUploadLook(input);return;}
+  if(input.id==='field-media'){dashAddRefundFiles(input);return;}
+  if(input.name==='barangay'&&input.form?.querySelector('#map-picker')){dashMapControls?.fly(input.value);}
+  if(input.name==='address'&&input.form?.id==='checkout-form'){
+   const block=input.form.querySelector<HTMLElement>('.new-address')!;
+   block.hidden=input.value!=='new';
+   if(!block.hidden)void dashMountMap();
+   return;
+  }
   if(input.dataset.privacy){
    const key=input.dataset.privacy as keyof DashboardPrivacy;
    if(!dashMe()||!isConsumerDashboard||!(key in dashPrivacyDefaults))return;
@@ -1645,6 +2109,16 @@ function dashStart():void{
   else if(form.id==='org-profile-form')dashSubmitOrgProfile(form);
   else if(form.id==='member-form')dashSubmitMember(form);
   else if(form.id==='password-form')dashSubmitPassword(form);
+  else if(form.id==='address-form')dashSubmitAddress(form);
+  else if(form.id==='refund-form')dashSubmitRefund(form);
+  else if(form.id==='dispute-form')dashSubmitDispute(form);
+  else if(form.id==='refund-decide-form'){
+   const decision=((event as SubmitEvent).submitter as HTMLButtonElement|null)?.value==='release'?'release':'refund';
+   const order=form.dataset.order!;
+   void dashDo('refund.decide',{id:form.dataset.refund,decision,note:String(new FormData(form).get('note')??'').trim()},form).then(r=>{
+    if(r){dashRefundReview(order);dashToast(decision==='refund'?(r.status==='Refunded'?'Refund sent to the buyer.':'Refund approved. PayMongo is still processing it.'):'Payment released to the organization.');}
+   });
+  }
  });
  dashDialog.addEventListener('click',event=>{if(event.target===dashDialog){const r=dashDialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)dashDialog.close();}});
 }
@@ -1689,7 +2163,7 @@ function dashHandleClick(event:MouseEvent):void{
    const crop=dashboardCrops.find(c=>c.id===id);
    if(!r||!crop)return;
    if(dashDialog.open)dashProductDetails(id);
-   dashToast(crop.name+(crop.status==='Active'?' is visible to buyers again.':' is paused. Buyers can’t order it until you resume it.'));
+   dashToast(crop.name+(crop.status==='Active'?' is published. Buyers can see and order it.':' is unpublished. Buyers can’t see or order it until you publish it again.'));
   });
   return;
  }
@@ -1752,7 +2226,7 @@ function dashHandleClick(event:MouseEvent):void{
    const account=dashAccountByEmail(email);
    if(!r||!account)return;
    dashAccountDetails(email);
-   dashToast(account.name+(r.status==='Suspended'?' is suspended and signed out of AniBayan.':' is reactivated.'));
+   dashToast(account.name+(r.status==='Suspended'?' is suspended and signed out of AniBayan.'+(r.cancelled?' '+dashPlural(r.cancelled,'open order')+' cancelled.':''):' is reactivated.'));
   });
   return;
  }
@@ -1766,6 +2240,29 @@ function dashHandleClick(event:MouseEvent):void{
  if(data.rate){if(dashRequireBuyer())dashFeedbackForm(data.rate);return;}
  if(data.reportOrder){if(dashRequireBuyer())dashReportForm(data.reportOrder);return;}
  if(data.payOrder){dashPaymentDialog([data.payOrder]);return;}
+ if(data.receipt){dashReceiptDialog([data.receipt]);return;}
+ if(data.refundReview){dashRefundReview(data.refundReview);return;}
+ if(data.orderReceived){dashConfirmReceived(data.orderReceived);return;}
+ if(data.confirmReceived){
+  const id=data.confirmReceived;
+  void dashDo('order.received',{order:id}).then(r=>{if(r){dashOrderDetails(id);dashToast('Order '+dashOrderNo(id)+' received.');}});
+  return;
+ }
+ if(data.requestRefund){if(dashRequireBuyer())dashRefundForm(data.requestRefund);return;}
+ if(data.mediaRemove!==undefined){dashRefundFiles.splice(Number(data.mediaRemove),1);dashRenderRefundFiles();return;}
+ if(data.disputeRefund){dashDisputeForm(data.disputeRefund);return;}
+ if(data.acceptRefundAsk){dashConfirmAcceptRefund(data.acceptRefundAsk);return;}
+ if(data.acceptRefund){
+  const order=data.forOrder!;
+  void dashDo('refund.accept',{id:data.acceptRefund}).then(r=>{if(r){dashOrderDetails(order);dashToast(r.status==='Refunded'?'Refund sent.':'Refund accepted. PayMongo is still processing it.');}});
+  return;
+ }
+ if(data.addAddress!==undefined){dashAddressForm();return;}
+ if(data.editAddress){dashAddressForm(Number(data.editAddress));return;}
+ if(data.removeAddress){void dashDo('address.remove',{id:Number(data.removeAddress)}).then(r=>{if(r)dashToast('Address removed.');});return;}
+ if(data.defaultAddress){void dashDo('address.default',{id:Number(data.defaultAddress)}).then(r=>{if(r)dashToast('Default address changed.');});return;}
+ if(data.locate!==undefined){dashMapControls?.locate();return;}
+ if(data.clearPin!==undefined){dashMapControls?.clear();return;}
  if(data.pay){
   void dashStartPayment(data.pay.split(','),target as HTMLButtonElement);return;
  }
@@ -1810,7 +2307,8 @@ function dashHandleClick(event:MouseEvent):void{
   return;
  }
  if(target.hasAttribute('data-close-dialog')){dashDialog.close();return;}
- if(target.id==='export-dashboard'){dashExport();return;}
+ if(target.id==='export-dashboard'){void dashExport(target as HTMLButtonElement);return;}
+ if(target.id==='export-pdf'){void dashExportPdf(target as HTMLButtonElement);return;}
  if(target.id==='collapse-sidebar'){
   if(dashNarrow.matches)document.body.classList.toggle('sidebar-open');
   else document.body.classList.toggle('sidebar-collapsed');

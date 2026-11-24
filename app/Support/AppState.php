@@ -3,15 +3,23 @@
 namespace App\Support;
 
 use App\Models\Activity;
+use App\Models\Address;
 use App\Models\Crop;
 use App\Models\Feedback;
 use App\Models\HealthRun;
 use App\Models\Member;
 use App\Models\Order;
+use App\Models\OrderItem;
 use App\Models\Organization;
+use App\Models\OrganizationDocument;
+use App\Models\RefundMedia;
+use App\Models\RefundRequest;
 use App\Models\Report;
 use App\Models\User;
 use App\Models\Warning;
+use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 // Everything one person's AniBayan pages need, shaped the way the pages use it, and only what that person may see:
@@ -27,36 +35,80 @@ class AppState
 
     public static function for(?User $viewer): array
     {
+        // Held payments and refund requests that came due are settled first (at most once a minute; they're due by the day).
+        if (Cache::add('anibayan:settled', true, 60)) {
+            Escrow::settle();
+        }
         $admin = $viewer?->isAdmin() ?? false;
         $ownOrg = $viewer?->isRepresentative() ? $viewer->organization_id : null;
+        $buyer = $viewer?->isBuyer() ?? false;
+        // Organizations this person may see: all for administrators, otherwise selling or terminated ones and their own.
+        $visible = Organization::select('id')->when(! $admin, fn ($q) => $q->where(fn ($w) => $w->whereIn('status', ['Active', 'Terminated'])->orWhere('id', $ownOrg ?? 0)));
+        $orders = match (true) {
+            $admin => Order::query(),
+            $ownOrg !== null => Order::where('organization_id', $ownOrg),
+            $buyer => Order::where('user_id', $viewer->id),
+            default => Order::whereRaw('1 = 0'),
+        };
+        $orderIds = (clone $orders)->select('id');
+        $refundIds = RefundRequest::select('id')->whereIn('order_id', $orderIds);
+        $data = self::batch([
+            'orgs' => Organization::orderBy('id'),
+            'documents' => OrganizationDocument::orderBy('id')->when(! $admin, fn ($q) => $q->where('organization_id', $ownOrg ?? 0)),
+            'people' => User::orderBy('id'),
+            'memberCounts' => Member::selectRaw('organization_id, COUNT(*) AS n')->groupBy('organization_id'),
+            'farmers' => Member::where('status', 'Active')->orderBy('id')->select(['organization_id', 'name', 'crops', 'area', 'joined']),
+            'completed' => Order::where('status', 'Completed')->selectRaw('organization_id, COUNT(*) AS n')->groupBy('organization_id'),
+            'buyerOrders' => Order::where('status', '!=', 'Cancelled')->select(['user_id', 'organization_id', 'status']),
+            'addresses' => Address::orderByDesc('is_default')->orderBy('id'),
+            'orders' => $orders,
+            'items' => OrderItem::whereIn('order_id', $orderIds)->orderBy('id'),
+            'refunds' => RefundRequest::whereIn('order_id', $orderIds),
+            'media' => RefundMedia::whereIn('refund_request_id', $refundIds)->orderBy('id'),
+            'reports' => match (true) {
+                $admin => Report::query(),
+                $ownOrg !== null => Report::where('organization_id', $ownOrg),
+                $viewer !== null => Report::where('user_id', $viewer->id),
+                default => Report::whereRaw('1 = 0'),
+            },
+            'crops' => Crop::whereIn('organization_id', $visible)->orderBy('created_at', 'desc')->orderBy('id'),
+            'feedback' => Feedback::whereIn('organization_id', $visible)->orderByDesc('given_on'),
+            'warnings' => Warning::query()->when(! $admin, fn ($q) => $q->where('organization_id', $ownOrg ?? 0)),
+            'members' => Member::orderBy('id')->when(! $admin, fn ($q) => $q->where('organization_id', $ownOrg ?? 0)),
+            'activity' => $admin ? Activity::orderByDesc('happened_at')->orderByDesc('id')->limit(1000) : Activity::whereRaw('1 = 0'),
+            'health' => $admin ? HealthRun::orderByDesc('id')->limit(30) : HealthRun::whereRaw('1 = 0'),
+            'saved' => DB::table('saved_crops')->where('user_id', $buyer ? $viewer->id : 0)->select('crop_id'),
+            'cart' => DB::table('cart_lines')->where('user_id', $buyer ? $viewer->id : 0)->orderBy('crop_id')->select(['crop_id as crop', 'quantity']),
+        ]);
 
-        $all = Organization::orderBy('id')->get();
+        // Put the related records back on their parents, as eager loading would have.
+        $documents = $data['documents']->groupBy('organization_id');
+        $all = $data['orgs']->each(fn ($o) => $o->setRelation('documents', $documents[$o->id] ?? new EloquentCollection()));
         $orgs = $all->filter(fn ($o) => $admin || $o->id === $ownOrg || in_array($o->status, ['Active', 'Terminated'], true));
+        $media = $data['media']->groupBy('refund_request_id');
+        $refunds = $data['refunds']->each(fn ($r) => $r->setRelation('media', $media[$r->id] ?? new EloquentCollection()))->keyBy('order_id');
+        $items = $data['items']->groupBy('order_id');
+        $orders = $data['orders']->each(function ($o) use ($items, $refunds) {
+            $o->setRelation('items', $items[$o->id] ?? new EloquentCollection());
+            $o->setRelation('refundRequest', $refunds[$o->id] ?? null);
+        });
+        $reports = $data['reports'];
         $names = $all->pluck('name', 'id');
-        $people = User::orderBy('id')->get();
+        $people = $data['people'];
         $personName = $people->pluck('name', 'id');
-        $visibleOrgIds = $orgs->pluck('id')->all();
-        // Counts for every organization and buyer in a few queries, rather than a few per record.
+        // Counts for every organization and buyer, rather than a few queries per record.
         self::$counts = [
             'names' => $names,
             'public' => $all->filter(fn ($o) => in_array($o->status, ['Active', 'Terminated'], true))->pluck('name', 'id'),
-            'members' => Member::selectRaw('organization_id, COUNT(*) AS n')->groupBy('organization_id')->pluck('n', 'organization_id'),
-            'completed' => Order::where('status', 'Completed')->selectRaw('organization_id, COUNT(*) AS n')->groupBy('organization_id')->pluck('n', 'organization_id'),
-            'buyerOrders' => Order::where('status', '!=', 'Cancelled')->get(['user_id', 'organization_id', 'status'])->groupBy('user_id'),
+            'members' => $data['memberCounts']->pluck('n', 'organization_id'),
+            // Active member farmers show on each organization's public profile (name, crops, farm area, member since).
+            'farmers' => $data['farmers']->groupBy('organization_id'),
+            'completed' => $data['completed']->pluck('n', 'organization_id'),
+            'buyerOrders' => $data['buyerOrders']->groupBy('user_id'),
+            'addresses' => $data['addresses']->groupBy('user_id'),
+            // Organizations whose representative is suspended can't sell for now.
+            'suspendedReps' => $people->where('role', 'Representative')->where('status', 'Suspended')->pluck('organization_id')->flip()->map(fn () => true),
         ];
-
-        $orders = match (true) {
-            $admin => Order::with('items')->get(),
-            $ownOrg !== null => Order::with('items')->where('organization_id', $ownOrg)->get(),
-            $viewer?->isBuyer() => Order::with('items')->where('user_id', $viewer->id)->get(),
-            default => collect(),
-        };
-        $reports = match (true) {
-            $admin => Report::all(),
-            $ownOrg !== null => Report::where('organization_id', $ownOrg)->get(),
-            $viewer !== null => Report::where('user_id', $viewer->id)->get(),
-            default => collect(),
-        };
 
         return [
             'me' => $viewer?->email,
@@ -64,7 +116,7 @@ class AppState
             'organizations' => $orgs->map(fn ($o) => self::organization($o, $admin || $o->id === $ownOrg))->values(),
             'accounts' => $people->filter(fn ($u) => $admin || $u->id === $viewer?->id || ($u->role !== 'Administrator' && $u->status === 'Active'))
                 ->map(fn ($u) => self::account($u, $viewer))->values(),
-            'crops' => Crop::whereIn('organization_id', $visibleOrgIds)->orderBy('created_at', 'desc')->orderBy('id')->get()->map(fn ($c) => [
+            'crops' => $data['crops']->map(fn ($c) => [
                 'id' => $c->id, 'name' => $c->name, 'organization' => $names[$c->organization_id] ?? '', 'image' => $c->image, 'price' => $c->price,
                 'unit' => $c->unit, 'category' => $c->category, 'stock' => $c->stock, 'status' => $c->status,
                 'harvested' => $c->harvested_on->toDateString(), 'shelfLife' => $c->shelf_life,
@@ -76,9 +128,14 @@ class AppState
                 'items' => $o->items->isEmpty() ? null : $o->items->map(fn ($i) => ['crop' => $i->crop_id, 'name' => $i->name, 'quantity' => $i->quantity, 'unit' => $i->unit, 'price' => $i->price])->values(),
                 'address' => $o->address, 'phone' => $o->phone, 'method' => $o->method, 'note' => $o->note,
                 'checkout' => $viewer && $o->user_id === $viewer->id ? $o->checkout_session : null, 'paymentRef' => $o->payment_ref,
+                'lat' => $o->lat, 'lng' => $o->lng, 'paidAt' => $o->paid_at?->toIso8601String(), 'deliveredAt' => $o->delivered_at?->toIso8601String(),
+                'receivedAt' => $o->received_at?->toIso8601String(), 'releaseOn' => $o->status === 'Delivered' ? $o->releaseOn()?->toIso8601String() : null,
+                'funds' => $o->funds, 'fundsSettledAt' => $o->funds_settled_at?->toIso8601String(), 'cancelReason' => $o->cancel_reason,
+                'buyerSuspended' => ($people->firstWhere('id', $o->user_id)?->status === 'Suspended') ?: null,
+                'refund' => $o->refundRequest ? self::refund($o->refundRequest) : null,
             ], fn ($v) => $v !== null))->values(),
             // Reviews are public: they show on each organization's profile.
-            'feedback' => Feedback::whereIn('organization_id', $visibleOrgIds)->orderByDesc('given_on')->get()->map(fn ($f) => array_filter([
+            'feedback' => $data['feedback']->map(fn ($f) => array_filter([
                 'id' => $f->id, 'organization' => $names[$f->organization_id] ?? '', 'customer' => $personName[$f->user_id] ?? '', 'rating' => $f->rating,
                 'comment' => $f->comment, 'date' => $f->given_on->toDateString(), 'order' => $f->order_id,
             ], fn ($v) => $v !== null))->values(),
@@ -87,23 +144,62 @@ class AppState
                 'details' => $r->details, 'date' => $r->filed_on->toDateString(), 'status' => $r->status, 'order' => $r->order_id,
                 'decided' => $r->decided_on?->toDateString(),
             ], fn ($v) => $v !== null))->values(),
-            'warnings' => ($admin ? Warning::all() : ($ownOrg ? Warning::where('organization_id', $ownOrg)->get() : collect()))->map(fn ($w) => [
+            'warnings' => $data['warnings']->map(fn ($w) => [
                 'id' => $w->id, 'organization' => $names[$w->organization_id] ?? '', 'reason' => $w->reason, 'details' => $w->details,
                 'date' => $w->given_on->toDateString(), 'by' => $w->given_by,
             ])->values(),
-            'members' => ($admin ? Member::all() : ($ownOrg ? Member::where('organization_id', $ownOrg)->get() : collect()))->sortBy('id')->map(fn ($m) => [
+            'members' => $data['members']->map(fn ($m) => [
                 'id' => $m->id, 'organization' => $names[$m->organization_id] ?? '', 'name' => $m->name, 'place' => $m->place, 'crops' => $m->crops,
                 'area' => $m->area, 'joined' => $m->joined, 'status' => $m->status,
             ])->values(),
-            'activity' => $admin ? Activity::orderByDesc('happened_at')->orderByDesc('id')->limit(1000)->get()->map(fn ($a) => array_filter([
+            'activity' => $admin ? $data['activity']->map(fn ($a) => array_filter([
                 'time' => $a->happened_at->toIso8601String(), 'actor' => $a->actor, 'type' => $a->type, 'detail' => $a->detail, 'target' => $a->target,
             ], fn ($v) => $v !== null))->values() : [],
-            'saved' => $viewer?->isBuyer() ? [$viewer->email => DB::table('saved_crops')->where('user_id', $viewer->id)->pluck('crop_id')] : (object) [],
-            'carts' => $viewer?->isBuyer() ? [$viewer->email => DB::table('cart_lines')->where('user_id', $viewer->id)->orderBy('crop_id')->get(['crop_id as crop', 'quantity'])] : (object) [],
-            'healthLog' => $admin ? HealthRun::orderByDesc('id')->limit(30)->get()->reverse()->map(fn ($h) => array_filter([
+            'saved' => $buyer ? [$viewer->email => $data['saved']->pluck('crop_id')] : (object) [],
+            'carts' => $buyer ? [$viewer->email => $data['cart']->map(fn ($l) => ['crop' => $l->crop, 'quantity' => (int) $l->quantity])->values()] : (object) [],
+            'healthLog' => $admin ? $data['health']->reverse()->map(fn ($h) => array_filter([
                 'time' => $h->ran_at->toIso8601String(), 'results' => $h->results, 'hardware' => $h->hardware, 'hardwareError' => $h->hardware_error,
             ], fn ($v) => $v !== null))->values() : [],
         ];
+    }
+
+    // Runs several read queries. On Postgres (Supabase) they go to the database as one statement (each wrapped in
+    // json_agg), so a page costs one round trip however many lists it needs; the database is far away (Paris), and
+    // each round trip is about 0.2 s. Eloquent queries come back as models, plain ones as rows. Other databases run
+    // them one by one.
+    private static function batch(array $queries): array
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            return array_map(fn ($q) => $q->get(), $queries);
+        }
+        $parts = [];
+        $bindings = [];
+        foreach ($queries as $name => $query) {
+            $parts[] = '(select coalesce(json_agg(t), \'[]\'::json) from ('.$query->toSql().') t) as "'.$name.'"';
+            array_push($bindings, ...$query->getBindings());
+        }
+        $row = DB::selectOne('select '.implode(', ', $parts), $bindings);
+        $out = [];
+        foreach ($queries as $name => $query) {
+            $rows = json_decode($row->{$name}, true) ?? [];
+            if ($query instanceof EloquentBuilder) {
+                // JSON columns arrive as nested JSON; the models expect them as text, like the database driver gives them.
+                $json = array_keys(array_filter($query->getModel()->getCasts(), fn ($cast) => in_array($cast, ['array', 'json', 'object', 'collection'], true)));
+                foreach ($rows as &$r) {
+                    foreach ($json as $column) {
+                        if (isset($r[$column]) && ! is_string($r[$column])) {
+                            $r[$column] = json_encode($r[$column]);
+                        }
+                    }
+                }
+                unset($r);
+                $out[$name] = $query->hydrate($rows);
+            } else {
+                $out[$name] = collect($rows)->map(fn ($r) => (object) $r);
+            }
+        }
+
+        return $out;
     }
 
     // $full: the organization itself and administrators also see its documents and contact details.
@@ -113,9 +209,11 @@ class AppState
 
         return array_filter([
             'name' => $o->name, 'region' => $o->region(), 'crop' => $o->crop, 'image' => $o->image, 'listings' => 0, 'status' => $o->status,
-            'representative' => $o->representative, 'applied' => $o->applied_on->toDateString(), 'members' => $members ?: $o->members_declared,
+            'representative' => $o->representative, 'applied' => $o->applied_on->toDateString(), 'members' => $members,
             'completedOrders' => (int) (self::$counts['completed'][$o->id] ?? 0),
-            'documents' => $full ? ($o->documents ?? []) : [], 'approved' => $o->approved_on?->toDateString(),
+            'stopped' => $o->status === 'Active' && (self::$counts['suspendedReps'][$o->id] ?? false) ?: null,
+            'farmers' => (self::$counts['farmers'][$o->id] ?? collect())->map(fn ($m) => ['name' => $m->name, 'crops' => $m->crops, 'area' => (float) $m->area, 'joined' => $m->joined])->values(),
+            'documents' => $full ? $o->documents->map(fn ($d) => Documents::forPage($d))->values() : [], 'approved' => $o->approved_on?->toDateString(),
             'phone' => $full ? $o->phone : null, 'description' => $o->description,
             'terminated' => $o->terminated_on?->toDateString(), 'terminatedFor' => $full ? $o->terminated_for : null,
             'avatar' => $o->avatar, 'banner' => $o->banner, 'bannerX' => $o->banner_x, 'bannerY' => $o->banner_y,
@@ -131,7 +229,10 @@ class AppState
         if ($viewer && ($viewer->isAdmin() || $viewer->id === $u->id)) {
             return array_filter($base + $look + [
                 'email' => $u->email, 'joined' => $u->joined_on->toDateString(), 'lastActive' => $u->last_active_on->toDateString(),
-                'note' => $u->note, 'phone' => $u->phone, 'address' => $u->address, 'privacy' => $u->privacySettings(),
+                'note' => $u->note, 'phone' => $u->phone, 'privacy' => $u->privacySettings(),
+                // Their saved delivery addresses for themself; administrators see the default one.
+                'addresses' => $viewer->id === $u->id && $u->isBuyer() ? self::addressesOf($u)->map(fn ($a) => $a->forPage())->values() : null,
+                'address' => $viewer->id !== $u->id ? self::addressesOf($u)->first()?->fullText() : null,
             ] + self::buyerStats($u, true), fn ($v) => $v !== null);
         }
         $privacy = $u->privacySettings();
@@ -139,7 +240,7 @@ class AppState
             return array_filter($base + $look + ['privacy' => $privacy, 'joined' => $u->joined_on->toDateString()], fn ($v) => $v !== null);
         }
 
-        return array_filter($base + $look + ['joined' => $u->joined_on->toDateString(), 'privacy' => $u->isBuyer() ? $privacy : null, 'city' => $u->isBuyer() && $privacy['city'] ? self::city($u->address) : null]
+        return array_filter($base + $look + ['joined' => $u->joined_on->toDateString(), 'privacy' => $u->isBuyer() ? $privacy : null, 'city' => $u->isBuyer() && $privacy['city'] && self::addressesOf($u)->isNotEmpty() ? config('anibayan.city').', '.config('anibayan.province') : null]
             + ($u->isBuyer() ? self::buyerStats($u, $privacy['growers']) : []), fn ($v) => $v !== null);
     }
 
@@ -156,11 +257,20 @@ class AppState
             'growers' => $growers ? $orders->pluck('organization_id')->unique()->filter(fn ($id) => isset($public[$id]))->map(fn ($id) => $public[$id])->values() : null];
     }
 
-    // "12 J.P. Rizal Street, Barangay Lalud, Calapan City, Oriental Mindoro" → "Calapan City, Oriental Mindoro".
-    private static function city(?string $address): ?string
+    private static function addressesOf(User $u): \Illuminate\Support\Collection
     {
-        $parts = array_values(array_filter(array_map('trim', explode(',', (string) $address))));
+        return self::$counts['addresses'][$u->id] ?? collect();
+    }
 
-        return count($parts) >= 3 ? implode(', ', array_slice($parts, -2)) : null;
+    // A refund request as the buyer, the organization and administrators see it.
+    private static function refund(RefundRequest $r): array
+    {
+        return array_filter([
+            'id' => $r->id, 'reason' => $r->reason, 'details' => $r->details, 'status' => $r->status,
+            'requestedAt' => $r->requested_at->toIso8601String(), 'respondBy' => $r->respond_by->toIso8601String(),
+            'disputeReason' => $r->dispute_reason, 'disputedAt' => $r->disputed_at?->toIso8601String(), 'adminNote' => $r->admin_note,
+            'decidedAt' => $r->decided_at?->toIso8601String(), 'decidedBy' => $r->decided_by,
+            'media' => $r->media->map(fn ($m) => RefundMediaStore::forPage($m))->values(),
+        ], fn ($v) => $v !== null);
     }
 }

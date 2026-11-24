@@ -3,6 +3,7 @@
 use App\Http\Controllers\ActionController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\ReceiptController;
 use App\Http\Controllers\ServerHealthController;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
@@ -18,6 +19,10 @@ Route::prefix('api')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/register', [AuthController::class, 'register']);
     Route::post('/logout', [AuthController::class, 'logout']);
+    // A file attached to an organization's application (administrators only).
+    Route::get('/documents/{id}', [AuthController::class, 'document'])->whereNumber('id');
+    // A photo or video attached to a refund request (the buyer, the organization and administrators).
+    Route::get('/refund-media/{id}', [ReceiptController::class, 'media'])->whereNumber('id');
     // Every change: cart, checkout, orders, listings, members, reviews, reports, warnings, accounts, photos.
     Route::post('/actions/{action}', ActionController::class)->where('action', '[a-z.-]+');
     // Card and GCash payments through PayMongo's hosted checkout (keys in .env).
@@ -31,6 +36,10 @@ Route::prefix('api')->group(function () {
         return response()->json(['ok' => true, 'accounts' => $accounts, 'ms' => round((microtime(true) - $start) * 1000, 1)])->header('Cache-Control', 'no-store');
     });
 });
+
+// Electronic receipts, printable (the pages open it after checkout and from each order). It sits outside /anibayan/
+// because PHP's built-in server (php artisan serve) answers paths inside that folder itself.
+Route::get('/receipt', [ReceiptController::class, 'show']);
 
 // CPU, memory and storage readings for the Site health page.
 Route::get('/server-health', ServerHealthController::class);

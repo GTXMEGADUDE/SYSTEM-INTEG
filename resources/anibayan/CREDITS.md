@@ -25,3 +25,8 @@ The source design is `C:/Users/PC/Desktop/anibayan-figma/mockups/01-home-rebuilt
 
 - `assets/mango-branch.png`: original generated transparent botanical branch, used to connect the editorial sections visually.
 - `assets/seedlings-story.png`: original generated photograph of seedlings and tending hands. Illustrative farming photography, not a verified farm or person. Both assets were created with the built-in image generation tool; full prompts are in `assets/GENERATED-ASSETS.md`.
+
+- `assets/anibayan-logo.png`: the AniBayan logo supplied by the team, with its cream background made transparent and scaled to 300 px, for the Excel and PDF exports.
+- `assets/calapan-barangays.json`: the 62 barangay outlines of Calapan City (PSGC 1705205000) from [Philippines JSON Maps](https://github.com/faeldon/philippines-json-maps), the same source as `calapan-home.svg`; used to find which barangay a delivery pin is in.
+- `assets/calapan-streets.json`: named streets and places in Calapan City from © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (ODbL), taken through the Overpass API on 2026-11-24; used to name the street or landmark at a delivery pin.
+- Map tiles: © OpenStreetMap contributors, shown with [Leaflet](https://leafletjs.com/) 1.9.4. Exports use [jsPDF](https://github.com/parallax/jsPDF) 2.5.2 with jspdf-autotable 3.8.4, and [ExcelJS](https://github.com/exceljs/exceljs) 4.4.0 (all MIT licensed), loaded from unpkg with integrity hashes.

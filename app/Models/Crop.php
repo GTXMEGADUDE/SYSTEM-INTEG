@@ -33,6 +33,6 @@ class Crop extends Model
     public function isBuyable(): bool
     {
         return $this->status === 'Active' && $this->stock > 0 && $this->daysLeft() >= 0
-            && $this->organization?->status !== 'Terminated';
+            && $this->organization && ! $this->organization->isStopped();
     }
 }

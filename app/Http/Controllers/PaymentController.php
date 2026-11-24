@@ -11,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 // Card and GCash payments through PayMongo's hosted checkout. The secret key stays on the server (.env).
 // The checkout is built from the orders in the database, and only PayMongo's answer marks an order paid.
@@ -18,13 +19,15 @@ class PaymentController extends Controller
 {
     private const API = 'https://api.paymongo.com/v1/checkout_sessions';
 
+    private const UNAVAILABLE = 'Online payment isn’t available right now. Try again in a moment.';
+
     private const METHODS = ['GCash' => 'gcash', 'Credit or debit card' => 'card'];
 
     // Opens a PayMongo checkout for the signed-in buyer's unpaid card or GCash orders.
     public function create(Request $request): JsonResponse
     {
         $buyer = Auth::user();
-        abort_unless($buyer && $buyer->isBuyer() && $buyer->status === 'Active', 403, 'Sign in with a buyer account to pay.');
+        self::refuseUnless($buyer && $buyer->isBuyer() && $buyer->status === 'Active', 403, 'Sign in with a buyer account to pay.');
         $ids = $request->validate(['orders' => 'required|array|min:1|max:20', 'orders.*' => 'string'])['orders'];
         $orders = Order::with(['items', 'organization'])->whereIn('id', $ids)->where('user_id', $buyer->id)
             ->where('payment', 'Unpaid')->where('status', '!=', 'Cancelled')->get();
@@ -74,7 +77,7 @@ class PaymentController extends Controller
     public function check(Request $request): JsonResponse
     {
         $buyer = Auth::user();
-        abort_unless($buyer && $buyer->isBuyer() && $buyer->status === 'Active', 403, 'Sign in with a buyer account.');
+        self::refuseUnless($buyer && $buyer->isBuyer() && $buyer->status === 'Active', 403, 'Sign in with a buyer account.');
         $cancelled = $request->boolean('cancelled');
         $paid = [];
         if ($this->client()) {
@@ -87,7 +90,7 @@ class PaymentController extends Controller
                 $payment = collect($response->json('data.attributes.payments') ?? [])->firstWhere('attributes.status', 'paid');
                 foreach ($orders as $order) {
                     if ($payment) {
-                        $order->update(['payment' => 'Paid', 'payment_ref' => $payment['id'], 'checkout_session' => null]);
+                        $order->update(['payment' => 'Paid', 'payment_ref' => $payment['id'], 'checkout_session' => null, 'paid_at' => now(), 'funds' => 'Held']);
                         Activity::record('order-paid', $buyer->email, $order->number().' · ₱'.number_format($order->total).' · '.$order->method);
                         $paid[] = $order->number();
                     } elseif ($response->json('data.attributes.status') !== 'active' || $cancelled) {
@@ -126,13 +129,19 @@ class PaymentController extends Controller
         return $secret ? Http::withBasicAuth($secret, '')->acceptJson()->asJson()->timeout(20) : null;
     }
 
+    // The buyer only sees that online payment isn't available; the reason (a missing PAYMONGO_SECRET_KEY in .env, or
+    // what PayMongo answered) goes to storage/logs for whoever runs the server.
     private function notSetUp(): JsonResponse
     {
-        return response()->json(['message' => 'PayMongo isn’t set up on this server. Add PAYMONGO_SECRET_KEY to .env.'], 503);
+        Log::warning('PayMongo isn’t set up: PAYMONGO_SECRET_KEY is missing from .env.');
+
+        return response()->json(['message' => self::UNAVAILABLE], 503);
     }
 
     private function failed(?string $detail, int $status = 502): JsonResponse
     {
-        return response()->json(['message' => 'PayMongo: '.($detail ?: 'no answer.')], $status);
+        Log::warning('PayMongo refused a request: '.($detail ?: 'no answer.'), ['status' => $status]);
+
+        return response()->json(['message' => self::UNAVAILABLE], $status);
     }
 }

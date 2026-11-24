@@ -97,6 +97,9 @@ return [
             'prefix_indexes' => true,
             'search_path' => 'public',
             'sslmode' => env('DB_SSLMODE', 'prefer'),
+            // Supabase is far away (about 0.2 s a round trip). Real prepared statements cost three round trips per query
+            // (prepare, run, close), emulated ones one; and a kept-open connection saves the ~1.3 s handshake per request.
+            'options' => extension_loaded('pdo_pgsql') ? [PDO::ATTR_EMULATE_PREPARES => true, PDO::ATTR_PERSISTENT => (bool) env('DB_PERSISTENT', true)] : [],
         ],
 
         'sqlsrv' => [

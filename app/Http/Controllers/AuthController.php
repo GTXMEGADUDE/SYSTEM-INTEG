@@ -4,13 +4,20 @@ namespace App\Http\Controllers;
 
 use App\Models\Activity;
 use App\Models\Organization;
+use App\Models\OrganizationDocument;
 use App\Models\User;
 use App\Support\AppState;
+use App\Support\Documents;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\Response;
+use Throwable;
 
 // Signing in and out, and creating accounts. Buyers can shop right away; an organization's representative
 // applies and can sign in once an administrator approves the organization. Every attempt goes in the activity log.
@@ -63,39 +70,66 @@ class AuthController extends Controller
         return response()->json(['role' => $account->role]);
     }
 
+    // Anything the server refuses here (an email or organization name already taken, a file that isn't really a PDF or
+    // picture) gets the same generic answer, so the form can't be used to find out who has an account. The page checks
+    // the format of each field itself before sending.
     public function register(Request $request): JsonResponse
     {
         $organization = $request->input('type') === 'organization';
+        // Emails are kept in lower case, and names are compared ignoring capitals (Postgres compares them exactly).
+        $request->merge(['email' => strtolower(trim((string) $request->input('email')))]);
         $rules = [
             'type' => 'required|in:buyer,organization', 'name' => 'required|string|min:3|max:80',
-            'email' => 'required|email|max:120|unique:users,email', 'phone' => ['required', 'regex:/^(\+63|0)9\d{2}[\s-]?\d{3}[\s-]?\d{4}$/'],
-            'password' => 'required|string|min:8|max:200',
+            'email' => 'required|email|max:120|unique:users,email', 'phone' => ['required', 'regex:'.ActionController::PHONE],
+            'password' => 'required|string|min:8|max:200|confirmed',
         ];
         if ($organization) {
             $rules += [
-                'orgName' => 'required|string|min:3|max:80|unique:organizations,name', 'barangay' => ['required', Rule::in(config('anibayan.barangays'))],
-                'crops' => 'required|string|min:3|max:80', 'members' => 'required|integer|min:1|max:100000',
-                'documents' => 'required|array|min:1', 'documents.*' => 'in:CDA or SEC registration,Barangay endorsement,Representative ID',
+                'orgName' => ['required', 'string', 'min:3', 'max:80', function (string $attribute, mixed $value, \Closure $fail) {
+                    if (Organization::whereRaw('lower(name) = ?', [mb_strtolower(trim((string) $value))])->exists()) {
+                        $fail('An organization with this name is already on AniBayan.');
+                    }
+                }], 'barangay' => ['required', Rule::in(config('anibayan.barangays'))],
+                'crops' => 'required|string|min:3|max:80',
+                'documents' => 'required|array:'.implode(',', array_keys(Documents::TYPES)).'|min:1',
+                'documents.*' => 'required|file|max:'.Documents::MAX_KB.'|mimetypes:'.implode(',', Documents::MIMES),
             ];
         }
-        $data = $request->validate($rules, [
-            'email.unique' => 'An account already uses this email. Sign in instead.', 'phone.regex' => 'Enter a mobile number like 0917 555 0148.',
-            'password.min' => 'Use at least 8 characters.', 'orgName.unique' => 'An organization with this name is already on AniBayan.',
-            'barangay.*' => 'Choose your barangay.', 'documents.*' => 'Choose at least one document you can submit.',
-        ]);
-        $orgId = null;
-        if ($organization) {
-            $orgId = Organization::create([
-                'name' => $data['orgName'], 'barangay' => $data['barangay'], 'crop' => $data['crops'], 'image' => 'field-detail.jpg',
-                'status' => 'Pending review', 'representative' => $data['name'], 'members_declared' => $data['members'],
-                'documents' => array_values($data['documents']), 'phone' => $data['phone'], 'applied_on' => today(),
-            ])->id;
+        $validator = Validator::make($request->all(), $rules);
+        if ($validator->fails()) {
+            Activity::record('register-refused', strtolower(trim((string) $request->input('email'))), implode(', ', array_keys($validator->errors()->messages())));
+
+            return response()->json(['message' => $organization
+                ? 'Your application couldn’t be submitted. Check your details and try again.'
+                : 'Your account couldn’t be created. Check your details and try again.'], 422);
         }
-        $account = User::create([
-            'name' => $data['name'], 'email' => strtolower($data['email']), 'password' => $data['password'],
-            'role' => $organization ? 'Representative' : 'Consumer', 'organization_id' => $orgId, 'status' => $organization ? 'Pending' : 'Active',
-            'phone' => $data['phone'], 'joined_on' => today(), 'last_active_on' => today(),
-        ]);
+        $data = $validator->validated();
+        $stored = [];
+        try {
+            $account = DB::transaction(function () use ($data, $organization, $request, &$stored) {
+                $org = null;
+                if ($organization) {
+                    $org = Organization::create([
+                        'name' => $data['orgName'], 'barangay' => $data['barangay'], 'crop' => $data['crops'], 'image' => 'field-detail.jpg',
+                        'status' => 'Pending review', 'representative' => $data['name'], 'phone' => $data['phone'], 'applied_on' => today(),
+                    ]);
+                    foreach (array_keys(Documents::TYPES) as $type) {
+                        if ($file = $request->file('documents.'.$type)) {
+                            $stored[] = Documents::store($org, $type, $file);
+                        }
+                    }
+                }
+
+                return User::create([
+                    'name' => $data['name'], 'email' => strtolower($data['email']), 'password' => $data['password'],
+                    'role' => $organization ? 'Representative' : 'Consumer', 'organization_id' => $org?->id, 'status' => $organization ? 'Pending' : 'Active',
+                    'phone' => $data['phone'], 'joined_on' => today(), 'last_active_on' => today(),
+                ]);
+            });
+        } catch (Throwable $e) {
+            Storage::disk('local')->delete($stored);
+            throw $e;
+        }
         Activity::record('register', $account->email, $organization ? 'Organization application · '.$data['orgName'] : 'Buyer');
         if (! $organization) {
             Auth::login($account);
@@ -103,6 +137,19 @@ class AuthController extends Controller
         }
 
         return response()->json(['role' => $account->role, 'organization' => $organization ? $data['orgName'] : null, 'email' => $account->email]);
+    }
+
+    // An application's file, for administrators only; anyone else gets the same answer as for a file that doesn't exist.
+    public function document(int $id): Response
+    {
+        $document = OrganizationDocument::find($id);
+        if (! $document || ! Auth::user()?->isAdmin() || ! Storage::disk('local')->exists($document->path)) {
+            self::refuse('That file isn’t available.', 404);
+        }
+
+        return Storage::disk('local')->response($document->path, $document->name, [
+            'Content-Type' => $document->mime, 'X-Content-Type-Options' => 'nosniff', 'Cache-Control' => 'private, no-store',
+        ]);
     }
 
     public function logout(Request $request): JsonResponse

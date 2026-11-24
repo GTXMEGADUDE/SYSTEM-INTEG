@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Activity;
+use App\Models\Address;
 use App\Models\Crop;
 use App\Models\Feedback;
 use App\Models\HealthRun;
@@ -10,11 +11,17 @@ use App\Models\Member;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Organization;
+use App\Models\RefundRequest;
 use App\Models\Report;
 use App\Models\User;
 use App\Models\Warning;
 use App\Support\AppState;
+use App\Support\Calapan;
+use App\Support\Documents;
+use App\Support\Escrow;
 use App\Support\Photos;
+use App\Support\RefundMediaStore;
+use App\Support\Suspensions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
@@ -22,8 +29,10 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 // Every change the AniBayan pages make goes through here: POST /api/actions/{action}. Each action checks who is
 // signed in and what they may change, writes the database, records the activity log, and answers with the
@@ -34,15 +43,17 @@ class ActionController extends Controller
         // Buyers
         'cart.add' => 'cartAdd', 'cart.step' => 'cartStep', 'cart.remove' => 'cartRemove', 'cart.clear' => 'cartClear',
         'save.toggle' => 'saveToggle', 'checkout' => 'checkout', 'order.cancel' => 'orderCancel', 'feedback.create' => 'feedbackCreate',
-        'report.create' => 'reportCreate', 'profile.delivery' => 'profileDelivery', 'privacy' => 'privacy',
+        'report.create' => 'reportCreate', 'profile.contact' => 'profileContact', 'privacy' => 'privacy',
+        'address.save' => 'addressSave', 'address.remove' => 'addressRemove', 'address.default' => 'addressDefault',
+        'order.received' => 'orderReceived', 'refund.request' => 'refundRequest',
         // Organizations
         'order.advance' => 'orderAdvance', 'order.decline' => 'orderDecline', 'listing.save' => 'listingSave', 'listing.toggle' => 'listingToggle',
         'listing.remove' => 'listingRemove', 'member.add' => 'memberAdd', 'member.confirm' => 'memberConfirm', 'member.remove' => 'memberRemove',
-        'org.profile' => 'orgProfile',
+        'org.profile' => 'orgProfile', 'refund.accept' => 'refundAccept', 'refund.dispute' => 'refundDispute',
         // Administrators
         'account.suspend' => 'accountSuspend', 'account.reset-password' => 'accountResetPassword', 'application.review' => 'applicationReview',
         'report.decide' => 'reportDecide', 'warning.create' => 'warningCreate', 'warning.withdraw' => 'warningWithdraw',
-        'organization.terminate' => 'organizationTerminate', 'health.record' => 'healthRecord', 'data.reset' => 'dataReset',
+        'organization.terminate' => 'organizationTerminate', 'refund.decide' => 'refundDecide', 'health.record' => 'healthRecord', 'data.reset' => 'dataReset',
         // Everyone signed in
         'password.change' => 'passwordChange', 'preferences' => 'preferences',
         'look.upload' => 'lookUpload', 'look.remove' => 'lookRemove', 'look.position' => 'lookPosition',
@@ -52,7 +63,8 @@ class ActionController extends Controller
 
     private const PAYMENT_METHODS = ['Cash on delivery', 'GCash', 'Credit or debit card'];
 
-    private const PHONE = '/^(\+63|0)9\d{2}[\s-]?\d{3}[\s-]?\d{4}$/';
+    // A Philippine mobile number: 0917 555 0148 or +63 917 555 0148 (at most 12 digits).
+    public const PHONE = '/^(\+63[\s-]?|0)9\d{2}[\s-]?\d{3}[\s-]?\d{4}$/';
 
     public function __invoke(Request $request, string $action): JsonResponse
     {
@@ -72,22 +84,22 @@ class ActionController extends Controller
 
     private function buyer(User $user): void
     {
-        abort_unless($user->isBuyer(), 403, 'Sign in with a buyer account to do this.');
+        self::refuseUnless($user->isBuyer(), 403, 'Sign in with a buyer account to do this.');
     }
 
     // The representative's organization, which must be approved and still selling.
     private function myOrg(User $user): Organization
     {
-        abort_unless($user->isRepresentative(), 403, 'Only an organization’s representative can do this.');
+        self::refuseUnless($user->isRepresentative(), 403, 'Only an organization’s representative can do this.');
         $org = $user->organization;
-        abort_unless($org && $org->status === 'Active', 403, 'Your organization can’t do this right now.');
+        self::refuseUnless($org && $org->status === 'Active', 403, 'Your organization can’t do this right now.');
 
         return $org;
     }
 
     private function admin(User $user): void
     {
-        abort_unless($user->isAdmin(), 403, 'Only an administrator can do this.');
+        self::refuseUnless($user->isAdmin(), 403, 'Only an administrator can do this.');
     }
 
     private function fail(string $message, int $status = 422): never
@@ -173,15 +185,21 @@ class ActionController extends Controller
     }
 
     // Places one order per organization in the cart. Card and GCash orders wait for payment through PayMongo.
+    // The delivery address is one of the buyer's saved addresses, or a new one (typed, pinned, or both) that can be saved.
     private function checkout(Request $request, User $user): array
     {
         $this->buyer($user);
         $data = $request->validate([
-            'street' => 'required|string|min:4|max:120', 'barangay' => ['required', Rule::in(config('anibayan.barangays'))],
-            'phone' => ['required', 'regex:'.self::PHONE], 'method' => ['required', Rule::in(self::PAYMENT_METHODS)],
-            'note' => 'nullable|string|max:200', 'remember' => 'boolean',
-        ], ['barangay.in' => 'Choose a barangay in Calapan City.', 'phone.regex' => 'Enter a mobile number like 0917 555 0148.']);
-        $address = $data['street'].', Barangay '.$data['barangay'].', '.config('anibayan.city').', '.config('anibayan.province');
+            'address' => 'nullable|integer', 'phone' => ['required', 'regex:'.self::PHONE], 'method' => ['required', Rule::in(self::PAYMENT_METHODS)],
+            'note' => 'nullable|string|max:200', 'save' => 'boolean',
+        ], ['phone.regex' => 'Enter a mobile number like 0917 555 0148.']);
+        if (! empty($data['address'])) {
+            $saved = $user->addresses()->find($data['address']) ?? $this->fail('Choose one of your saved addresses.');
+            $place = ['text' => $saved->fullText(), 'lat' => $saved->lat, 'lng' => $saved->lng];
+        } else {
+            $new = $this->addressInput($request);
+            $place = ['text' => Address::text($new['details'] ?? '', $new['barangay'], isset($new['lat'])), 'lat' => $new['lat'] ?? null, 'lng' => $new['lng'] ?? null];
+        }
         $lines = DB::table('cart_lines')->where('user_id', $user->id)->get();
         if ($lines->isEmpty()) {
             $this->fail('Your cart is empty.');
@@ -204,7 +222,8 @@ class ActionController extends Controller
                 'image' => $first['crop']->image,
                 'quantity' => $items->count() === 1 ? $first['quantity'].' '.$first['crop']->unit : $items->count().' items',
                 'total' => $total, 'placed_on' => today(), 'status' => 'Pending', 'payment' => 'Unpaid',
-                'address' => $address, 'phone' => $data['phone'], 'method' => $data['method'], 'note' => $data['note'] ?? '',
+                'address' => $place['text'], 'lat' => $place['lat'], 'lng' => $place['lng'],
+                'phone' => $data['phone'], 'method' => $data['method'], 'note' => $data['note'] ?? '',
             ]);
             foreach ($items as $item) {
                 OrderItem::create(['order_id' => $order->id, 'crop_id' => $item['crop']->id, 'name' => $item['crop']->name, 'quantity' => $item['quantity'], 'unit' => $item['crop']->unit, 'price' => $item['crop']->price]);
@@ -214,19 +233,149 @@ class ActionController extends Controller
             $placed[] = ['id' => $order->id, 'organization' => $first['crop']->organization->name];
         }
         DB::table('cart_lines')->where('user_id', $user->id)->delete();
-        if (! empty($data['remember'])) {
-            $user->update(['address' => $address, 'phone' => $data['phone']]);
+        if (isset($new) && ! empty($data['save'])) {
+            $this->storeAddress($user, $new);
+        }
+        if (! $user->phone) {
+            $user->update(['phone' => $data['phone']]);
         }
 
         return ['orders' => $placed, 'method' => $data['method']];
     }
 
+    /* ---------- Saved delivery addresses ---------- */
+
+    // A delivery address from the form: a barangay of Calapan City plus house/street details, a map pin, or both.
+    private function addressInput(Request $request): array
+    {
+        $data = $request->validate([
+            'label' => 'nullable|string|max:40', 'details' => 'nullable|string|max:120', 'barangay' => ['required', Rule::in(config('anibayan.barangays'))],
+            'lat' => 'nullable|numeric|required_with:lng', 'lng' => 'nullable|numeric|required_with:lat',
+        ], ['barangay.*' => 'Choose a barangay in Calapan City.', 'lat.*' => 'Pin a place in Calapan City.', 'lng.*' => 'Pin a place in Calapan City.']);
+        if (isset($data['lat'], $data['lng'])) {
+            if (! Calapan::barangayAt((float) $data['lat'], (float) $data['lng'])) {
+                throw ValidationException::withMessages(['pin' => 'AniBayan delivers only within Calapan City. Pin a place inside the city.']);
+            }
+            $data['lat'] = round((float) $data['lat'], 6);
+            $data['lng'] = round((float) $data['lng'], 6);
+        } else {
+            unset($data['lat'], $data['lng']);
+            if (mb_strlen(trim($data['details'] ?? '')) < 4) {
+                throw ValidationException::withMessages(['details' => 'Enter the house number and street, or pin the place on the map.']);
+            }
+        }
+        $data['details'] = trim($data['details'] ?? '');
+
+        return $data;
+    }
+
+    private function storeAddress(User $user, array $data, ?Address $address = null): Address
+    {
+        $first = ! $user->addresses()->exists();
+        $values = ['label' => trim($data['label'] ?? '') ?: ($first ? 'Home' : 'Other'), 'details' => $data['details'] ?: null, 'barangay' => $data['barangay'],
+            'lat' => $data['lat'] ?? null, 'lng' => $data['lng'] ?? null];
+        if ($address) {
+            $address->update($values);
+        } else {
+            $address = $user->addresses()->create($values + ['is_default' => $first]);
+        }
+        if (! empty($data['default']) && ! $address->is_default) {
+            $this->makeDefault($user, $address);
+        }
+
+        return $address;
+    }
+
+    private function makeDefault(User $user, Address $address): void
+    {
+        $user->addresses()->update(['is_default' => false]);
+        $address->update(['is_default' => true]);
+    }
+
+    private function ownAddress(Request $request, User $user): Address
+    {
+        $this->buyer($user);
+
+        return $user->addresses()->find((int) $request->input('id')) ?? $this->fail('That address wasn’t found.', 404);
+    }
+
+    private function addressSave(Request $request, User $user): array
+    {
+        $this->buyer($user);
+        $existing = $request->filled('id') ? $this->ownAddress($request, $user) : null;
+        $data = $this->addressInput($request) + ['default' => $request->boolean('default')];
+        $address = $this->storeAddress($user, $data, $existing);
+        Activity::record('profile-updated', $user->email, ($existing ? 'Delivery address edited · ' : 'Delivery address added · ').$address->label);
+
+        return ['id' => $address->id];
+    }
+
+    private function addressRemove(Request $request, User $user): void
+    {
+        $address = $this->ownAddress($request, $user);
+        $wasDefault = $address->is_default;
+        $address->delete();
+        if ($wasDefault && ($next = $user->addresses()->first())) {
+            $next->update(['is_default' => true]);
+        }
+        Activity::record('profile-updated', $user->email, 'Delivery address removed · '.$address->label);
+    }
+
+    private function addressDefault(Request $request, User $user): void
+    {
+        $this->makeDefault($user, $this->ownAddress($request, $user));
+    }
+
     private function ownOrder(Request $request, User $user): Order
     {
         $order = Order::find((string) $request->input('order'));
-        abort_unless($order && $order->user_id === $user->id, 404, 'That order wasn’t found.');
+        self::refuseUnless($order && $order->user_id === $user->id, 404, 'That order wasn’t found.');
 
         return $order;
+    }
+
+    // The buyer confirms the delivered order arrived: it completes and a held payment goes to the organization.
+    private function orderReceived(Request $request, User $user): void
+    {
+        $this->buyer($user);
+        $order = $this->ownOrder($request, $user);
+        if ($order->status !== 'Delivered') {
+            $this->fail('Only delivered orders can be marked as received.');
+        }
+        $order->update(['status' => 'Completed', 'received_at' => now()]);
+        Escrow::release($order);
+        Activity::record('order-received', $user->email, $order->number().' · '.$order->organization->name);
+    }
+
+    // Within the 7 days after delivery, the buyer of an order paid online can ask for the money back, with a reason,
+    // what went wrong, and at least one photo or video. The organization then has 10 days to accept or dispute it.
+    private function refundRequest(Request $request, User $user): array
+    {
+        $this->buyer($user);
+        $order = $this->ownOrder($request, $user);
+        if (! $order->canRequestRefund()) {
+            $this->fail('A refund can be requested within '.Order::HOLD_DAYS.' days after delivery, for orders paid online.');
+        }
+        $data = $request->validate([
+            'reason' => ['required', Rule::in(RefundRequest::REASONS)], 'details' => 'required|string|min:20|max:1000',
+            'media' => 'required|array|min:1|max:'.RefundMediaStore::MAX_FILES,
+            'media.*' => 'required|file|max:'.RefundMediaStore::MAX_KB.'|mimetypes:'.implode(',', RefundMediaStore::MIMES),
+        ], ['reason.*' => 'Choose a reason.', 'details.*' => 'Describe what went wrong in at least 20 characters.',
+            'media.*' => 'Attach photos or videos (JPG, PNG, WebP, MP4, WebM or MOV, up to 50 MB each).']);
+        $refund = RefundRequest::create([
+            'id' => RefundRequest::nextId('RF-', 3), 'order_id' => $order->id, 'user_id' => $user->id, 'organization_id' => $order->organization_id,
+            'reason' => $data['reason'], 'details' => trim($data['details']), 'status' => 'Requested',
+            'requested_at' => now(), 'respond_by' => now()->addDays(Order::RESPOND_DAYS),
+        ]);
+        RefundMediaStore::storeAll($refund, $request->file('media'));
+        $order->update(['status' => 'Refund requested']);
+        Activity::record('refund-requested', $user->email, $order->number().' · '.$refund->id.' · '.$refund->reason);
+        // Nobody can answer for a terminated or suspended organization, so the refund is granted straight away.
+        if ($order->organization->isStopped()) {
+            Escrow::refund($refund->load('order'), 'automatic');
+        }
+
+        return ['id' => $refund->id];
     }
 
     private function orderCancel(Request $request, User $user): void
@@ -269,15 +418,12 @@ class ActionController extends Controller
         Activity::record('report-filed', $user->email, $id.' · '.Organization::find($order->organization_id)->name);
     }
 
-    private function profileDelivery(Request $request, User $user): void
+    private function profileContact(Request $request, User $user): void
     {
         $this->buyer($user);
-        $data = $request->validate([
-            'phone' => ['required', 'regex:'.self::PHONE], 'street' => 'required|string|min:4|max:120',
-            'barangay' => ['required', Rule::in(config('anibayan.barangays'))],
-        ], ['barangay.in' => 'Choose a barangay in Calapan City.', 'phone.regex' => 'Enter a mobile number like 0917 555 0148.']);
-        $user->update(['phone' => $data['phone'], 'address' => $data['street'].', Barangay '.$data['barangay'].', '.config('anibayan.city').', '.config('anibayan.province')]);
-        Activity::record('profile-updated', $user->email, 'Delivery details');
+        $data = $request->validate(['phone' => ['required', 'regex:'.self::PHONE]], ['phone.regex' => 'Enter a mobile number like 0917 555 0148.']);
+        $user->update(['phone' => $data['phone']]);
+        Activity::record('profile-updated', $user->email, 'Mobile number');
     }
 
     private function privacy(Request $request, User $user): void
@@ -293,7 +439,7 @@ class ActionController extends Controller
     private function orgOrder(Request $request, Organization $org): Order
     {
         $order = Order::find((string) $request->input('order'));
-        abort_unless($order && $order->organization_id === $org->id, 404, 'That order wasn’t found.');
+        self::refuseUnless($order && $order->organization_id === $org->id, 404, 'That order wasn’t found.');
 
         return $order;
     }
@@ -312,17 +458,53 @@ class ActionController extends Controller
     {
         $org = $this->myOrg($user);
         $order = $this->orgOrder($request, $org);
-        if ($order->status !== 'Pending') {
+        // New orders can be declined; confirmed or preparing ones only when the buyer's account is suspended.
+        $buyerSuspended = $order->user?->status === 'Suspended';
+        if ($order->status !== 'Pending' && ! ($buyerSuspended && in_array($order->status, ['Confirmed', 'Processing'], true))) {
             $this->fail('Only new orders can be declined.');
         }
-        $order->moveTo('Cancelled');
-        Activity::record('order-cancelled', $user->email, $order->number().' · declined by '.$org->name);
+        if ($order->status === 'Pending' && ! $buyerSuspended) {
+            $order->moveTo('Cancelled');
+            Activity::record('order-cancelled', $user->email, $order->number().' · declined by '.$org->name);
+
+            return;
+        }
+        Suspensions::cancel($order, 'Cancelled by '.$org->name.' because the buyer’s account is suspended.');
+    }
+
+    private function orgRefund(Request $request, Organization $org): RefundRequest
+    {
+        $refund = RefundRequest::with('order.organization')->find((string) $request->input('id'));
+        self::refuseUnless($refund && $refund->organization_id === $org->id, 404, 'That refund request wasn’t found.');
+        if ($refund->status !== 'Requested' || $refund->respond_by->isPast()) {
+            $this->fail('This refund request was already settled.');
+        }
+
+        return $refund;
+    }
+
+    private function refundAccept(Request $request, User $user): array
+    {
+        $refund = $this->orgRefund($request, $this->myOrg($user));
+        Escrow::refund($refund, 'organization');
+        Activity::record('refund-accepted', $user->email, $refund->order->number().' · '.$refund->id);
+
+        return ['status' => $refund->fresh()->status];
+    }
+
+    // A dispute goes to the administrators; the payment stays held until one of them decides.
+    private function refundDispute(Request $request, User $user): void
+    {
+        $refund = $this->orgRefund($request, $this->myOrg($user));
+        $reason = trim((string) $request->validate(['reason' => 'required|string|min:10|max:300'], ['reason.*' => 'Explain why in at least 10 characters.'])['reason']);
+        $refund->update(['status' => 'Disputed', 'dispute_reason' => $reason, 'disputed_at' => now()]);
+        Activity::record('refund-disputed', $user->email, $refund->order->number().' · '.$refund->id);
     }
 
     private function orgCrop(Request $request, Organization $org, string $key = 'id'): Crop
     {
         $crop = Crop::find((string) $request->input($key));
-        abort_unless($crop && $crop->organization_id === $org->id, 404, 'That listing wasn’t found.');
+        self::refuseUnless($crop && $crop->organization_id === $org->id, 404, 'That listing wasn’t found.');
 
         return $crop;
     }
@@ -344,7 +526,7 @@ class ActionController extends Controller
         if (! empty($data['photo'])) {
             $image = Photos::store($data['photo'], 'listings');
         } elseif (! empty($data['image'])) {
-            abort_unless(in_array($data['image'], Photos::STOCK, true), 422, 'Choose one of the stock photos.');
+            self::refuseUnless(in_array($data['image'], Photos::STOCK, true), 422, 'Choose one of the stock photos.');
             $image = $data['image'];
         }
         if ($editing && $image !== $editing->image) {
@@ -374,7 +556,7 @@ class ActionController extends Controller
     {
         $crop = $this->orgCrop($request, $this->myOrg($user));
         if ($crop->status !== 'Active' && $crop->stock === 0) {
-            $this->fail('Add stock before resuming this listing.');
+            $this->fail('Add stock before publishing this listing.');
         }
         $crop->update(['status' => $crop->status === 'Active' ? 'Unavailable' : 'Active']);
         Activity::record($crop->status === 'Active' ? 'listing-resumed' : 'listing-paused', $user->email, $crop->name);
@@ -397,14 +579,15 @@ class ActionController extends Controller
     private function memberAdd(Request $request, User $user): void
     {
         $org = $this->myOrg($user);
-        $data = $request->validate(['name' => 'required|string|min:3|max:80', 'place' => 'required|string|min:3|max:60', 'area' => 'required|numeric|min:0.1|max:500', 'crops' => 'required|string|min:3|max:80']);
-        Member::create(['id' => Member::nextId('MB-', 3), 'organization_id' => $org->id, 'name' => $data['name'], 'place' => $data['place'], 'crops' => $data['crops'], 'area' => round($data['area'], 1), 'joined' => (string) today()->year, 'status' => 'Active']);
+        $data = $request->validate(['name' => 'required|string|min:3|max:80', 'area' => 'required|numeric|min:0.1|max:500', 'crops' => 'required|string|min:3|max:80']);
+        // Only farmers from the organization's own barangay can be members, so the barangay is always the organization's.
+        Member::create(['id' => Member::nextId('MB-', 3), 'organization_id' => $org->id, 'name' => $data['name'], 'place' => $org->barangay, 'crops' => $data['crops'], 'area' => round($data['area'], 1), 'joined' => (string) today()->year, 'status' => 'Active']);
     }
 
     private function orgMember(Request $request, Organization $org): Member
     {
         $member = Member::find((string) $request->input('id'));
-        abort_unless($member && $member->organization_id === $org->id, 404, 'That member wasn’t found.');
+        self::refuseUnless($member && $member->organization_id === $org->id, 404, 'That member wasn’t found.');
 
         return $member;
     }
@@ -435,8 +618,8 @@ class ActionController extends Controller
     private function otherAccount(Request $request, User $admin): User
     {
         $account = User::where('email', (string) $request->input('email'))->first();
-        abort_unless($account, 404, 'That account wasn’t found.');
-        abort_if($account->id === $admin->id, 422, 'You can’t do this to your own account.');
+        self::refuseUnless($account, 404, 'That account wasn’t found.');
+        self::refuseIf($account->id === $admin->id, 422, 'You can’t do this to your own account.');
 
         return $account;
     }
@@ -445,12 +628,19 @@ class ActionController extends Controller
     {
         $this->admin($user);
         $account = $this->otherAccount($request, $user);
-        abort_if($account->isAdmin() || ! in_array($account->status, ['Active', 'Suspended'], true), 422, 'This account can’t be suspended.');
+        self::refuseIf($account->isAdmin() || ! in_array($account->status, ['Active', 'Suspended'], true), 422, 'This account can’t be suspended.');
         $suspend = $account->status === 'Active';
         $account->update(['status' => $suspend ? 'Suspended' : 'Active', 'note' => $suspend ? 'Suspended by '.$user->name.' on '.today()->format('M d, Y').'.' : null]);
         Activity::record($suspend ? 'account-suspended' : 'account-reactivated', $user->email, $account->name, $account->email);
+        // Open orders: see App\Support\Suspensions.
+        $cancelled = 0;
+        if ($suspend && $account->isBuyer()) {
+            $cancelled = Suspensions::buyerSuspended($account);
+        } elseif ($suspend && $account->isRepresentative() && $account->organization) {
+            $cancelled = Suspensions::organizationStopped($account->organization, 'was suspended');
+        }
 
-        return ['status' => $account->status];
+        return ['status' => $account->status, 'cancelled' => $cancelled];
     }
 
     // A new temporary password, shown once so the administrator can pass it on.
@@ -471,7 +661,7 @@ class ActionController extends Controller
         $this->admin($user);
         $data = $request->validate(['name' => 'required|string', 'decision' => 'required|in:Active,Declined']);
         $org = Organization::where('name', $data['name'])->first();
-        abort_unless($org && $org->status === 'Pending review', 422, 'This application was already decided.');
+        self::refuseUnless($org && $org->status === 'Pending review', 422, 'This application was already decided.');
         $org->update(['status' => $data['decision'], 'approved_on' => $data['decision'] === 'Active' ? today() : null]);
         $rep = User::where('organization_id', $org->id)->where('status', 'Pending')->first();
         $rep?->update(['status' => $data['decision'] === 'Active' ? 'Active' : 'Declined']);
@@ -504,8 +694,8 @@ class ActionController extends Controller
         $data = $request->validate(['organization' => 'required|string', 'reason' => 'required|string|min:5|max:120', 'details' => 'nullable|string|max:500'],
             ['reason.*' => 'Give a reason of at least 5 characters.']);
         $org = $this->namedOrg($data['organization']);
-        abort_if($org->status !== 'Active', 422, 'Only organizations that are selling can be warned.');
-        abort_if($org->onFinalWarning(), 422, $org->name.' is on its final warning: the next step is termination.');
+        self::refuseIf($org->status !== 'Active', 422, 'Only organizations that are selling can be warned.');
+        self::refuseIf($org->onFinalWarning(), 422, $org->name.' is on its final warning: the next step is termination.');
         Warning::create(['id' => Warning::nextId('WN-', 3), 'organization_id' => $org->id, 'reason' => $data['reason'], 'details' => trim($data['details'] ?? ''), 'given_on' => today(), 'given_by' => $user->name]);
         Activity::record('warning-given', $user->email, $org->name.' · '.$data['reason'], $this->repEmail($org));
     }
@@ -515,7 +705,7 @@ class ActionController extends Controller
         $this->admin($user);
         $warning = Warning::find((string) $request->input('id')) ?? $this->fail('That warning wasn’t found.', 404);
         $org = Organization::find($warning->organization_id);
-        abort_if($org->status === 'Terminated', 422, 'Warnings can’t be withdrawn after termination.');
+        self::refuseIf($org->status === 'Terminated', 422, 'Warnings can’t be withdrawn after termination.');
         $warning->delete();
         Activity::record('warning-withdrawn', $user->email, $org->name.' · '.$warning->reason, $this->repEmail($org));
 
@@ -527,8 +717,8 @@ class ActionController extends Controller
     {
         $this->admin($user);
         $org = $this->namedOrg((string) $request->input('organization'));
-        abort_if($org->status === 'Terminated', 422, $org->name.' is already terminated.');
-        abort_unless($org->onFinalWarning(), 422, $org->name.' isn’t on its final warning yet.');
+        self::refuseIf($org->status === 'Terminated', 422, $org->name.' is already terminated.');
+        self::refuseUnless($org->onFinalWarning(), 422, $org->name.' isn’t on its final warning yet.');
         if ($request->filled('report')) {
             $report = Report::where('id', $request->input('report'))->where('organization_id', $org->id)->first() ?? $this->fail('That report wasn’t found.', 404);
             $report->update(['status' => 'Upheld', 'decided_on' => today()]);
@@ -540,6 +730,29 @@ class ActionController extends Controller
         $org->update(['status' => 'Terminated', 'terminated_on' => today(), 'terminated_for' => $reason]);
         User::where('organization_id', $org->id)->where('role', 'Representative')->update(['status' => 'Terminated', 'note' => $org->name.' was terminated by '.$user->name.' on '.today()->format('M d, Y').'.']);
         Activity::record('org-terminated', $user->email, $org->name.' · '.$reason, $this->repEmail($org));
+        Suspensions::organizationStopped($org, 'was terminated');
+    }
+
+    // An administrator settles a refund request: refund the buyer, or release the held payment to the organization.
+    // Disputed requests wait for this; an administrator can also step in before the organization answers.
+    private function refundDecide(Request $request, User $user): array
+    {
+        $this->admin($user);
+        $data = $request->validate(['id' => 'required|string', 'decision' => 'required|in:refund,release', 'note' => 'nullable|string|max:300'],
+            ['note.max' => 'Keep the note under 300 characters.']);
+        $refund = RefundRequest::with('order.organization')->find($data['id']) ?? $this->fail('That refund request wasn’t found.', 404);
+        self::refuseUnless(in_array($refund->status, ['Requested', 'Disputed'], true), 422, 'This refund request was already settled.');
+        $refund->update(['admin_note' => trim($data['note'] ?? '') ?: null]);
+        if ($data['decision'] === 'refund') {
+            Escrow::refund($refund, 'admin');
+        } else {
+            $refund->update(['status' => 'Denied', 'decided_at' => now(), 'decided_by' => 'admin']);
+            $refund->order->update(['status' => 'Completed']);
+            Escrow::release($refund->order);
+        }
+        Activity::record('refund-decided', $user->email, $refund->id.' · '.$refund->order->number().' · '.($data['decision'] === 'refund' ? 'refunded to the buyer' : 'released to '.$refund->order->organization->name));
+
+        return ['status' => $refund->fresh()->status];
     }
 
     // One run of the site-health checks the admin page ran; the newest 30 are kept.
@@ -558,10 +771,12 @@ class ActionController extends Controller
         }
     }
 
-    // Puts every table back to the starting data and removes uploaded photos. Everyone is signed out.
+    // Puts every table back to the starting data and removes uploaded photos and application documents. Everyone is signed out.
     private function dataReset(Request $request, User $user): array
     {
         $this->admin($user);
+        Storage::disk('local')->deleteDirectory(Documents::FOLDER);
+        Storage::disk('local')->deleteDirectory(RefundMediaStore::FOLDER);
         Artisan::call('migrate:fresh', ['--seed' => true, '--force' => true]);
         File::deleteDirectory(public_path('anibayan/uploads'));
         Auth::logout();
@@ -599,11 +814,11 @@ class ActionController extends Controller
         $target = (string) $request->input('target');
         if (Str::startsWith($target, 'org:')) {
             $org = $this->myOrg($user);
-            abort_unless($org->name === substr($target, 4), 403, 'You can only change your own organization’s photos.');
+            self::refuseUnless($org->name === substr($target, 4), 403, 'You can only change your own organization’s photos.');
 
             return $org;
         }
-        abort_unless($user->isBuyer() && strcasecmp(substr($target, 5), $user->email) === 0 && Str::startsWith($target, 'user:'), 403, 'You can only change your own photos.');
+        self::refuseUnless($user->isBuyer() && strcasecmp(substr($target, 5), $user->email) === 0 && Str::startsWith($target, 'user:'), 403, 'You can only change your own photos.');
 
         return $user;
     }

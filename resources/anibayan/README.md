@@ -4,7 +4,7 @@ A working prototype of AniBayan: the homepage, sign-in, and the buyer, farmer or
 
 AniBayan serves **Calapan City, Oriental Mindoro** only. Organizations and delivery addresses pick one of the city's 62 barangays (`dashBarangays` in `src/data/dashboard-demo.ts`), and the starting data is set there.
 
-All of AniBayan's data is in MySQL; nothing is kept in the browser. Signing in uses Laravel's session, passwords are stored as hashes, and every change goes through the server, which checks who may make it. The administrator's **Settings → Reset all data** (or `php artisan migrate:fresh --seed`) puts every table back to the starting data for everyone. Setup with Laragon is in the main `README.md`.
+All of AniBayan's data is in the team's Supabase project (Postgres); nothing is kept in the browser. Signing in uses Laravel's session, passwords are stored as hashes, and every change goes through the server, which checks who may make it. The administrator's **Settings → Reset all data** (or `php artisan migrate:fresh --seed`) puts every table back to the starting data for everyone. Setup with Laragon is in the main `README.md`.
 
 With the app running (`php artisan serve`), open `http://127.0.0.1:8000/anibayan/`. The pages only work through the server.
 

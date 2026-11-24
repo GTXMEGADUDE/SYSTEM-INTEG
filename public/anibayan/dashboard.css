@@ -217,9 +217,11 @@ td strong{font-weight:600;color:var(--ink)}
 .status{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;line-height:1.4;padding:2px 9px;border-radius:999px;white-space:nowrap;background:#e7f5e3;color:#2a6b2f;border:1px solid #cde6c6}
 .status::before{content:'';width:6px;height:6px;background:currentColor;border-radius:50%}
 .status.pending,.status.unpaid,.status.pending-review,.status.low-stock{background:#fff4d6;border-color:#f0dea2;color:#7d5a00}
-.status.processing,.status.confirmed{background:#eaeefb;border-color:#d3dbf3;color:#3f5296}
-.status.cancelled,.status.unavailable,.status.declined,.status.out-of-stock{background:#fbeaea;border-color:#efcfcf;color:#9c3d3d}
-.status.paused{background:#f0f2ee;border-color:#dde2d9;color:#586258}
+.status.processing,.status.confirmed,.status.delivered,.status.refunded,.status.pinned{background:#eaeefb;border-color:#d3dbf3;color:#3f5296}
+.status.cancelled,.status.unavailable,.status.declined,.status.out-of-stock,.status.disputed{background:#fbeaea;border-color:#efcfcf;color:#9c3d3d}
+.status.released-to-organization{background:#f0f2ee;border-color:#dde2d9;color:#586258}
+.status.held,.status.refund-requested,.status.requested,.status.refunding,.status.waiting-for-organization{background:#fff4d6;border-color:#f0dea2;color:#7d5a00}
+.status.paused,.status.unpublished{background:#f0f2ee;border-color:#dde2d9;color:#586258}
 
 /* ---------- Filters ---------- */
 .filters{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:16px 20px 8px}
@@ -595,8 +597,33 @@ tr.flagged-row .repeat-count{color:#9c3d3d}
 .check-row{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink)}
 .check-row input{accent-color:var(--green-strong);width:16px;height:16px}
 .check-group{display:flex;flex-direction:column;gap:8px}
+/* Sign-up document slots: a .choice row with its file name and Attach/Replace + Remove buttons. */
+.choice.doc-upload{flex-wrap:wrap;align-items:center;cursor:default}
+.doc-upload>span{flex:1 1 180px;min-width:0}
+.doc-upload .file-button{align-self:center}
+.doc-upload small{overflow-wrap:anywhere}
+.doc-upload.is-attached{border-color:var(--green-strong);background:var(--tint)}
 .form-error{margin-top:14px;padding:10px 14px;border-radius:10px;background:#fbeaea;color:#9c3d3d;font-size:13px;font-weight:600}
 .form-error[hidden]{display:none}
+/* Delivery addresses: the pin map (Leaflet), saved addresses in settings, the checkout's new-address block. */
+.map-picker{height:260px;border-radius:12px;border:1px solid var(--line-strong);background:#eef3e4;z-index:0}
+.map-tools{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.new-address[hidden],.form-field[hidden]{display:none}
+.address-list{display:flex;flex-direction:column}
+.address-row{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px 16px;padding:12px 0;border-bottom:1px solid var(--line)}
+.address-row>div:first-child{flex:1 1 220px;min-width:0}
+.address-row p{margin-top:2px;font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.fact-note .icon{display:inline-block;width:14px;height:14px;vertical-align:-2px;margin-right:3px}
+/* Refund proof: photos and videos, in the request form and on the order. */
+.refund-media{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;margin:10px 0}
+.refund-media:empty{display:none}
+.media-tile{position:relative;margin:0}
+.media-tile img,.media-tile video{display:block;width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;background:#eef3e4}
+.media-tile figcaption{margin-top:4px;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.media-remove{position:absolute;top:4px;right:4px;display:grid;place-items:center;width:26px;height:26px;border:0;border-radius:50%;background:#16302acc;color:#fff;cursor:pointer}
+.media-remove .icon{width:14px;height:14px}
+/* The electronic receipt, shown in a frame after checkout and from each order. */
+.receipt-frame{display:block;width:100%;height:520px;margin-top:14px;border:1px solid var(--line);border-radius:12px;background:var(--canvas)}
 .pay-box{display:flex;gap:12px;align-items:flex-start;margin-top:18px;padding:16px;border-radius:12px;background:#eaeefb;color:#2f3f78;font-size:13px;line-height:1.6}
 .pay-box .icon{width:22px;height:22px;flex-shrink:0}
 .temp-password{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:18px;padding:14px 16px;border-radius:12px;background:#f3f7ed}
@@ -682,6 +709,8 @@ tr.flagged-row .repeat-count{color:#9c3d3d}
   .header-account .control:first-child{display:none}
   .photo-field{flex-direction:column}
 }
+/* The narrowest phones (about 300 px): the header's shop shortcut goes; the side menu still has it. */
+@media(max-width:360px){.market-shortcut{display:none}}
 
 /* ---------- Shop tiles: freshness on the photo ---------- */
 .product-media{position:relative;width:150px;height:150px;flex-shrink:0}
@@ -735,6 +764,14 @@ tr.flagged-row .repeat-count{color:#9c3d3d}
 .status.verified .icon,.status.private .icon{width:14px;height:14px}
 .status.private{background:#f0f2ee;border-color:#dde2d9;color:#586258}
 .section-title{font-size:17px;margin:4px 0 14px}
+/* Organization overview: recent orders, close to spoiling and stock watch in one row on wide screens; on narrower
+   ones recent orders takes the full width and the two stock panels sit side by side under it. */
+.split.three{grid-template-columns:minmax(0,1fr) 300px 300px}
+@media(max-width:1499px){.split.three{grid-template-columns:repeat(2,minmax(0,1fr))}.split.three>:first-child{grid-column:1/-1}}
+@media(max-width:700px){.split.three{grid-template-columns:minmax(0,1fr)}}
+/* Two equal panels side by side (organization profile: member farmers and buyer reviews). */
+.split.two{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+@media(max-width:1080px){.split.two{grid-template-columns:minmax(0,1fr)}}
 .review-row header{flex-wrap:wrap;gap:4px 12px}
 .review-who{display:flex;align-items:center;gap:8px;min-width:0;font-size:13px}
 .review-meta{display:flex;align-items:center;gap:8px;flex-shrink:0}

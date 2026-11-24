@@ -3,7 +3,11 @@ interface DashboardPeriod { label:string; value:number; orders:number; labels:st
 interface DashboardOrderItem { crop:string; name:string; quantity:number; unit:string; price:number }
 // Orders placed through checkout also carry their items, delivery details and payment method.
 // checkout: the PayMongo checkout opened for an unpaid order; paymentRef: PayMongo's payment id once it is paid.
-interface DashboardOrder { id:string; customer:string; organization:string; crop:string; image:string; quantity:string; total:number; date:string; status:string; payment:string; items?:DashboardOrderItem[]; address?:string; phone?:string; method?:string; note?:string; checkout?:string; paymentRef?:string }
+interface DashboardOrder { id:string; customer:string; organization:string; crop:string; image:string; quantity:string; total:number; date:string; status:string; payment:string; items?:DashboardOrderItem[]; address?:string; phone?:string; method?:string; note?:string; checkout?:string; paymentRef?:string; lat?:number; lng?:number; paidAt?:string; deliveredAt?:string; receivedAt?:string; releaseOn?:string; funds?:string; fundsSettledAt?:string; refund?:DashboardRefund; cancelReason?:string; buyerSuspended?:boolean }
+// A buyer's refund request on a delivered order, with the photos and videos attached as proof.
+interface DashboardRefund { id:string; reason:string; details:string; status:string; requestedAt:string; respondBy:string; disputeReason?:string; disputedAt?:string; adminNote?:string; decidedAt?:string; decidedBy?:string; media:{id:number;name:string;mime:string;size:number}[] }
+// A buyer's saved delivery address in Calapan City; lat/lng when it's pinned on the map.
+interface DashboardAddress { id:number; label:string; details:string; barangay:string; lat?:number; lng?:number; isDefault:boolean; text:string }
 // harvested: date the crop was harvested (required on every listing). shelfLife: days the produce keeps well after harvest.
 // image: a file in assets/ or an uploaded photo saved on the server ("uploads/listings/….jpg").
 interface DashboardCrop { id:string; name:string; organization:string; image:string; price:number; unit:string; category:string; stock:number; status:string; harvested:string; shelfLife:number }
@@ -14,12 +18,14 @@ interface DashboardLook { avatar?:string; banner?:string; bannerX?:number; banne
 // What a buyer's profile shows to others. Every option is on until the buyer turns it off.
 interface DashboardPrivacy { profile:boolean; reviews:boolean; city:boolean; growers:boolean }
 // completedOrders: worked out by the server for the public profile.
-interface DashboardOrganization extends DashboardLook { name:string; region:string; crop:string; image:string; listings:number; status:string; representative:string; applied:string; members:number; documents:string[]; approved?:string; phone?:string; description?:string; terminated?:string; terminatedFor?:string; completedOrders?:number }
+// A file attached to an organization's application; administrators open it from /api/documents/{id}.
+interface DashboardDocument { id:number; type:string; name:string; size:number; mime:string }
+interface DashboardOrganization extends DashboardLook { name:string; region:string; crop:string; image:string; listings:number; status:string; representative:string; applied:string; members:number; stopped?:boolean; farmers?:{name:string;crops:string;area:number;joined:string}[]; documents:DashboardDocument[]; approved?:string; phone?:string; description?:string; terminated?:string; terminatedFor?:string; completedOrders?:number }
 // Starting accounts use dashDemoPassword until their password is changed or reset. Only administrators and the person
 // themself get email, phone, address and last-active; others get the public profile, trimmed by the buyer's privacy
 // settings. city, completedOrders and growers: a buyer's public profile details, worked out by the server.
 // On a public profile the page sets the missing email, joined and lastActive to ''.
-interface DashboardAccount extends DashboardLook { name:string; email:string; role:string; organization?:string; joined:string; lastActive:string; status:string; note?:string; phone?:string; address?:string; privacy?:Partial<DashboardPrivacy>; city?:string; completedOrders?:number; growers?:string[] }
+interface DashboardAccount extends DashboardLook { name:string; email:string; role:string; organization?:string; joined:string; lastActive:string; status:string; note?:string; phone?:string; address?:string; addresses?:DashboardAddress[]; privacy?:Partial<DashboardPrivacy>; city?:string; completedOrders?:number; growers?:string[] }
 // Buyer feedback: 1–5 stars for a completed order, with an optional comment.
 interface DashboardFeedback { id:string; organization:string; customer:string; rating:number; comment:string; date:string; order?:string }
 // status: 'Open' (waiting for an administrator), 'Upheld' (counts as a warning against the organization) or 'Dismissed'.

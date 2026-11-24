@@ -3,13 +3,19 @@
 namespace Database\Seeders;
 
 use App\Models\Activity;
+use App\Models\Address;
 use App\Models\Crop;
 use App\Models\Feedback;
 use App\Models\Member;
 use App\Models\Order;
 use App\Models\Organization;
+use App\Models\OrderItem;
+use App\Models\RefundRequest;
 use App\Models\Report;
 use App\Models\User;
+use App\Support\Calapan;
+use App\Support\Documents;
+use App\Support\RefundMediaStore;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -22,24 +28,28 @@ class DatabaseSeeder extends Seeder
     {
         $ago = fn (int $days) => today()->subDays($days)->toDateString();
         $password = Hash::make(config('anibayan.demo_password'));
-        $documents = ['CDA registration', 'Barangay endorsement', 'Representative ID'];
+        $all = array_keys(Documents::TYPES);
 
-        // [name, barangay, crop, image, status, representative, members, documents, applied, approved, phone, description]
+        // [name, barangay, crop, image, status, representative, documents (Documents::TYPES keys), applied, approved, phone, description]
         $organizations = [
-            ['Canubing Vegetable Growers', 'Canubing I', 'Vegetables & root crops', 'grower.png', 'Active', 'Ramon Dulnuan', 6, $documents, 39, 34, '0917 555 0110', 'Smallholder vegetable growers from Barangay Canubing and nearby barangays of Calapan City.'],
-            ['Managpi Fruit Growers', 'Managpi', 'Mangoes & fruits', 'mango.jpg', 'Active', 'Carlo Mendoza', 14, $documents, 42, 38, '0918 555 0122', 'Mango and banana growers from Barangay Managpi, Calapan City.'],
-            ['Bucayao Rice Farmers', 'Bucayao', 'Rice & grains', 'rice-hero.png', 'Active', 'Teodoro Pascual', 31, $documents, 46, 43, '0919 555 0133', 'Rice farming families from Barangay Bucayao, Calapan City.'],
-            ['Sapul Harvest Collective', 'Sapul', 'Vegetables & roots', 'soil-story.png', 'Pending review', 'Joel Malabanan', 9, ['CDA registration', 'Barangay endorsement'], 2, null, null, null],
-            ['Comunal Coconut Farmers Association', 'Comunal', 'Coconuts & root crops', 'seedlings-story.png', 'Pending review', 'Edna Villareal', 22, ['SEC registration', 'Barangay endorsement', 'Representative ID'], 1, null, null, null],
-            ['Gulod Vegetable Growers', 'Gulod', 'Leafy vegetables', 'field-detail.jpg', 'Declined', 'Ben Soriano', 4, ['Representative ID'], 15, null, null, null],
+            ['Canubing Vegetable Growers', 'Canubing I', 'Vegetables & root crops', 'grower.png', 'Active', 'Ramon Dulnuan', $all, 39, 34, '0917 555 0110', 'Smallholder vegetable growers from Barangay Canubing and nearby barangays of Calapan City.'],
+            ['Managpi Fruit Growers', 'Managpi', 'Mangoes & fruits', 'mango.jpg', 'Active', 'Carlo Mendoza', $all, 42, 38, '0918 555 0122', 'Mango and banana growers from Barangay Managpi, Calapan City.'],
+            ['Bucayao Rice Farmers', 'Bucayao', 'Rice & grains', 'rice-hero.png', 'Active', 'Teodoro Pascual', $all, 46, 43, '0919 555 0133', 'Rice farming families from Barangay Bucayao, Calapan City.'],
+            ['Sapul Harvest Collective', 'Sapul', 'Vegetables & roots', 'soil-story.png', 'Pending review', 'Joel Malabanan', ['registration', 'endorsement'], 2, null, null, null],
+            ['Comunal Coconut Farmers Association', 'Comunal', 'Coconuts & root crops', 'seedlings-story.png', 'Pending review', 'Edna Villareal', $all, 1, null, null, null],
+            ['Gulod Vegetable Growers', 'Gulod', 'Leafy vegetables', 'field-detail.jpg', 'Declined', 'Ben Soriano', ['id'], 15, null, null, null],
         ];
         $org = [];
-        foreach ($organizations as [$name, $barangay, $crop, $image, $status, $rep, $members, $docs, $applied, $approved, $phone, $description]) {
-            $org[$name] = Organization::create([
+        foreach ($organizations as [$name, $barangay, $crop, $image, $status, $rep, $docs, $applied, $approved, $phone, $description]) {
+            $created = Organization::create([
                 'name' => $name, 'barangay' => $barangay, 'crop' => $crop, 'image' => $image, 'status' => $status,
-                'representative' => $rep, 'members_declared' => $members, 'documents' => $docs, 'applied_on' => $ago($applied),
+                'representative' => $rep, 'applied_on' => $ago($applied),
                 'approved_on' => $approved === null ? null : $ago($approved), 'phone' => $phone, 'description' => $description,
-            ])->id;
+            ]);
+            foreach ($docs as $type) {
+                Documents::seedSample($created, $type);
+            }
+            $org[$name] = $created->id;
         }
 
         // [name, email, role, organization, joined, last active, status, phone, address, note]
@@ -61,8 +71,13 @@ class DatabaseSeeder extends Seeder
             $user[$name] = User::create([
                 'name' => $name, 'email' => $email, 'password' => $password, 'role' => $role,
                 'organization_id' => $organization ? $org[$organization] : null, 'status' => $status,
-                'phone' => $phone, 'address' => $address, 'note' => $note, 'joined_on' => $ago($joined), 'last_active_on' => $ago($active),
+                'phone' => $phone, 'note' => $note, 'joined_on' => $ago($joined), 'last_active_on' => $ago($active),
             ])->id;
+            // Buyers' saved delivery address, pinned near the middle of their barangay.
+            if ($address && preg_match('/^(.*?),\s*Barangay\s+([^,]+),/u', $address, $m)) {
+                [$lat, $lng] = Calapan::centre($m[2]) ?? [null, null];
+                Address::create(['user_id' => $user[$name], 'label' => 'Home', 'details' => $m[1], 'barangay' => $m[2], 'lat' => $lat, 'lng' => $lng, 'is_default' => true]);
+            }
         }
 
         // [id, name, organization, image, price, category, stock, status, harvested, shelf life]
@@ -73,7 +88,7 @@ class DatabaseSeeder extends Seeder
             ['CROP-004', 'Red onions', 'Canubing Vegetable Growers', 'onion.jpg', 90, 'Vegetables', 45, 'Active', 11, 30],
             ['CROP-005', 'Purple eggplants', 'Canubing Vegetable Growers', 'eggplant.jpg', 65, 'Vegetables', 0, 'Unavailable', 9, 7],
             ['CROP-006', 'Golden bananas', 'Managpi Fruit Growers', 'bananas.jpg', 55, 'Fruits', 74, 'Active', 4, 6],
-            ['CROP-007', 'Vine-ripened tomatoes', 'Canubing Vegetable Growers', 'tomatoes.jpg', 80, 'Vegetables', 132, 'Active', 1, 7],
+            ['CROP-007', 'Vine-ripened tomatoes', 'Canubing Vegetable Growers', 'tomatoes.jpg', 80, 'Vegetables', 132, 'Active', 5, 7],
             ['CROP-008', 'Sweet potatoes', 'Canubing Vegetable Growers', 'sweet-potatoes.jpg', 45, 'Vegetables', 28, 'Active', 14, 28],
         ];
         foreach ($crops as [$id, $name, $organization, $image, $price, $category, $stock, $status, $harvested, $shelfLife]) {
@@ -112,9 +127,61 @@ class DatabaseSeeder extends Seeder
             [1021, 'Isabel Cruz', 'Canubing Vegetable Growers', 'Sweet potatoes', 'sweet-potatoes.jpg', '10 kg', 450, 33, 'Completed', 'Paid'],
             [1020, 'Carlo Mendoza', 'Managpi Fruit Growers', 'Carabao mangoes', 'mango.jpg', '5 kg', 650, 36, 'Completed', 'Paid'],
         ];
+        // Paid orders that aren't delivered yet were paid online, so AniBayan holds the money; completed ones alternate
+        // between GCash (money released to the organization) and cash on delivery. Unpaid ones are cash on delivery.
         foreach ($orders as [$number, $buyer, $organization, $crop, $image, $quantity, $total, $days, $status, $payment]) {
-            Order::create(['id' => 'AB-2026-'.$number, 'user_id' => $user[$buyer], 'organization_id' => $org[$organization], 'crop' => $crop, 'image' => $image, 'quantity' => $quantity, 'total' => $total, 'placed_on' => $ago($days), 'status' => $status, 'payment' => $payment]);
+            $placed = today()->subDays($days)->setTime(9, 0)->addMinutes($number % 480);
+            $online = $payment === 'Paid' && ($status !== 'Completed' || $number % 2 === 0);
+            $home = Address::where('user_id', $user[$buyer])->first();
+            Order::create([
+                'id' => 'AB-2026-'.$number, 'user_id' => $user[$buyer], 'organization_id' => $org[$organization], 'crop' => $crop, 'image' => $image,
+                'quantity' => $quantity, 'total' => $total, 'placed_on' => $ago($days), 'status' => $status, 'payment' => $payment,
+                'method' => $online ? 'GCash' : 'Cash on delivery', 'address' => $home?->fullText(), 'lat' => $home?->lat, 'lng' => $home?->lng,
+                'phone' => User::find($user[$buyer])->phone, 'paid_at' => $payment === 'Paid' ? ($online ? $placed : $placed->copy()->addDay()) : null,
+                'delivered_at' => $status === 'Completed' ? $placed->copy()->addDay() : null, 'received_at' => $status === 'Completed' ? $placed->copy()->addDays(2) : null,
+                'funds' => $online ? ($status === 'Completed' ? 'Released' : 'Held') : null,
+                'funds_settled_at' => $online && $status === 'Completed' ? $placed->copy()->addDays(2) : null,
+                'created_at' => $placed, 'updated_at' => $placed,
+            ]);
         }
+
+        // Two GCash orders to try the newer steps with: Alex's delivered order waits for "Order received" (or a refund
+        // request), and Maria asked for a refund that Canubing Vegetable Growers hasn't answered yet.
+        // [number, buyer, organization, crop id, kg, placed days ago, delivered days ago, status]
+        $recent = [
+            [1049, 'Alex Reyes', 'Managpi Fruit Growers', 'CROP-006', 4, 4, 2, 'Delivered'],
+            [1050, 'Maria Santos', 'Canubing Vegetable Growers', 'CROP-007', 5, 5, 3, 'Refund requested'],
+            [1051, 'Isabel Cruz', 'Bucayao Rice Farmers', 'CROP-003', 10, 6, 4, 'Refund requested'],
+        ];
+        foreach ($recent as [$number, $buyer, $organization, $cropId, $kg, $placedAgo, $deliveredAgo, $status]) {
+            $crop = Crop::find($cropId);
+            $home = Address::where('user_id', $user[$buyer])->first();
+            $placed = now()->subDays($placedAgo)->setTime(10, 15);
+            Order::create([
+                'id' => 'AB-2026-'.$number, 'user_id' => $user[$buyer], 'organization_id' => $org[$organization], 'crop' => $crop->name, 'image' => $crop->image,
+                'quantity' => $kg.' '.$crop->unit, 'total' => $kg * $crop->price, 'placed_on' => $placed->toDateString(), 'status' => $status, 'payment' => 'Paid',
+                'method' => 'GCash', 'address' => $home?->fullText(), 'lat' => $home?->lat, 'lng' => $home?->lng, 'phone' => User::find($user[$buyer])->phone,
+                'paid_at' => $placed, 'delivered_at' => now()->subDays($deliveredAgo)->setTime(15, 30), 'funds' => 'Held', 'created_at' => $placed, 'updated_at' => $placed,
+            ]);
+            OrderItem::create(['order_id' => 'AB-2026-'.$number, 'crop_id' => $crop->id, 'name' => $crop->name, 'quantity' => $kg, 'unit' => $crop->unit, 'price' => $crop->price]);
+        }
+        $requested = now()->subDay()->setTime(8, 40);
+        $refund = RefundRequest::create([
+            'id' => 'RF-001', 'order_id' => 'AB-2026-1050', 'user_id' => $user['Maria Santos'], 'organization_id' => $org['Canubing Vegetable Growers'],
+            'reason' => 'Spoiled or poor quality', 'details' => 'About half of the tomatoes were split and soft when the order arrived, and a few had mould near the stem.',
+            'status' => 'Requested', 'requested_at' => $requested, 'respond_by' => $requested->copy()->addDays(Order::RESPOND_DAYS),
+        ]);
+        RefundMediaStore::seedFrom($refund, 'tomatoes.jpg', 'tomatoes-on-arrival.jpg');
+        // Bucayao disputed Isabel's request, so it waits for an administrator.
+        $requested = now()->subDays(3)->setTime(9, 5);
+        $dispute = RefundRequest::create([
+            'id' => 'RF-002', 'order_id' => 'AB-2026-1051', 'user_id' => $user['Isabel Cruz'], 'organization_id' => $org['Bucayao Rice Farmers'],
+            'reason' => 'Wrong items', 'details' => 'Ordered 10 kg of Dinorado rice, but the sack that arrived was ordinary well-milled rice.',
+            'status' => 'Disputed', 'requested_at' => $requested, 'respond_by' => $requested->copy()->addDays(Order::RESPOND_DAYS),
+            'dispute_reason' => 'The sack was packed from our Dinorado harvest and labelled at the mill; the photo shows the same grain.',
+            'disputed_at' => now()->subDay()->setTime(16, 20),
+        ]);
+        RefundMediaStore::seedFrom($dispute, 'rice.jpg', 'rice-sack.jpg');
 
         // [id, organization, buyer, rating, comment, days ago, order]
         $feedback = [
@@ -166,18 +233,18 @@ class DatabaseSeeder extends Seeder
             Activity::create(['happened_at' => now()->subMinutes($row[0]), 'actor' => $row[1], 'type' => $row[2], 'detail' => $row[3], 'target' => $row[4] ?? null]);
         }
 
-        // [id, organization, name, barangay, crops, hectares, member since, status]
+        // [id, organization, name, barangay (always the organization's own), crops, hectares, member since, status]
         $members = [
             ['MB-001', 'Canubing Vegetable Growers', 'Ramon Dulnuan', 'Canubing I', 'Carrots, cabbage', 1.2, '2021', 'Active'],
-            ['MB-002', 'Canubing Vegetable Growers', 'Josefa Baniwas', 'Canubing II', 'Potatoes, carrots', 0.8, '2021', 'Active'],
-            ['MB-003', 'Canubing Vegetable Growers', 'Marlon Pocding', 'Bayanan II', 'Onions, tomatoes', 1.5, '2022', 'Active'],
-            ['MB-004', 'Canubing Vegetable Growers', 'Teresita Lumbag', 'Parang', 'Sweet potatoes', 0.6, '2023', 'Active'],
-            ['MB-005', 'Canubing Vegetable Growers', 'Norma Calatan', 'Masipit', 'Lettuce, carrots', 0.7, '2024', 'Active'],
-            ['MB-006', 'Canubing Vegetable Growers', 'Alfredo Sagayo', 'Lumangbayan', 'Eggplants, tomatoes', 0.9, '2026', 'Pending'],
+            ['MB-002', 'Canubing Vegetable Growers', 'Josefa Baniwas', 'Canubing I', 'Potatoes, carrots', 0.8, '2021', 'Active'],
+            ['MB-003', 'Canubing Vegetable Growers', 'Marlon Pocding', 'Canubing I', 'Onions, tomatoes', 1.5, '2022', 'Active'],
+            ['MB-004', 'Canubing Vegetable Growers', 'Teresita Lumbag', 'Canubing I', 'Sweet potatoes', 0.6, '2023', 'Active'],
+            ['MB-005', 'Canubing Vegetable Growers', 'Norma Calatan', 'Canubing I', 'Lettuce, carrots', 0.7, '2024', 'Active'],
+            ['MB-006', 'Canubing Vegetable Growers', 'Alfredo Sagayo', 'Canubing I', 'Eggplants, tomatoes', 0.9, '2026', 'Pending'],
             ['MB-007', 'Managpi Fruit Growers', 'Lorna Gallego', 'Managpi', 'Carabao mangoes', 2.1, '2020', 'Active'],
-            ['MB-008', 'Managpi Fruit Growers', 'Rodel Gabasa', 'Tawiran', 'Mangoes, bananas', 1.4, '2022', 'Active'],
+            ['MB-008', 'Managpi Fruit Growers', 'Rodel Gabasa', 'Managpi', 'Mangoes, bananas', 1.4, '2022', 'Active'],
             ['MB-009', 'Bucayao Rice Farmers', 'Felipe Dizon', 'Bucayao', 'Rice', 3.5, '2019', 'Active'],
-            ['MB-010', 'Bucayao Rice Farmers', 'Celia Manalo', 'Baruyan', 'Rice, corn', 2.8, '2021', 'Active'],
+            ['MB-010', 'Bucayao Rice Farmers', 'Celia Manalo', 'Bucayao', 'Rice, corn', 2.8, '2021', 'Active'],
         ];
         foreach ($members as [$id, $organization, $name, $place, $grown, $area, $joined, $status]) {
             Member::create(['id' => $id, 'organization_id' => $org[$organization], 'name' => $name, 'place' => $place, 'crops' => $grown, 'area' => $area, 'joined' => $joined, 'status' => $status]);

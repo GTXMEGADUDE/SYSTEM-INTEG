@@ -2,7 +2,15 @@
 // and talking to AniBayan's server, which holds the data.
 const de=(value:string|number)=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 const dashPlural=(count:number,word:string)=>count+' '+word+(count===1?'':'s');
-const dashPhonePattern=/^(\+63|0)9\d{2}[\s-]?\d{3}[\s-]?\d{4}$/;
+const dashPhonePattern=/^(\+63[\s-]?|0)9\d{2}[\s-]?\d{3}[\s-]?\d{4}$/;
+// Phone fields take digits, spaces, dashes and a leading +, and stop at 12 digits (+63 917 555 0148).
+const dashPhoneMaxDigits=12;
+const dashPhoneInput='type="tel" required maxlength="16" autocomplete="tel"';
+function dashLimitPhone(input:HTMLInputElement):void{
+ let digits=0;
+ const kept=input.value.replace(/[^\d+\s-]/g,'').replace(/(?!^)\+/g,'').split('').filter(c=>!/\d/.test(c)||++digits<=dashPhoneMaxDigits).join('');
+ if(kept!==input.value)input.value=kept;
+}
 
 /* ---------- Forms ---------- */
 const dashRequired=' <b aria-hidden="true">*</b>';
@@ -59,18 +67,29 @@ function dashLoadStore():void{
  if(state&&Array.isArray(state.orders))dashApplyState(state);else dashOffline=true;
 }
 interface DashResponse{ok:boolean;status:number;data:Record<string,any>}
+// What the pages say when something goes wrong that isn't about what the person typed. Server errors never reach the
+// page as they are: the server only sends messages AniBayan wrote (bootstrap/app.php), and the page shows a generic
+// one for anything else.
+const dashGenericError='Something went wrong. Try again in a moment.';
+const dashOfflineError='AniBayan can’t be reached right now. Check your connection and try again.';
+function dashMessage(r:DashResponse,fallback=dashGenericError):string{
+ const message=typeof r.data.message==='string'?r.data.message:'';
+ return message&&(r.status===0||(r.status>=400&&r.status<500))?message:fallback;
+}
 function dashCookie(name:string):string{const match=document.cookie.match(new RegExp('(?:^|; )'+name+'=([^;]*)'));return match?decodeURIComponent(match[1]):'';}
 // GET when there is no body, otherwise a POST with the anti-forgery token Laravel set as the XSRF-TOKEN cookie.
+// A FormData body (files) goes as multipart; anything else as JSON.
 async function dashApi(path:string,body?:unknown,retried=false):Promise<DashResponse>{
  const headers:Record<string,string>={Accept:'application/json'};
- if(body!==undefined){headers['Content-Type']='application/json';headers['X-XSRF-TOKEN']=dashCookie('XSRF-TOKEN');}
+ const multipart=body instanceof FormData;
+ if(body!==undefined){if(!multipart)headers['Content-Type']='application/json';headers['X-XSRF-TOKEN']=dashCookie('XSRF-TOKEN');}
  try{
-  const response=await fetch('../api/'+path,{method:body===undefined?'GET':'POST',headers,credentials:'same-origin',cache:'no-store',body:body===undefined?undefined:JSON.stringify(body)});
+  const response=await fetch('../api/'+path,{method:body===undefined?'GET':'POST',headers,credentials:'same-origin',cache:'no-store',body:body===undefined?undefined:multipart?body as FormData:JSON.stringify(body)});
   // 419: the anti-forgery token expired; fetching the data renews it.
   if(response.status===419&&!retried){await dashApi('state');return dashApi(path,body,true);}
   const data=await response.json().catch(()=>({})) as Record<string,any>;
   return {ok:response.ok,status:response.status,data};
- }catch{return {ok:false,status:0,data:{message:'AniBayan’s server isn’t answering. Check that it’s running, then try again.'}};}
+ }catch{return {ok:false,status:0,data:{message:dashOfflineError}};}
 }
 async function dashFetchState():Promise<boolean>{
  const r=await dashApi('state');

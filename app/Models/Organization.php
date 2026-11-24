@@ -16,7 +16,6 @@ class Organization extends Model
     protected function casts(): array
     {
         return [
-            'documents' => 'array',
             'applied_on' => 'date:Y-m-d',
             'approved_on' => 'date:Y-m-d',
             'terminated_on' => 'date:Y-m-d',
@@ -35,9 +34,21 @@ class Organization extends Model
         return $this->hasMany(Member::class);
     }
 
+    // The files attached to its application, which only administrators can open.
+    public function documents(): HasMany
+    {
+        return $this->hasMany(OrganizationDocument::class)->orderBy('id');
+    }
+
     public function representativeAccount(): ?User
     {
         return User::where('organization_id', $this->id)->where('role', 'Representative')->first();
+    }
+
+    // Terminated, or its representative's account is suspended: nobody can run it, so it can't sell.
+    public function isStopped(): bool
+    {
+        return $this->status === 'Terminated' || $this->representativeAccount()?->status === 'Suspended';
     }
 
     // "<barangay>, Calapan City", as the pages show it.
