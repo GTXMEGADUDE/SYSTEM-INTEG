@@ -19,7 +19,9 @@ use App\Support\AppState;
 use App\Support\BarangayDirectory;
 use App\Support\Calapan;
 use App\Support\Documents;
+use App\Support\EmailNotifications;
 use App\Support\Escrow;
+use App\Support\MediaStorage;
 use App\Support\Photos;
 use App\Support\RefundMediaStore;
 use App\Support\Suspensions;
@@ -28,9 +30,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -249,6 +249,18 @@ class ActionController extends Controller
                 $item['crop']->decrement('stock', $item['quantity']);
             }
             Activity::record('order-placed', $user->email, $order->number().' · '.$this->money($total).' · '.$first['crop']->organization->name);
+            $orderUrl = url('/anibayan/consumer.html#orders');
+            EmailNotifications::send($user->email, 'AniBayan order placed · '.$order->number(), 'Your order is in',
+                'We received your order and sent it to '.$first['crop']->organization->name.'.',
+                ['Order' => $order->number(), 'Harvest' => $order->crop, 'Total' => $this->money($total), 'Payment' => $order->method],
+                $orderUrl, 'View my orders');
+            $representative = $first['crop']->organization->representativeAccount();
+            if ($representative) {
+                EmailNotifications::send($representative->email, 'New AniBayan order · '.$order->number(), 'A buyer placed an order',
+                    $user->name.' placed an order with '.$first['crop']->organization->name.'.',
+                    ['Order' => $order->number(), 'Harvest' => $order->crop, 'Total' => $this->money($total)],
+                    url('/anibayan/organization.html#orders'), 'View incoming orders');
+            }
             $placed[] = ['id' => $order->id, 'organization' => $first['crop']->organization->name];
         }
         DB::table('cart_lines')->where('user_id', $user->id)->whereIn('crop_id', $selected)->delete();
@@ -365,6 +377,12 @@ class ActionController extends Controller
         $order->update(['status' => 'Completed', 'received_at' => now()]);
         Escrow::release($order);
         Activity::record('order-received', $user->email, $order->number().' · '.$order->organization->name);
+        if ($representative = $order->organization->representativeAccount()) {
+            EmailNotifications::send($representative->email, 'AniBayan order received · '.$order->number(), 'The buyer confirmed delivery',
+                $user->name.' marked the order as received.',
+                ['Order' => $order->number(), 'Harvest' => $order->crop, 'Total' => $this->money($order->total)],
+                url('/anibayan/organization.html#orders'), 'View incoming orders');
+        }
     }
 
     // Within the 7 days after delivery, the buyer of an order paid online can ask for the money back, with a reason,
@@ -381,13 +399,19 @@ class ActionController extends Controller
             'media' => 'required|array|min:1|max:'.RefundMediaStore::MAX_FILES,
             'media.*' => 'required|file|max:'.RefundMediaStore::MAX_KB.'|mimetypes:'.implode(',', RefundMediaStore::MIMES),
         ], ['reason.*' => 'Choose a reason.', 'details.*' => 'Describe what went wrong in at least 20 characters.',
-            'media.*' => 'Attach photos or videos (JPG, PNG, WebP, MP4, WebM or MOV, up to 50 MB each).']);
+            'media.*' => 'Attach up to 3 photos or videos (JPG, PNG, WebP, MP4, WebM or MOV, up to 8 MB each).']);
         $refund = RefundRequest::create([
             'id' => RefundRequest::nextId('RF-', 3), 'order_id' => $order->id, 'user_id' => $user->id, 'organization_id' => $order->organization_id,
             'reason' => $data['reason'], 'details' => trim($data['details']), 'status' => 'Requested',
             'requested_at' => now(), 'respond_by' => now()->addDays(Order::RESPOND_DAYS),
         ]);
         RefundMediaStore::storeAll($refund, $request->file('media'));
+        if (! $order->organization->isStopped() && ($representative = $order->organization->representativeAccount())) {
+            EmailNotifications::send($representative->email, 'Refund request · '.$order->number(), 'A buyer requested a refund',
+                $user->name.' sent a refund request for an order from '.$order->organization->name.'.',
+                ['Order' => $order->number(), 'Refund' => $refund->id, 'Amount' => $this->money($order->total), 'Reply by' => $refund->respond_by->format('M j, Y')],
+                url('/anibayan/organization.html#orders'), 'Review the refund request');
+        }
         $order->update(['status' => 'Refund requested']);
         Activity::record('refund-requested', $user->email, $order->number().' · '.$refund->id.' · '.$refund->reason);
         // Nobody can answer for a terminated or suspended organization, so the refund is granted straight away.
@@ -480,6 +504,12 @@ class ActionController extends Controller
         $next = Order::NEXT_STEP[$order->status] ?? $this->fail('This order has no next step.');
         $order->moveTo($next[0]);
         Activity::record('order-updated', $user->email, $order->number().' → '.$order->status);
+        if ($buyer = $order->user) {
+            EmailNotifications::send($buyer->email, 'AniBayan order update · '.$order->number(), 'Your order status changed',
+                'Your order from '.$this->myOrg($user)->name.' is now '.$order->status.'.',
+                ['Order' => $order->number(), 'Harvest' => $order->crop, 'Status' => $order->status],
+                url('/anibayan/consumer.html#orders'), 'Follow my order');
+        }
 
         return ['status' => $order->status];
     }
@@ -499,6 +529,12 @@ class ActionController extends Controller
                 throw ValidationException::withMessages(['reason' => 'Explain why the order was declined in at least 10 characters.']);
             }
             $order->cancel_reason = 'Declined by '.$org->name.': '.$reason;
+            if ($buyer = $order->user) {
+                EmailNotifications::send($buyer->email, 'AniBayan order update · '.$order->number(), 'The organization could not fulfill your order',
+                    $org->name.' cancelled the order. Any online refund will appear in your payment history.',
+                    ['Order' => $order->number(), 'Harvest' => $order->crop, 'Status' => 'Cancelled'],
+                    url('/anibayan/consumer.html#orders'), 'View my orders');
+            }
             $order->moveTo('Cancelled');
             if ($order->payment === 'Paid' && $order->funds === 'Held') {
                 Escrow::refundOrder($order, $order->cancel_reason);
@@ -527,6 +563,12 @@ class ActionController extends Controller
     {
         $refund = $this->orgRefund($request, $this->myOrg($user));
         Escrow::refund($refund, 'organization');
+        if ($buyer = $refund->order->user) {
+            EmailNotifications::send($buyer->email, 'Refund update · '.$refund->order->number(), 'Your refund was accepted',
+                $this->myOrg($user)->name.' accepted the refund request. PayMongo may take additional time to process the refund.',
+                ['Order' => $refund->order->number(), 'Refund' => $refund->id, 'Amount' => $this->money($refund->order->total)],
+                url('/anibayan/consumer.html#payments'), 'View payment history');
+        }
         Activity::record('refund-accepted', $user->email, $refund->order->number().' · '.$refund->id);
 
         return ['status' => $refund->fresh()->status];
@@ -538,6 +580,12 @@ class ActionController extends Controller
         $refund = $this->orgRefund($request, $this->myOrg($user));
         $reason = trim((string) $request->validate(['reason' => 'required|string|min:10|max:300'], ['reason.*' => 'Explain why in at least 10 characters.'])['reason']);
         $refund->update(['status' => 'Disputed', 'dispute_reason' => $reason, 'disputed_at' => now()]);
+        if ($buyer = $refund->order->user) {
+            EmailNotifications::send($buyer->email, 'Refund update · '.$refund->order->number(), 'Your refund request is under review',
+                $this->myOrg($user)->name.' disputed the request. AniBayan will review the information before deciding.',
+                ['Order' => $refund->order->number(), 'Refund' => $refund->id],
+                url('/anibayan/consumer.html#orders'), 'View my orders');
+        }
         Activity::record('refund-disputed', $user->email, $refund->order->number().' · '.$refund->id);
     }
 
@@ -896,6 +944,15 @@ class ActionController extends Controller
         $rep?->update(['status' => $data['decision'] === 'Active' ? 'Active' : 'Declined']);
         Activity::record($data['decision'] === 'Active' ? 'application-approved' : 'application-declined', $user->email, $org->name.($reason ? ' · '.$reason : ''), $rep?->email);
 
+        if ($rep) {
+            $approved = $data['decision'] === 'Active';
+            EmailNotifications::send($rep->email, $approved ? 'AniBayan application approved' : 'AniBayan application update',
+                $approved ? 'Your organization can now sell on AniBayan' : 'Your application needs attention',
+                $approved ? $org->name.' was approved. Sign in to publish your harvests.' : $org->name.' was not approved. Sign in to review the administrator’s note and contact support if you need help.',
+                ['Organization' => $org->name, 'Status' => $approved ? 'Approved' : 'Declined'],
+                url('/anibayan/login.html'), 'Open AniBayan');
+        }
+
         return ['representative' => $rep?->name, 'reason' => $reason];
     }
 
@@ -995,6 +1052,20 @@ class ActionController extends Controller
         }
         Activity::record('refund-decided', $user->email, $refund->id.' · '.$refund->order->number().' · '.($data['decision'] === 'refund' ? 'refunded to the buyer' : 'released to '.$refund->order->organization->name).($note ? ' · '.$note : ''));
 
+        if ($buyer = $refund->order->user) {
+            EmailNotifications::send($buyer->email, 'Final refund decision · '.$refund->order->number(),
+                $data['decision'] === 'refund' ? 'AniBayan approved your refund' : 'AniBayan did not approve your refund',
+                $data['decision'] === 'refund' ? 'The refund is being processed.' : 'The order payment was released to the organization. Sign in to read the administrator’s decision.',
+                ['Order' => $refund->order->number(), 'Refund' => $refund->id, 'Amount' => $this->money($refund->order->total)],
+                url('/anibayan/consumer.html#orders'), 'View my orders');
+        }
+        if ($data['decision'] === 'refund' && ($representative = $refund->order->organization->representativeAccount())) {
+            EmailNotifications::send($representative->email, 'Final refund decision · '.$refund->order->number(), 'AniBayan approved a refund',
+                'The administrator approved the buyer’s refund request.',
+                ['Order' => $refund->order->number(), 'Refund' => $refund->id],
+                url('/anibayan/organization.html#payments'), 'View payments');
+        }
+
         return ['status' => $refund->fresh()->status];
     }
 
@@ -1018,10 +1089,10 @@ class ActionController extends Controller
     private function dataReset(Request $request, User $user): array
     {
         $this->admin($user);
-        Storage::disk('local')->deleteDirectory(Documents::FOLDER);
-        Storage::disk('local')->deleteDirectory(RefundMediaStore::FOLDER);
+        MediaStorage::deletePrivatePrefix(Documents::FOLDER);
+        MediaStorage::deletePrivatePrefix(RefundMediaStore::FOLDER);
         Artisan::call('migrate:fresh', ['--seed' => true, '--force' => true]);
-        File::deleteDirectory(public_path('anibayan/uploads'));
+        MediaStorage::deletePublicPrefix('uploads');
         Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
@@ -1043,6 +1114,9 @@ class ActionController extends Controller
         }
         $user->update(['password' => $data['password']]);
         Activity::record('password-changed', $user->email);
+        EmailNotifications::send($user->email, 'AniBayan account security notice', 'Your password was changed',
+            'The password for your AniBayan account was changed. If you did not make this change, contact AniBayan support.',
+            ['Account' => $user->name], url('/anibayan/login.html'), 'Open AniBayan');
     }
 
     private function rejectSharedStarterPassword(): \Closure

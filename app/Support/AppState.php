@@ -119,14 +119,14 @@ class AppState
             'accounts' => $people->filter(fn ($u) => $admin || $u->id === $viewer?->id || ($u->role !== 'Administrator' && $u->status === 'Active'))
                 ->map(fn ($u) => self::account($u, $viewer))->values(),
             'crops' => $data['crops']->map(fn ($c) => array_filter([
-                'id' => $c->id, 'name' => $c->name, 'organization' => $names[$c->organization_id] ?? '', 'image' => $c->image, 'price' => $c->price,
+                'id' => $c->id, 'name' => $c->name, 'organization' => $names[$c->organization_id] ?? '', 'image' => Photos::url($c->image), 'price' => $c->price,
                 'unit' => $c->unit, 'category' => $c->category, 'stock' => $c->stock, 'status' => $c->status,
                 'harvested' => $c->harvested_on->toDateString(), 'shelfLife' => $c->shelf_life,
                 'removalReason' => ($admin || $c->organization_id === $ownOrg) ? $c->removal_reason : null,
             ], fn ($value) => $value !== null))->values(),
             'orders' => $orders->sortByDesc(fn ($o) => [$o->placed_on->toDateString(), (int) substr($o->id, 8)])->map(fn ($o) => array_filter([
                 'id' => $o->id, 'customer' => $personName[$o->user_id] ?? '', 'organization' => $names[$o->organization_id] ?? '', 'crop' => $o->crop,
-                'image' => $o->image, 'quantity' => $o->quantity, 'total' => $o->total, 'date' => $o->placed_on->toDateString(),
+                'image' => Photos::url($o->image), 'quantity' => $o->quantity, 'total' => $o->total, 'date' => $o->placed_on->toDateString(),
                 'status' => $o->status, 'payment' => $o->payment,
                 'items' => $o->items->isEmpty() ? null : $o->items->map(fn ($i) => ['crop' => $i->crop_id, 'name' => $i->name, 'quantity' => $i->quantity, 'unit' => $i->unit, 'price' => $i->price])->values(),
                 'address' => $o->address, 'phone' => $o->phone, 'method' => $o->method, 'note' => $o->note,
@@ -212,7 +212,7 @@ class AppState
         $members = (int) (self::$counts['members'][$o->id] ?? 0);
 
         return array_filter([
-            'name' => $o->name, 'region' => $o->region(), 'crop' => $o->crop, 'image' => $o->image, 'listings' => 0, 'status' => $o->status,
+            'name' => $o->name, 'region' => $o->region(), 'crop' => $o->crop, 'image' => Photos::url($o->image), 'listings' => 0, 'status' => $o->status,
             'representative' => $o->representative, 'applied' => $o->applied_on->toDateString(), 'members' => $members,
             'completedOrders' => (int) (self::$counts['completed'][$o->id] ?? 0),
             'stopped' => $o->status === 'Active' && (self::$counts['suspendedReps'][$o->id] ?? false) ?: null,
@@ -221,7 +221,7 @@ class AppState
             'phone' => $full ? $o->phone : null, 'description' => $o->description,
             'terminated' => $o->terminated_on?->toDateString(), 'terminatedFor' => $full ? $o->terminated_for : null,
             'applicationDeclineReason' => $full ? $o->application_decline_reason : null,
-            'avatar' => $o->avatar, 'banner' => $o->banner, 'bannerX' => $o->banner_x, 'bannerY' => $o->banner_y,
+            'avatar' => Photos::url($o->avatar), 'banner' => Photos::url($o->banner), 'bannerX' => $o->banner_x, 'bannerY' => $o->banner_y,
         ], fn ($v) => $v !== null);
     }
 
@@ -229,7 +229,7 @@ class AppState
     // trimmed to what a buyer's privacy settings allow.
     private static function account(User $u, ?User $viewer): array
     {
-        $look = ['avatar' => $u->avatar, 'banner' => $u->banner, 'bannerX' => $u->banner_x, 'bannerY' => $u->banner_y];
+        $look = ['avatar' => Photos::url($u->avatar), 'banner' => Photos::url($u->banner), 'bannerX' => $u->banner_x, 'bannerY' => $u->banner_y];
         $base = ['name' => $u->name, 'role' => $u->role, 'organization' => $u->organization_id ? (self::$counts['names'][$u->organization_id] ?? null) : null, 'status' => $u->status];
         if ($viewer && ($viewer->isAdmin() || $viewer->id === $u->id)) {
             return array_filter($base + $look + [

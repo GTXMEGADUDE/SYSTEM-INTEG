@@ -6,8 +6,7 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 // Photos people upload (listing photos, profile pictures, banners). The page shrinks them to a JPEG first and sends
-// it as a data URL; the server checks it really is an image and saves it under public/anibayan/uploads/<folder>/.
-// Saved paths look like "uploads/banners/abc.jpg", relative to the AniBayan pages.
+// it as a data URL; the server validates the bytes and stores them in the public media bucket in production.
 class Photos
 {
     private const MAX_BYTES = 4 * 1024 * 1024;
@@ -27,27 +26,24 @@ class Photos
         }
         $info = @getimagesizefromstring($bytes);
         $types = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
-        if (! $info || ! isset($types[$info['mime']])) {
+        if (! $info || ! isset($types[$info['mime']]) || $info[0] > 4096 || $info[1] > 4096 || $info[0] * $info[1] > 16_000_000) {
             $fail('This picture couldn’t be read. Try another one.');
         }
-        $directory = public_path('anibayan/uploads/'.$folder);
-        if (! is_dir($directory)) {
-            mkdir($directory, 0775, true);
-        }
         $name = Str::random(24).'.'.$types[$info['mime']];
-        file_put_contents($directory.DIRECTORY_SEPARATOR.$name, $bytes);
+        $path = 'uploads/'.$folder.'/'.$name;
+        MediaStorage::putPublic($path, $bytes, $info['mime']);
 
-        return 'uploads/'.$folder.'/'.$name;
+        return $path;
+    }
+
+    public static function url(?string $path): ?string
+    {
+        return MediaStorage::publicUrl($path);
     }
 
     // Removes an uploaded file; stock photos and other paths are left alone.
     public static function delete(?string $path): void
     {
-        if ($path && preg_match('#^uploads/[a-z]+/[A-Za-z0-9]+\.(jpg|png|webp)$#', $path)) {
-            $file = public_path('anibayan/'.$path);
-            if (is_file($file)) {
-                unlink($file);
-            }
-        }
+        MediaStorage::deletePublic($path);
     }
 }

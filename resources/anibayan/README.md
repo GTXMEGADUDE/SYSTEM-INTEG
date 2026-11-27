@@ -15,7 +15,7 @@ With the app running (`php artisan serve`), open `http://127.0.0.1:8000/anibayan
 - **Changing:** every change is `POST /api/actions/{action}` (`app/Http/Controllers/ActionController.php`), for example `cart.add`, `checkout`, `order.advance`, `listing.save`, `warning.create` or `account.suspend`. Each action checks the person's role, saves everything or nothing, writes the activity log, and answers with the person's fresh data.
 - **Signing in:** `POST /api/login`, `/api/register` and `/api/logout` (`AuthController`). Pages send Laravel's `XSRF-TOKEN` cookie back as the `X-XSRF-TOKEN` header (`dashApi` in `src/shared.ts`).
 - **Payments:** `POST /api/payments` and `/api/payments/check` (`PaymentController`) build the PayMongo checkout from the orders in the database and mark them paid only after PayMongo confirms.
-- **Photos:** pages shrink a photo to a JPEG and send it; the server checks it and saves it under `public/anibayan/uploads/` (`app/Support/Photos.php`).
+- **Photos and private files:** local development saves them to local folders; Render uses Supabase Storage. Public listing/profile photos go in `anibayan-public`; organization documents and refund proof go in private `anibayan-private` and are served only by authenticated routes (`app/Support/MediaStorage.php`). Refund proof is limited to 3 files, 8 MB each. Set the server-only `SUPABASE_SERVICE_ROLE_KEY` in Render, never in browser code.
 
 ## Test accounts
 

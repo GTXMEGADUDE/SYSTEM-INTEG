@@ -44,7 +44,7 @@ function authSignInView():string{
   +'</div><p class="auth-forgot"><button type="button" class="text-button" data-auth-view="forgot">Forgot password?</button></p><p class="form-error" id="signin-error" role="alert" hidden></p><button type="submit" class="control primary auth-submit">Sign in</button><p class="auth-switch">New to AniBayan? <button type="button" class="text-button" data-auth-view="register">Create an account</button></p></form>';
 }
 function authForgotView():string{
- return '<form class="auth-form" id="forgot-form" novalidate><h1>Forgot password?</h1><p class="auth-lead">Enter the email address on your account and we’ll send a reset link.</p>'+(authForgotSent?'<p class="auth-notice" role="status">If an account exists for that email, we sent a password reset link.</p>':'')+'<div class="form-grid single">'+dashField('email','Email','<input type="email" required maxlength="160" autocomplete="email" placeholder="name@example.com" value="'+de(authForgotEmail)+'">')+'</div><p class="form-error" id="forgot-error" role="alert" hidden></p><button type="submit" class="control primary auth-submit">Send reset link</button><p class="auth-switch"><button type="button" class="text-button" data-auth-view="signin">Back to sign in</button></p></form>';
+ return '<form class="auth-form" id="forgot-form" novalidate><h1>Forgot password?</h1><p class="auth-lead">Enter the email address on your account and we’ll send a reset link.</p>'+(authForgotSent?'<p class="auth-notice" role="status">If an account exists for that email, we sent a password reset link. Check your inbox and spam folder. If it does not arrive, verify the email you registered with or contact support.</p>':'')+'<div class="form-grid single">'+dashField('email','Email','<input type="email" required maxlength="160" autocomplete="email" placeholder="name@example.com" value="'+de(authForgotEmail)+'">')+'</div><p class="form-error" id="forgot-error" role="alert" hidden></p><button type="submit" class="control primary auth-submit">Send reset link</button><p class="auth-switch"><button type="button" class="text-button" data-auth-view="signin">Back to sign in</button></p></form>';
 }
 function authResetView():string{
  if(!authResetToken||!authResetEmail)return '<div class="auth-done"><h1>Reset link unavailable</h1><p>Request a new password reset link to continue.</p><div class="detail-actions"><button type="button" class="control primary" data-auth-view="forgot">Request a new link</button></div></div>';
@@ -117,7 +117,7 @@ async function authForgotPassword(form:HTMLFormElement):Promise<void>{
  submit.disabled=true;error.hidden=true;
  const r=await dashApi('password/forgot',{email});
  submit.disabled=false;
- if(!r.ok){error.hidden=false;error.textContent=dashMessage(r);return;}
+ if(!r.ok){error.hidden=false;error.textContent=r.status===503?'Password reset email is temporarily unavailable. Please contact AniBayan support or try again later.':dashMessage(r);return;}
  authForgotEmail=email;authForgotSent=true;authRender();
 }
 async function authResetPassword(form:HTMLFormElement):Promise<void>{

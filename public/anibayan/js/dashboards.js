@@ -719,11 +719,22 @@ async function dashTimedFetch(path) {
     response.body?.cancel().catch(() => undefined);
     return elapsed;
 }
+async function dashTimedCheck(path) {
+    if (location.protocol === 'file:')
+        throw new Error('Open AniBayan through the web server to check this.');
+    const start = performance.now();
+    const response = await fetch(path + '?check=' + Date.now(), { cache: 'no-store', headers: { Accept: 'application/json' } });
+    const result = await response.json().catch(() => null);
+    if (!response.ok || result?.ok !== true)
+        throw new Error(result?.error || 'Not answering');
+    return performance.now() - start;
+}
 const dashHealthChecks = [
     ['Web application', 'Homepage and dashboards', () => dashTimedFetch('index.html')],
     ['Application code', 'Dashboard and sign-in scripts', () => dashTimedFetch('js/dashboards.js')],
-    ['File storage', 'Product and organization photos', () => dashTimedFetch('assets/carrot.jpg')],
-    ['Database', 'Accounts, listings and orders (MySQL)', () => dashTimedFetch('../api/health/database')],
+    ['File storage', 'Supabase public photos and private documents buckets', () => dashTimedCheck('../api/health/storage')],
+    ['Database', 'Account and order queries (Postgres in production)', () => dashTimedCheck('../api/health/database')],
+    ['Email notifications', 'Transactional mail provider configuration', () => dashTimedCheck('../api/health/email')],
 ];
 // CPU, memory and storage of the machine serving AniBayan, read by the Laravel app (routes/web.php).
 async function dashReadHardware() {
@@ -735,7 +746,7 @@ async function dashReadHardware() {
     return await response.json();
 }
 // Services AniBayan will connect to, with their current state.
-const dashIntegrations = [['PayMongo payments', 'Card, GCash and QR Ph checkout', 'Test mode', 'No money is charged'], ['Tawk.to live chat', 'Customer support chat', 'Connected', 'Chat widget is installed on AniBayan pages.'], ['Email notifications', 'Order and account emails', 'Not connected', 'Email sending is not set up yet.']];
+const dashIntegrations = [['PayMongo payments', 'Card, GCash and QR Ph checkout', 'Test mode', 'No money is charged'], ['Tawk.to live chat', 'Customer support chat', 'Connected', 'Chat widget is installed on AniBayan pages.']];
 async function dashRunHealthChecks() {
     if (dashChecking)
         return;
@@ -746,8 +757,8 @@ async function dashRunHealthChecks() {
         try {
             results.push({ service, ok: true, latency: Math.round(await run()) });
         }
-        catch {
-            results.push({ service, ok: false, latency: 0, error: 'Not answering' });
+        catch (error) {
+            results.push({ service, ok: false, latency: 0, error: error instanceof Error ? error.message : 'Not answering' });
         }
     }
     let hardware, hardwareError;
@@ -1890,7 +1901,7 @@ async function dashStartPayment(ids, button) {
         if (r.data.status === 'succeeded') {
             if (progress)
                 progress.textContent = 'Payment received. Updating your order...';
-            await dashRefreshPaymentStatus(false);
+            await dashRefreshPaymentStatus();
             return;
         }
         if (r.data.status === 'processing') {
@@ -1958,7 +1969,7 @@ async function dashStartPayment(ids, button) {
     if (attributes.status === 'succeeded') {
         if (progress)
             progress.textContent = 'Payment received. Updating your order...';
-        await dashRefreshPaymentStatus(false);
+        await dashRefreshPaymentStatus();
         return;
     }
     if (attributes.status === 'processing') {
@@ -2046,7 +2057,7 @@ async function dashPayMongoPost(publicKey, path, body) {
     }
 }
 function dashShowQrPh(image, ids) {
-    dashOpen('<p class="detail-kicker">AniBayan · GCash / QR Ph</p><h2 id="detail-title">Scan to pay</h2><p class="detail-subtitle">' + ids.map(dashOrderNo).join(', ') + ' · this single-use code expires in about 30 minutes.</p><div class="qrph-payment"><div id="qrph-image-slot" class="qrph-image-slot"></div><p>Open GCash, your bank, or another QR Ph-enabled wallet, scan this code, and approve the amount shown.</p></div><p id="qrph-status" class="payment-status" role="status">Waiting for payment confirmation…</p><div class="detail-actions"><button class="control" data-close-dialog>Close</button><button class="control primary" data-payment-check>Check payment status</button></div>');
+    dashOpen('<p class="detail-kicker">AniBayan · GCash / QR Ph</p><h2 id="detail-title">Scan to pay</h2><p class="detail-subtitle">' + ids.map(dashOrderNo).join(', ') + ' · this single-use code expires in about 30 minutes.</p><div class="qrph-payment"><div id="qrph-image-slot" class="qrph-image-slot"></div><p>Open GCash, your bank, or another QR Ph-enabled wallet, scan this code, and approve the amount shown.</p></div><p id="qrph-status" class="payment-status" role="status">Waiting for payment confirmation…</p><div class="detail-actions"><button class="control" data-close-dialog>Close</button></div>');
     const img = document.createElement('img');
     img.src = image;
     img.alt = 'Single-use QR Ph payment code';
@@ -2065,7 +2076,7 @@ function dashShowTestQrPh(testUrl, image, ids) {
     if (!simulatorUrl)
         return false;
     const total = Number(document.getElementById('payment-title')?.getAttribute('data-total') || 0);
-    dashOpen('<p class="detail-kicker">AniBayan &middot; PayMongo test mode</p><h2 id="detail-title">QR Ph test payment</h2><p class="detail-subtitle">' + ids.map(dashOrderNo).join(', ') + ' &middot; test amount ' + dp(total) + '</p><div class="qrph-payment"><div id="qrph-image-slot" class="qrph-image-slot"></div><p>This QR is shown for testing. Do not scan it with a wallet; use the PayMongo simulator to complete the test.</p></div><p id="qrph-status" class="payment-status" role="status">Waiting for test payment confirmation&hellip;</p><div class="detail-actions"><a class="control primary" href="' + de(simulatorUrl) + '" target="_blank" rel="noopener noreferrer">Open PayMongo test simulator</a><button class="control" data-close-dialog>Close</button><button class="control" data-payment-check>Check payment status</button></div>');
+    dashOpen('<p class="detail-kicker">AniBayan &middot; PayMongo test mode</p><h2 id="detail-title">QR Ph test payment</h2><p class="detail-subtitle">' + ids.map(dashOrderNo).join(', ') + ' &middot; test amount ' + dp(total) + '</p><div class="qrph-payment"><div id="qrph-image-slot" class="qrph-image-slot"></div></div><div class="detail-actions"><a class="control primary" href="' + de(simulatorUrl) + '" target="_blank" rel="noopener noreferrer">Open PayMongo test simulator</a><button class="control" data-close-dialog>Close</button></div>');
     const img = document.createElement('img');
     img.src = image;
     img.alt = 'QR Ph test payment preview';
@@ -2079,43 +2090,20 @@ let dashPaymentChecking = false;
 function dashWatchPayments() {
     if (dashPaymentPoll)
         window.clearInterval(dashPaymentPoll);
-    dashPaymentPoll = window.setInterval(() => { void dashRefreshPaymentStatus(false); }, 5000);
+    dashPaymentPoll = window.setInterval(() => { void dashRefreshPaymentStatus(); }, 5000);
 }
-async function dashRefreshPaymentStatus(manual, button) {
-    if (dashPaymentChecking) {
-        if (manual) {
-            const status = document.getElementById('qrph-status');
-            if (status)
-                status.textContent = 'Payment status is already being checked. Please wait.';
-        }
+async function dashRefreshPaymentStatus() {
+    if (dashPaymentChecking)
         return;
-    }
     dashPaymentChecking = true;
-    const oldLabel = button?.textContent || '';
-    if (button) {
-        button.disabled = true;
-        button.textContent = 'Checking…';
-    }
-    const initialStatus = document.getElementById('qrph-status');
-    if (manual && initialStatus)
-        initialStatus.textContent = 'Checking with PayMongo…';
     try {
         const r = await dashApi('payments/check', {});
         if (r.data.state) {
             dashApplyState(r.data.state);
             dashRender();
         }
-        if (!r.ok) {
-            if (manual) {
-                const message = typeof r.data.message === 'string' ? r.data.message : 'AniBayan could not verify this payment right now. Please try again.';
-                const status = document.getElementById('qrph-status');
-                if (status)
-                    status.textContent = message;
-                else
-                    dashToast(message);
-            }
+        if (!r.ok)
             return;
-        }
         const result = r.data.result || {};
         const paid = (result.paid || []);
         if (paid.length) {
@@ -2128,17 +2116,8 @@ async function dashRefreshPaymentStatus(manual, button) {
             return;
         }
         const stillOpen = dashRoleOrders().some(o => o.checkout && o.payment === 'Unpaid');
-        if (result.unverified) {
-            if (manual) {
-                const message = 'AniBayan could not reach PayMongo to verify this payment. Please try again in a moment.';
-                const status = document.getElementById('qrph-status');
-                if (status)
-                    status.textContent = message;
-                else
-                    dashToast(message);
-            }
+        if (result.unverified)
             return;
-        }
         if (!stillOpen) {
             if (dashPaymentPoll) {
                 window.clearInterval(dashPaymentPoll);
@@ -2149,21 +2128,9 @@ async function dashRefreshPaymentStatus(manual, button) {
                 status.textContent = 'This payment attempt is no longer open. You can try again from My orders.';
             return;
         }
-        if (manual) {
-            const message = (result.pending || []).length ? 'PayMongo has not confirmed this payment yet. Complete the payment in the simulator or wallet, then check again.' : 'Payment is still processing or has not been confirmed yet.';
-            const status = document.getElementById('qrph-status');
-            if (status)
-                status.textContent = message;
-            else
-                dashToast(message);
-        }
     }
     finally {
         dashPaymentChecking = false;
-        if (button) {
-            button.disabled = false;
-            button.textContent = oldLabel;
-        }
     }
 }
 // Reconciles in-app Payment Intents after a provider return and whenever the buyer reopens the orders page.
@@ -2181,7 +2148,7 @@ async function dashCheckPayments() {
             dashToast('Payment cancelled.');
         return;
     }
-    await dashRefreshPaymentStatus(false);
+    await dashRefreshPaymentStatus();
     if (dashRoleOrders().some(o => o.checkout && o.payment === 'Unpaid'))
         dashWatchPayments();
 }
@@ -2572,7 +2539,7 @@ function dashConfirmReceived(id) {
 }
 const dashRefundReasons = ['Damaged items', 'Spoiled or poor quality', 'Wrong items', 'Missing items', 'Not delivered', 'Other'];
 const dashRefundTypes = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime'];
-const dashRefundMaxFiles = 5, dashRefundMaxBytes = 50 * 1024 * 1024;
+const dashRefundMaxFiles = 3, dashRefundMaxBytes = 8 * 1024 * 1024;
 let dashRefundFiles = [];
 let dashRefundPreviews = [];
 function dashRefundForm(id) {
@@ -2583,7 +2550,7 @@ function dashRefundForm(id) {
     dashOpen('<p class="detail-kicker">Request a refund · ' + dashOrderNo(o.id) + '</p><h2 id="detail-title">What went wrong?</h2><p class="detail-subtitle">' + de(o.crop) + ' · ' + dp(o.total) + ' · ' + de(o.organization) + '</p><form class="dash-form" id="refund-form" data-order="' + o.id + '" novalidate><div class="form-grid single">'
         + dashField('reason', 'Reason' + dashRequired, '<select required><option value="">Choose a reason…</option>' + dashRefundReasons.map(r => '<option>' + r + '</option>').join('') + '</select>')
         + dashField('details', 'Nature of the complaint' + dashRequired, '<textarea rows="4" required minlength="20" maxlength="1000" placeholder="What was wrong with the order when it arrived?"></textarea>')
-        + '<div class="form-field"><span class="form-label" id="media-label">Photo or video proof' + dashRequired + '</span><div class="refund-media" id="media-preview"></div><label class="control small file-button">' + di('camera') + 'Add photos or videos<input type="file" name="media" id="field-media" multiple accept="' + dashRefundTypes.join(',') + '" aria-labelledby="media-label" aria-describedby="error-media"></label><small class="field-error" id="error-media" data-error-for="media"></small></div>'
+        + '<div class="form-field"><span class="form-label" id="media-label">Photo or video proof' + dashRequired + '</span><div class="refund-media" id="media-preview"></div><label class="control small file-button">' + di('camera') + 'Add photos or videos<input type="file" name="media" id="field-media" multiple accept="' + dashRefundTypes.join(',') + '" aria-labelledby="media-label" aria-describedby="error-media"></label><small class="form-hint">Up to 3 files, 8 MB each.</small><small class="field-error" id="error-media" data-error-for="media"></small></div>'
         + '</div><div class="detail-actions"><button type="button" class="control" data-order="' + o.id + '">Back</button><button type="submit" class="control primary">Request refund</button></div></form>');
     dashFocusField('#field-reason');
 }
@@ -2598,7 +2565,7 @@ function dashAddRefundFiles(input) {
     let problem = '';
     Array.from(input.files || []).forEach(f => {
         if (!dashRefundTypes.includes(f.type) || !f.size || f.size > dashRefundMaxBytes)
-            problem = 'Choose JPG, PNG or WebP photos, or MP4, WebM or MOV videos, up to 50 MB each.';
+            problem = 'Choose JPG, PNG or WebP photos, or MP4, WebM or MOV videos, up to 8 MB each.';
         else if (dashRefundFiles.length >= dashRefundMaxFiles)
             problem = 'Attach up to ' + dashRefundMaxFiles + ' files.';
         else
@@ -3916,10 +3883,6 @@ function dashHandleClick(event) {
     }
     if (data.pay) {
         void dashStartPayment(data.pay.split(','), target);
-        return;
-    }
-    if (data.paymentCheck !== undefined) {
-        void dashRefreshPaymentStatus(true, target);
         return;
     }
     if (data.payLater !== undefined) {

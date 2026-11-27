@@ -5,7 +5,6 @@ namespace App\Support;
 use App\Models\Organization;
 use App\Models\OrganizationDocument;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 // The documents an organization attaches to its application. They hold IDs and registration papers, so they're
@@ -26,11 +25,17 @@ class Documents
     // Saves one checked upload for the organization. Returns the stored path, so a failed sign-up can remove it again.
     public static function store(Organization $org, string $type, UploadedFile $file): string
     {
-        $path = $file->store(self::FOLDER, 'local');
-        $org->documents()->create([
-            'type' => self::TYPES[$type], 'name' => self::cleanName($file->getClientOriginalName()), 'path' => $path,
-            'mime' => $file->getMimeType(), 'size' => $file->getSize(),
-        ]);
+        $path = self::FOLDER.'/'.Str::random(40).'.'.$file->guessExtension();
+        MediaStorage::putPrivate($path, (string) file_get_contents($file->getRealPath()), $file->getMimeType() ?: 'application/octet-stream');
+        try {
+            $org->documents()->create([
+                'type' => self::TYPES[$type], 'name' => self::cleanName($file->getClientOriginalName()), 'path' => $path,
+                'mime' => $file->getMimeType(), 'size' => $file->getSize(),
+            ]);
+        } catch (\Throwable $e) {
+            MediaStorage::deletePrivate([$path]);
+            throw $e;
+        }
 
         return $path;
     }
@@ -50,7 +55,7 @@ class Documents
             'Main crops: '.$org->crop, 'Issued: '.$org->applied_on->format('F j, Y'),
         ]);
         $path = self::FOLDER.'/'.Str::random(40).'.pdf';
-        Storage::disk('local')->put($path, $pdf);
+        MediaStorage::putPrivate($path, $pdf, 'application/pdf');
         $org->documents()->create(['type' => self::TYPES[$type], 'name' => Str::slug($title).'.pdf', 'path' => $path, 'mime' => 'application/pdf', 'size' => strlen($pdf)]);
     }
 

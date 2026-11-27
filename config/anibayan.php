@@ -5,6 +5,14 @@
 return [
     'city' => 'Calapan City',
     'province' => 'Oriental Mindoro',
+    'media' => [
+        // Render production uses Supabase Storage; local development stays on local disk by default.
+        'driver' => env('MEDIA_STORAGE_DRIVER', 'local'),
+        'url' => env('SUPABASE_URL'),
+        'service_role_key' => env('SUPABASE_SERVICE_ROLE_KEY'),
+        'public_bucket' => env('SUPABASE_PUBLIC_BUCKET', 'anibayan-public'),
+        'private_bucket' => env('SUPABASE_PRIVATE_BUCKET', 'anibayan-private'),
+    ],
     'barangays' => ['Balingayan', 'Balite', 'Baruyan', 'Batino', 'Bayanan I', 'Bayanan II', 'Biga', 'Bondoc', 'Bucayao', 'Buhuan', 'Bulusan', 'Calero', 'Camansihan', 'Camilmil', 'Canubing I', 'Canubing II', 'Comunal', 'Guinobatan', 'Gulod', 'Gutad', 'Ibaba East', 'Ibaba West', 'Ilaya', 'Lalud', 'Lazareto', 'Libis', 'Lumangbayan', 'Mahal Na Pangalan', 'Maidlang', 'Malad', 'Malamig', 'Managpi', 'Masipit', 'Nag-Iba I', 'Nag-Iba II', 'Navotas', 'Pachoca', 'Palhi', 'Panggalaan', 'Parang', 'Patas', 'Personas', 'Puting Tubig', 'Salong', 'San Antonio', 'San Vicente Central', 'San Vicente East', 'San Vicente North', 'San Vicente South', 'San Vicente West', 'Sapul', 'Silonay', 'Sta. Cruz', 'Sta. Isabel', 'Sta. Maria Village', 'Sta. Rita', 'Sto. Niño', 'Suqui', 'Tawagan', 'Tawiran', 'Tibag', 'Wawa'],
     // Every starting account uses this password until it is changed or reset.
     'demo_password' => 'anibayan',

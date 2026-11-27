@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\Activity;
 use App\Models\Order;
+use App\Models\User;
 use App\Support\AppState;
+use App\Support\EmailNotifications;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
@@ -211,6 +213,7 @@ class PaymentController extends Controller
                         if ($intentStatus === 'succeeded' || $payment) {
                             $order->update(['payment' => 'Paid', 'payment_ref' => data_get($payment, 'id') ?: $session, 'checkout_session' => null, 'paid_at' => now(), 'funds' => 'Held']);
                             Activity::record('order-paid', $buyer->email, $order->number().' · ₱'.number_format($order->total).' · '.$order->method);
+                            $this->notifyPaid($order, $buyer);
                             $paid[] = $order->number();
                         } elseif (in_array($intentStatus, ['awaiting_payment_method', 'cancelled'], true)) {
                             $order->update(['checkout_session' => null]);
@@ -227,6 +230,7 @@ class PaymentController extends Controller
                     if ($payment) {
                         $order->update(['payment' => 'Paid', 'payment_ref' => $payment['id'], 'checkout_session' => null, 'paid_at' => now(), 'funds' => 'Held']);
                         Activity::record('order-paid', $buyer->email, $order->number().' · ₱'.number_format($order->total).' · '.$order->method);
+                        $this->notifyPaid($order, $buyer);
                         $paid[] = $order->number();
                     } elseif (! collect($attributes['payments'] ?? [])->contains(fn ($item) => in_array(data_get($item, 'attributes.status'), ['pending', 'processing'], true))
                         && (($attributes['status'] ?? '') !== 'active' || $cancelled)) {
@@ -239,6 +243,21 @@ class PaymentController extends Controller
         }
 
         return response()->json(['result' => ['paid' => array_values(array_unique($paid)), 'pending' => array_values(array_unique($pending)), 'unverified' => $unverified], 'state' => AppState::for($buyer->fresh())]);
+    }
+
+    private function notifyPaid(Order $order, User $buyer): void
+    {
+        EmailNotifications::send($buyer->email, 'Payment confirmed · '.$order->number(), 'Your payment is confirmed',
+            'AniBayan received payment for your order. The amount remains held while the order is fulfilled.',
+            ['Order' => $order->number(), 'Harvest' => $order->crop, 'Amount' => '₱'.number_format($order->total), 'Payment' => (string) $order->method],
+            url('/anibayan/consumer.html#payments'), 'View payment history');
+
+        if ($representative = $order->organization->representativeAccount()) {
+            EmailNotifications::send($representative->email, 'Buyer payment confirmed · '.$order->number(), 'A buyer payment is confirmed',
+                'Payment was received for an order from '.$order->organization->name.'.',
+                ['Order' => $order->number(), 'Harvest' => $order->crop, 'Amount' => '₱'.number_format($order->total)],
+                url('/anibayan/organization.html#payments'), 'View payments');
+        }
     }
 
     private function client(): ?PendingRequest

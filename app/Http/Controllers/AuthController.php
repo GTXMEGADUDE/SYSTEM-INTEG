@@ -9,13 +9,15 @@ use App\Models\User;
 use App\Support\AppState;
 use App\Support\BarangayDirectory;
 use App\Support\Documents;
+use App\Support\EmailNotifications;
+use App\Support\MediaStorage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Password;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
@@ -92,11 +94,36 @@ class AuthController extends Controller
 
     public function forgotPassword(Request $request): JsonResponse
     {
+        if (! EmailNotifications::isConfigured()) {
+            return response()->json(['message' => 'Password reset email is not available yet. Contact AniBayan support.'], 503);
+        }
+
         $request->merge(['email' => strtolower(trim((string) $request->input('email')))]);
         $data = $request->validate(['email' => 'required|email|max:160'], ['email.*' => 'Enter your email address.']);
 
+        if (EmailNotifications::isPlaceholderAddress($data['email'])) {
+            return response()->json(['message' => 'If an account exists for that email, we sent a password reset link.']);
+        }
+
         // Keep the response identical whether or not an account exists.
-        Password::sendResetLink($data);
+        try {
+            $status = Password::sendResetLink($data);
+        } catch (Throwable $exception) {
+            try {
+                if ($user = User::where('email', $data['email'])->first()) {
+                    Password::broker()->deleteToken($user);
+                }
+            } catch (Throwable $cleanupException) {
+                Log::warning('AniBayan password reset token cleanup failed.', ['error_type' => $cleanupException::class]);
+            }
+            Log::warning('AniBayan password reset email failed.', ['error_type' => $exception::class]);
+
+            return response()->json(['message' => 'The reset email could not be sent right now. Try again later.'], 503);
+        }
+
+        if ($status === Password::RESET_THROTTLED) {
+            return response()->json(['message' => 'Wait a little before requesting another reset link.'], 429);
+        }
 
         return response()->json(['message' => 'If an account exists for that email, we sent a password reset link.']);
     }
@@ -115,6 +142,9 @@ class AuthController extends Controller
         $status = Password::reset($data, function (User $user, string $password): void {
             $user->forceFill(['password' => $password, 'remember_token' => Str::random(60)])->save();
             event(new \Illuminate\Auth\Events\PasswordReset($user));
+            EmailNotifications::send($user->email, 'AniBayan account security notice', 'Your password was reset',
+                'The password for your AniBayan account was reset. If you did not make this change, contact AniBayan support.',
+                ['Account' => $user->name], url('/anibayan/login.html'), 'Sign in');
         });
 
         if ($status === Password::PASSWORD_RESET) {
@@ -202,10 +232,19 @@ class AuthController extends Controller
                 ]);
             });
         } catch (Throwable $e) {
-            Storage::disk('local')->delete($stored);
+            MediaStorage::deletePrivate($stored);
             throw $e;
         }
         Activity::record('register', $account->email, $organization ? 'Organization application · '.$data['orgName'] : 'Buyer');
+        EmailNotifications::send($account->email,
+            $organization ? 'AniBayan organization application received' : 'Welcome to AniBayan',
+            $organization ? 'Your organization application is in' : 'Welcome to AniBayan',
+            $organization
+                ? 'We received the application for '.$data['orgName'].'. An administrator will review it and email you when there is an update.'
+                : 'Your account is ready. You can browse local harvests and place an order from AniBayan.',
+            ['Account' => $account->name, 'Status' => $organization ? 'Application under review' : 'Active'],
+            url($organization ? '/anibayan/login.html' : '/anibayan/consumer.html'),
+            $organization ? 'View application status' : 'Shop the harvest');
         if (! $organization) {
             Auth::login($account);
             $request->session()->regenerate();
@@ -218,13 +257,11 @@ class AuthController extends Controller
     public function document(int $id): Response
     {
         $document = OrganizationDocument::find($id);
-        if (! $document || ! Auth::user()?->isAdmin() || ! Storage::disk('local')->exists($document->path)) {
+        if (! $document || ! Auth::user()?->isAdmin()) {
             self::refuse('That file isn’t available.', 404);
         }
 
-        return Storage::disk('local')->response($document->path, $document->name, [
-            'Content-Type' => $document->mime, 'X-Content-Type-Options' => 'nosniff', 'Cache-Control' => 'private, no-store',
-        ]);
+        return MediaStorage::privateResponse($document->path, $document->mime);
     }
 
     public function logout(Request $request): JsonResponse

@@ -5,7 +5,6 @@ namespace App\Support;
 use App\Models\RefundMedia;
 use App\Models\RefundRequest;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 // Photos and videos a buyer attaches to a refund request. They're kept outside the public folder
@@ -15,10 +14,10 @@ class RefundMediaStore
 {
     public const MIMES = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime'];
 
-    public const MAX_FILES = 5;
+    public const MAX_FILES = 3;
 
-    // Kilobytes, as Laravel's "max" rule counts them (50 MB).
-    public const MAX_KB = 51200;
+    // Kilobytes, as Laravel's "max" rule counts them (8 MB per file).
+    public const MAX_KB = 8192;
 
     public const FOLDER = 'refund-media';
 
@@ -28,13 +27,14 @@ class RefundMediaStore
         $stored = [];
         try {
             foreach ($files as $file) {
-                $path = $file->store(self::FOLDER, 'local');
+                $path = self::FOLDER.'/'.Str::random(40).'.'.$file->guessExtension();
+                MediaStorage::putPrivate($path, (string) file_get_contents($file->getRealPath()), $file->getMimeType() ?: 'application/octet-stream');
                 $stored[] = $path;
                 RefundMedia::create(['refund_request_id' => $refund->id, 'name' => Str::limit(trim(str_replace(['/', '\\'], ' ', $file->getClientOriginalName())) ?: 'proof', 150, ''),
                     'path' => $path, 'mime' => $file->getMimeType(), 'size' => $file->getSize()]);
             }
         } catch (\Throwable $e) {
-            Storage::disk('local')->delete($stored);
+            MediaStorage::deletePrivate($stored);
             throw $e;
         }
     }
@@ -43,9 +43,12 @@ class RefundMediaStore
     public static function seedFrom(RefundRequest $refund, string $asset, string $name): void
     {
         $path = self::FOLDER.'/'.Str::random(40).'.'.pathinfo($asset, PATHINFO_EXTENSION);
-        Storage::disk('local')->put($path, (string) file_get_contents(public_path('anibayan/assets/'.$asset)));
+        $assetPath = public_path('anibayan/assets/'.$asset);
+        $contents = (string) file_get_contents($assetPath);
+        $mime = mime_content_type($assetPath) ?: 'image/jpeg';
+        MediaStorage::putPrivate($path, $contents, $mime);
         RefundMedia::create(['refund_request_id' => $refund->id, 'name' => $name, 'path' => $path,
-            'mime' => mime_content_type(Storage::disk('local')->path($path)) ?: 'image/jpeg', 'size' => Storage::disk('local')->size($path)]);
+            'mime' => $mime, 'size' => strlen($contents)]);
     }
 
     public static function forPage(RefundMedia $m): array

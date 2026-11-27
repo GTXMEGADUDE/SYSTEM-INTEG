@@ -6,7 +6,7 @@ RUN apt-get update \
     && a2enmod headers rewrite \
     && rm -rf /var/lib/apt/lists/*
 
-RUN printf 'expose_php=Off\n' > /usr/local/etc/php/conf.d/99-security.ini
+RUN printf 'expose_php=Off\nupload_max_filesize=8M\npost_max_size=28M\nmax_file_uploads=10\nmax_execution_time=120\nmemory_limit=128M\n' > /usr/local/etc/php/conf.d/99-security.ini
 RUN printf 'ServerTokens Prod\nServerSignature Off\n' > /etc/apache2/conf-available/zz-anibayan-security.conf \
     && a2enconf zz-anibayan-security
 

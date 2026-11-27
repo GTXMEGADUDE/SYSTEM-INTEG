@@ -12,6 +12,16 @@ services:
         value: "false"
       - key: APP_URL
         value: https://anibayan.onrender.com
+      - key: MEDIA_STORAGE_DRIVER
+        value: supabase
+      - key: SUPABASE_URL
+        value: https://kteeanqfarwwptpvvqxh.supabase.co
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_PUBLIC_BUCKET
+        value: anibayan-public
+      - key: SUPABASE_PRIVATE_BUCKET
+        value: anibayan-private
       - key: APP_KEY
         sync: false
       - key: LOG_CHANNEL
@@ -38,6 +48,16 @@ services:
         value: file
       - key: QUEUE_CONNECTION
         value: sync
+      - key: MAIL_MAILER
+        value: resend
+      - key: MAIL_TIMEOUT
+        value: "10"
+      - key: RESEND_API_KEY
+        sync: false
+      - key: MAIL_FROM_ADDRESS
+        sync: false
+      - key: MAIL_FROM_NAME
+        value: AniBayan
       - key: PAYMONGO_PUBLIC_KEY
         sync: false
       - key: PAYMONGO_SECRET_KEY

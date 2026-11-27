@@ -5,6 +5,8 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\ReceiptController;
 use App\Http\Controllers\ServerHealthController;
+use App\Support\EmailNotifications;
+use App\Support\MediaStorage;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
@@ -37,9 +39,35 @@ Route::prefix('api')->group(function () {
         abort_unless($viewer && $viewer->status === 'Active' && $viewer->isAdmin(), 404);
 
         $start = microtime(true);
+        $driver = DB::connection()->getDriverName();
+        if (config('app.env') === 'production' && $driver !== 'pgsql') {
+            return response()->json(['ok' => false, 'error' => 'Production is expected to use PostgreSQL; the configured database driver is '.$driver.'.'], 503)
+                ->header('Cache-Control', 'no-store');
+        }
         $accounts = DB::table('users')->count();
 
-        return response()->json(['ok' => true, 'accounts' => $accounts, 'ms' => round((microtime(true) - $start) * 1000, 1)])->header('Cache-Control', 'no-store');
+        return response()->json([
+            'ok' => true,
+            'driver' => $driver,
+            'accounts' => $accounts,
+            'ms' => round((microtime(true) - $start) * 1000, 1),
+        ])->header('Cache-Control', 'no-store');
+    })->middleware('throttle:30,1');
+    Route::get('/health/storage', function () {
+        $viewer = Auth::user();
+        abort_unless($viewer && $viewer->status === 'Active' && $viewer->isAdmin(), 404);
+
+        return response()->json(MediaStorage::healthCheck())->header('Cache-Control', 'no-store');
+    })->middleware('throttle:30,1');
+    Route::get('/health/email', function () {
+        $viewer = Auth::user();
+        abort_unless($viewer && $viewer->status === 'Active' && $viewer->isAdmin(), 404);
+        $configured = EmailNotifications::isConfigured();
+
+        return response()->json([
+            'ok' => $configured,
+            'error' => $configured ? null : EmailNotifications::setupMessage(),
+        ], $configured ? 200 : 503)->header('Cache-Control', 'no-store');
     })->middleware('throttle:30,1');
 });
 

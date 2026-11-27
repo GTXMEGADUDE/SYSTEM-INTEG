@@ -6,11 +6,11 @@ use App\Models\Order;
 use App\Models\RefundMedia;
 use App\Models\User;
 use App\Support\Escrow;
+use App\Support\MediaStorage;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\Response;
 
 // Electronic receipts, and the photos and videos attached to refund requests. Each is shown only to the order's buyer,
 // the selling organization's representative and administrators.
@@ -33,15 +33,13 @@ class ReceiptController extends Controller
         return view('receipt', ['orders' => $orders, 'city' => config('anibayan.city').', '.config('anibayan.province')]);
     }
 
-    public function media(int $id): BinaryFileResponse
+    public function media(int $id): Response
     {
         $media = RefundMedia::with('refundRequest.order')->find($id);
-        if (! $media || ! self::canSee(Auth::user(), $media->refundRequest->order) || ! Storage::disk('local')->exists($media->path)) {
+        if (! $media || ! self::canSee(Auth::user(), $media->refundRequest->order)) {
             self::refuse('That file isn’t available.', 404);
         }
 
-        return response()->file(Storage::disk('local')->path($media->path), [
-            'Content-Type' => $media->mime, 'X-Content-Type-Options' => 'nosniff', 'Cache-Control' => 'private, no-store',
-        ]);
+        return MediaStorage::privateResponse($media->path, $media->mime);
     }
 }

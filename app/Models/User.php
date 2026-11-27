@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\EmailNotifications;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -27,6 +28,18 @@ class User extends Authenticatable
             'banner_x' => 'float',
             'banner_y' => 'float',
         ];
+    }
+
+    public function sendPasswordResetNotification($token)
+    {
+        $query = http_build_query([
+            'reset' => 1,
+            'token' => $token,
+            'email' => $this->getEmailForPasswordReset(),
+        ]);
+        $url = url('/anibayan/login.html?'.$query.'#reset');
+
+        EmailNotifications::sendPasswordResetLink($this->getEmailForPasswordReset(), $url);
     }
 
     public function organization(): BelongsTo
