@@ -3,9 +3,13 @@
 const authRoot=document.getElementById('auth-content')!;
 const authParams=new URLSearchParams(location.search);
 const authEmailPattern=/^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-type AuthView='signin'|'register'|'submitted';
-let authView:AuthView=location.hash==='#register'?'register':'signin';
+type AuthView='signin'|'register'|'submitted'|'forgot'|'reset';
+let authView:AuthView=authParams.get('reset')==='1'&&location.hash==='#reset'?'reset':location.hash==='#forgot'?'forgot':location.hash==='#register'?'register':'signin';
 let authSubmitted:{organization:string;email:string;requestedBarangay?:boolean}|undefined;
+let authForgotEmail='';
+let authForgotSent=false;
+const authResetToken=authParams.get('token')||'';
+const authResetEmail=authParams.get('email')||'';
 // Test accounts: [email, name, what it is, role].
 const authSamples=[['alex@example.com','Alex Reyes','Buyer','Consumer'],['ramon@example.com','Ramon Dulnuan','Canubing Vegetable Growers','Representative'],['admin@example.com','AniBayan Admin','Platform administrator','Administrator']];
 const authNotices:Record<string,string>={
@@ -17,6 +21,7 @@ const authNotices:Record<string,string>={
  terminated:'You were signed out because your organization was terminated.',
  pending:'That organization application is still being reviewed.',
  declined:'That organization application was declined.',
+ 'password-reset':'Your password has been reset. Sign in with your new password.',
 };
 // Where to go after signing in: back to the page that asked (when it suits the account's role), otherwise the role's home.
 function authDestination(role:string):string{
@@ -42,8 +47,15 @@ function authSignInView():string{
   return '<form class="auth-form" id="signin-form" novalidate><h1>Welcome back</h1><p class="auth-lead">Sign in to shop fresh harvests or manage your organization.</p>'+(notice?'<p class="auth-notice">'+de(notice)+(reason?' Reason: '+de(reason):'')+'</p>':'')+'<div class="form-grid single">'
   +dashField('email','Email','<input type="email" required autocomplete="email" placeholder="name@example.com">')
   +dashField('password','Password','<input type="password" required autocomplete="current-password">')
-  +'</div><p class="form-error" id="signin-error" role="alert" hidden></p><button type="submit" class="control primary auth-submit">Sign in</button><p class="auth-switch">New to AniBayan? <button type="button" class="text-button" data-auth-view="register">Create an account</button></p></form>'
+  +'</div><p class="auth-forgot"><button type="button" class="text-button" data-auth-view="forgot">Forgot password?</button></p><p class="form-error" id="signin-error" role="alert" hidden></p><button type="submit" class="control primary auth-submit">Sign in</button><p class="auth-switch">New to AniBayan? <button type="button" class="text-button" data-auth-view="register">Create an account</button></p></form>'
   +'<div class="demo-accounts"><h2>Test accounts</h2><p>Each test account uses the password <strong>'+dashDemoPassword+'</strong> until it’s changed. Choose one to sign in.</p><div class="demo-list">'+samples+'</div></div>';
+}
+function authForgotView():string{
+ return '<form class="auth-form" id="forgot-form" novalidate><h1>Forgot password?</h1><p class="auth-lead">Enter the email address on your account and we’ll send a reset link.</p>'+(authForgotSent?'<p class="auth-notice" role="status">If an account exists for that email, we sent a password reset link.</p>':'')+'<div class="form-grid single">'+dashField('email','Email','<input type="email" required maxlength="160" autocomplete="email" placeholder="name@example.com" value="'+de(authForgotEmail)+'">')+'</div><p class="form-error" id="forgot-error" role="alert" hidden></p><button type="submit" class="control primary auth-submit">Send reset link</button><p class="auth-switch"><button type="button" class="text-button" data-auth-view="signin">Back to sign in</button></p></form>';
+}
+function authResetView():string{
+ if(!authResetToken||!authResetEmail)return '<div class="auth-done"><h1>Reset link unavailable</h1><p>Request a new password reset link to continue.</p><div class="detail-actions"><button type="button" class="control primary" data-auth-view="forgot">Request a new link</button></div></div>';
+ return '<form class="auth-form" id="reset-form" novalidate><h1>Choose a new password</h1><p class="auth-lead">Set a new password for '+de(authResetEmail)+'.</p><div class="form-grid single">'+dashField('password','New password','<input type="password" required minlength="8" maxlength="200" autocomplete="new-password">','At least 8 characters.')+dashField('password_confirmation','Confirm new password','<input type="password" required minlength="8" maxlength="200" autocomplete="new-password">')+'</div><p class="form-error" id="reset-error" role="alert" hidden></p><button type="submit" class="control primary auth-submit">Reset password</button><p class="auth-switch"><button type="button" class="text-button" data-auth-view="signin">Back to sign in</button></p></form>';
 }
 function authRegisterView():string{
  const organization=authParams.get('type')==='organization';
@@ -72,9 +84,19 @@ function authSubmittedView():string{
 function authRender():void{
  const current=dashAccountByEmail(dashSessionEmail());
  const banner=current&&current.status==='Active'&&authView!=='submitted'?'<div class="auth-signed-in"><span>Signed in as <strong>'+de(current.name)+'</strong></span><a href="'+dashHomeFor(current)+'">Go to your dashboard</a><button type="button" data-auth-sign-out>Sign out</button></div>':'';
- const tabs=authView==='submitted'?'':'<div class="auth-tabs" role="tablist" aria-label="Account"><button role="tab" id="tab-signin" aria-selected="'+(authView==='signin')+'" aria-controls="auth-panel" data-auth-view="signin">Sign in</button><button role="tab" id="tab-register" aria-selected="'+(authView==='register')+'" aria-controls="auth-panel" data-auth-view="register">Create account</button></div>';
- authRoot.innerHTML=banner+tabs+'<div id="auth-panel" role="tabpanel" aria-labelledby="tab-'+(authView==='register'?'register':'signin')+'">'+(authView==='signin'?authSignInView():authView==='register'?authRegisterView():authSubmittedView())+'</div>';
- document.title='AniBayan — '+(authView==='signin'?'Sign in':'Create an account');
+ const tabs=authView==='signin'||authView==='register'?'<div class="auth-tabs" role="tablist" aria-label="Account"><button role="tab" id="tab-signin" aria-selected="'+(authView==='signin')+'" aria-controls="auth-panel" data-auth-view="signin">Sign in</button><button role="tab" id="tab-register" aria-selected="'+(authView==='register')+'" aria-controls="auth-panel" data-auth-view="register">Create account</button></div>':'';
+ const panel=authView==='signin'?authSignInView():authView==='register'?authRegisterView():authView==='forgot'?authForgotView():authView==='reset'?authResetView():authSubmittedView();
+ authRoot.innerHTML=banner+tabs+'<div id="auth-panel"'+(tabs?' role="tabpanel" aria-labelledby="tab-'+(authView==='register'?'register':'signin')+'"':'')+'>'+panel+'</div>';
+ document.title='AniBayan — '+(authView==='register'?'Create an account':authView==='forgot'?'Forgot password':authView==='reset'?'Reset password':'Sign in');
+}
+function authSetView(view:AuthView):void{
+ authView=view;
+ const url=new URL(location.href);
+ if(view!=='reset'&&authResetToken){url.searchParams.delete('reset');url.searchParams.delete('token');url.searchParams.delete('email');}
+ url.hash=view==='register'?'#register':view==='forgot'?'#forgot':view==='reset'?'#reset':'';
+ history.replaceState(null,'',url.pathname+url.search+url.hash);
+ authRender();
+ document.querySelector<HTMLElement>('#auth-panel input')?.focus();
 }
 // The server checks the password (stored only as a hash), logs the attempt and starts the session.
 async function authSignIn(form:HTMLFormElement):Promise<void>{
@@ -91,6 +113,32 @@ async function authSignIn(form:HTMLFormElement):Promise<void>{
  const fields=dashFieldErrors(r.data.errors);
  if(Object.keys(fields).length)dashShowErrors(form,fields);
  else{error.hidden=false;error.textContent=dashMessage(r);}
+}
+async function authForgotPassword(form:HTMLFormElement):Promise<void>{
+ const email=String(new FormData(form).get('email')??'').trim();
+ if(!authEmailPattern.test(email)){dashShowErrors(form,{email:'Enter your email address.'});return;}
+ const submit=form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+ const error=document.getElementById('forgot-error')!;
+ submit.disabled=true;error.hidden=true;
+ const r=await dashApi('password/forgot',{email});
+ submit.disabled=false;
+ if(!r.ok){error.hidden=false;error.textContent=dashMessage(r);return;}
+ authForgotEmail=email;authForgotSent=true;authRender();
+}
+async function authResetPassword(form:HTMLFormElement):Promise<void>{
+ const data=new FormData(form),password=String(data.get('password')??''),confirm=String(data.get('password_confirmation')??'');
+ const errors:Record<string,string>={};
+ if(password.length<8)errors.password='Use at least 8 characters.';
+ if(!confirm)errors.password_confirmation='Enter your password again.';
+ else if(confirm!==password)errors.password_confirmation='The passwords do not match.';
+ if(!dashShowErrors(form,errors))return;
+ const submit=form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+ const error=document.getElementById('reset-error')!;
+ submit.disabled=true;error.hidden=true;
+ const r=await dashApi('password/reset',{email:authResetEmail,token:authResetToken,password,password_confirmation:confirm});
+ submit.disabled=false;
+ if(!r.ok){const fields=dashFieldErrors(r.data.errors);if(Object.keys(fields).length)dashShowErrors(form,fields);else{error.hidden=false;error.textContent=dashMessage(r);}return;}
+ location.href=location.pathname+'?notice=password-reset';
 }
 // The file inputs of the document slots.
 function authDocumentInputs(form:HTMLFormElement):HTMLInputElement[]{return Array.from(form.querySelectorAll<HTMLInputElement>('.doc-upload input[type=file]'));}
@@ -158,10 +206,13 @@ document.addEventListener('click',event=>{
  const el=(event.target as Element).closest<HTMLElement>('button');
  if(!el)return;
  if(el.dataset.authView){
-  authView=el.dataset.authView==='register'?'register':'signin';
-  history.replaceState(null,'',location.pathname+location.search+(authView==='register'?'#register':''));
-  authRender();
-  document.querySelector<HTMLElement>('#auth-panel input')?.focus();
+  const next=el.dataset.authView as AuthView;
+  if(!['signin','register','forgot','reset'].includes(next))return;
+  if(next==='forgot'){
+   const email=document.querySelector<HTMLInputElement>('#signin-form [name="email"]');
+   authForgotEmail=email?.value.trim()||'';authForgotSent=false;
+  }
+  authSetView(next);
   return;
  }
  if(el.dataset.sample){
@@ -209,7 +260,9 @@ document.addEventListener('submit',event=>{
  event.preventDefault();
  if(form.id==='signin-form')void authSignIn(form);
  else if(form.id==='register-form')void authRegister(form);
+ else if(form.id==='forgot-form')void authForgotPassword(form);
+ else if(form.id==='reset-form')void authResetPassword(form);
 });
-window.addEventListener('hashchange',()=>{authView=location.hash==='#register'?'register':'signin';authRender();});
+window.addEventListener('hashchange',()=>{authView=location.hash==='#register'?'register':location.hash==='#forgot'?'forgot':location.hash==='#reset'&&authResetToken?'reset':'signin';authRender();});
 // Asking the server who is signed in also gives the page its anti-forgery cookie for signing in.
 void dashFetchState().then(()=>authRender());

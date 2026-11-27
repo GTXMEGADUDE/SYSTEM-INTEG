@@ -14,8 +14,10 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
@@ -82,6 +84,45 @@ class AuthController extends Controller
         Activity::record('signin', $account->email);
 
         return response()->json(['role' => $account->role]);
+    }
+
+    public function forgotPassword(Request $request): JsonResponse
+    {
+        $request->merge(['email' => strtolower(trim((string) $request->input('email')))]);
+        $data = $request->validate(['email' => 'required|email|max:160'], ['email.*' => 'Enter your email address.']);
+
+        // Keep the response identical whether or not an account exists.
+        Password::sendResetLink($data);
+
+        return response()->json(['message' => 'If an account exists for that email, we sent a password reset link.']);
+    }
+
+    public function resetPassword(Request $request): JsonResponse
+    {
+        $request->merge(['email' => strtolower(trim((string) $request->input('email')))]);
+        $data = $request->validate([
+            'email' => 'required|email|max:160', 'token' => 'required|string',
+            'password' => 'required|string|min:8|max:200|confirmed',
+        ], [
+            'email.*' => 'Enter your email address.', 'token.*' => 'This reset link is invalid or expired. Request a new one.',
+            'password.min' => 'Use at least 8 characters.', 'password.confirmed' => 'The passwords do not match.',
+        ]);
+
+        $status = Password::reset($data, function (User $user, string $password): void {
+            $user->forceFill(['password' => $password, 'remember_token' => Str::random(60)])->save();
+            event(new \Illuminate\Auth\Events\PasswordReset($user));
+        });
+
+        if ($status === Password::PASSWORD_RESET) {
+            return response()->json(['message' => 'Your password has been reset.']);
+        }
+
+        $message = match ($status) {
+            Password::RESET_THROTTLED => 'Wait a little before trying another reset link.',
+            default => 'This reset link is invalid or expired. Request a new one.',
+        };
+
+        return response()->json(['message' => $message], 422);
     }
 
     // Anything the server refuses here (an email or organization name already taken, a file that isn't really a PDF or

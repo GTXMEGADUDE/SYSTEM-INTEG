@@ -833,6 +833,7 @@ const dashActivityTypes:Record<string,[string,string,string]>={
  'listing-paused':['Listing unpublished','muted','Listings'],
  'listing-resumed':['Listing published','muted','Listings'],
  'listing-removed':['Listing removed','watch','Listings'],
+ 'member-removed':['Member removed','watch','Accounts'],
  'rating':['Order rated','muted','Reports'],
  'report-filed':['Report filed','watch','Reports'],
  'account-suspended':['Account suspended','admin','Admin'],
@@ -1346,36 +1347,36 @@ function dashConfirmReset():void{
 }
 // AniBayan renders the PayMongo Payment Intent flow in its own payment dialog.
 function dashPaymentDialog(ids:string[]):void{
- const orders=ids.map(id=>dashboardOrders.find(o=>o.id===id)).filter((o):o is DashboardOrder=>!!o&&o.payment==='Unpaid'&&o.status!=='Cancelled');
+ const selected=ids.map(id=>dashboardOrders.find(o=>o.id===id)).filter((o):o is DashboardOrder=>!!o&&o.payment==='Unpaid'&&o.status!=='Cancelled');
+ const expanded=new Map<string,DashboardOrder>();
+ selected.forEach(order=>{
+  const group=order.checkout?dashboardOrders.filter(o=>o.checkout===order.checkout&&o.payment==='Unpaid'&&o.status!=='Cancelled'):[order];
+  group.forEach(o=>expanded.set(o.id,o));
+ });
+ const orders=[...expanded.values()];
  if(!orders.length)return;
  const total=orders.reduce((sum,o)=>sum+o.total,0);
  const method=orders[0].method||'GCash';
- const paymentLabel=['GCash','GCash or QR Ph','QR Ph'].includes(method)?'GCash / QR Ph':method;
- const cardFields=method==='Credit or debit card'?'<form id="payment-card-form" class="dash-form" novalidate><div class="form-grid">'
+ const selectedMethod=method==='Credit or debit card'?'card':'qrph';
+ const paymentNote=selectedMethod==='card'?'Card details go directly to PayMongo and are not stored by AniBayan.':'Scan a single-use QR Ph code with GCash or a supported bank app. The limit may depend on your bank.';
+ const cardFields='<form id="payment-card-form" class="dash-form"'+(selectedMethod==='card'?'':' hidden')+' novalidate><div class="form-grid">'
   +dashField('cardNumber','Card number'+dashRequired,'<input type="text" inputmode="numeric" autocomplete="cc-number" maxlength="23" placeholder="Card number" required>','Card details go directly to PayMongo and are not stored by AniBayan.',true)
   +dashField('cardExpiryMonth','Expiry month'+dashRequired,'<input type="text" inputmode="numeric" autocomplete="cc-exp-month" maxlength="2" placeholder="MM" required>')
   +dashField('cardExpiryYear','Expiry year'+dashRequired,'<input type="text" inputmode="numeric" autocomplete="cc-exp-year" maxlength="4" placeholder="YYYY" required>')
   +dashField('cardCvc','Security code'+dashRequired,'<input type="password" inputmode="numeric" autocomplete="cc-csc" maxlength="4" required>')
-  +'</div></form>':'';
- dashOpen('<p class="detail-kicker">AniBayan secure payment</p><h2 id="detail-title">Pay '+dp(total)+' with '+de(paymentLabel)+'</h2><p class="detail-subtitle">'+orders.map(o=>dashOrderNo(o.id)+' · '+de(o.organization)).join('<br>')+'</p>'+cardFields+'<div class="detail-actions"><button class="control" data-pay-later>Pay later</button><button type="button" class="control primary" data-pay="'+orders.map(o=>o.id).join(',')+'">'+di('wallet')+'Pay '+dp(total)+'</button></div>');
+  +'</div></form>';
+ dashOpen('<p class="detail-kicker">AniBayan secure payment</p><h2 id="payment-title" data-total="'+total+'">Pay '+dp(total)+' with '+(selectedMethod==='card'?'card':'GCash / QR Ph')+'</h2><p class="detail-subtitle">'+orders.map(o=>dashOrderNo(o.id)+' &middot; '+de(o.organization)).join('<br>')+'</p><p class="detail-note">'+paymentNote+'</p>'+cardFields+'<div class="detail-actions"><button class="control" data-pay-later>Pay later</button><button type="button" class="control primary" data-pay="'+orders.map(o=>o.id).join(',')+'">'+di('wallet')+'Pay '+dp(total)+'</button></div>');
  const detail=document.getElementById('detail-content')!;
- const notes:Record<string,string>={
-  'GCash':'Scan the QR Ph code with GCash to approve the payment in the app, then return to AniBayan.',
-  'GCash or QR Ph':'Scan the QR Ph code with GCash, a bank app, or another QR Ph-enabled wallet. The code appears in AniBayan.',
-  'Credit or debit card':'Card details are tokenized by PayMongo from this page. Your bank may open a separate 3D Secure verification step.',
-  'QR Ph':'A single-use QR Ph code will appear here. Scan it with a banking or e-wallet app; it expires after about 30 minutes.',
- };
- const note=document.createElement('p');note.className='detail-note';note.textContent=notes[method]||'Your payment is processed securely by PayMongo.';
  const progress=document.createElement('p');progress.id='payment-progress';progress.className='payment-status';progress.setAttribute('role','status');progress.hidden=true;
  const error=document.createElement('p');error.id='payment-error';error.className='form-error';error.setAttribute('role','alert');error.hidden=true;
- detail.querySelector('.detail-actions')?.before(note,progress,error);
+ detail.querySelector('.detail-actions')?.before(progress,error);
 }
 // Creates an intent on AniBayan's server, tokenizes payment details with PayMongo's public key, then attaches it.
 async function dashStartPayment(ids:string[],button:HTMLButtonElement):Promise<void>{
  const order=dashboardOrders.find(o=>o.id===ids[0]);
- const method=order?.method||'GCash';
- const progress=document.getElementById('payment-progress'),error=document.getElementById('payment-error');if(progress){progress.hidden=false;progress.textContent='Preparing secure payment in AniBayan…';}if(error)error.hidden=true;
- const label=button.innerHTML;button.disabled=true;button.textContent='Preparing payment…';
+ const method=order?.method==='Credit or debit card'?'Credit or debit card':'GCash or QR Ph';
+ const progress=document.getElementById('payment-progress'),error=document.getElementById('payment-error');if(progress){progress.hidden=false;progress.textContent='Preparing secure payment...';}if(error)error.hidden=true;
+ const label=button.innerHTML;button.disabled=true;button.textContent='Preparing payment...';
  let paymentAttributes:Record<string,unknown>={};
  const account=dashAccount();
  const billing={name:account.name,email:account.email,phone:order?.phone||account.phone||''};
@@ -1395,18 +1396,22 @@ async function dashStartPayment(ids:string[],button:HTMLButtonElement):Promise<v
   if(!dashShowErrors(form,errors)){button.disabled=false;button.innerHTML=label;if(progress)progress.hidden=true;return;}
   paymentAttributes={type:'card',details:{card_number:cardNumber,exp_month:Number(expMonth),exp_year:Number(expYear),cvc},billing};
  }
-
- const r=await dashApi('payments',{orders:ids});
- if(!r.ok||!r.data.intentId||!r.data.publicKey){dashPaymentError(button,label,progress,error,dashMessage(r,'Online payment isn’t available right now. Try again in a moment.'));return;}
+ const r=await dashApi('payments',{orders:ids,method});
+ if(!r.ok||!r.data.intentId||!r.data.publicKey){dashPaymentError(button,label,progress,error,dashPaymentMessage(r));return;}
  const publicKey=String(r.data.publicKey),intentId=String(r.data.intentId),intentMethod=String(r.data.method|| (method==='Credit or debit card'?'card':'qrph'));
- if(publicKey.startsWith('pk_test_')){const kicker=document.querySelector<HTMLElement>('#detail-content .detail-kicker');if(kicker)kicker.textContent='AniBayan secure payment · test mode';}
+ const isTestMode=publicKey.startsWith('pk_test_');
+ if(!r.data.existing)ids.forEach(id=>{const item=dashboardOrders.find(o=>o.id===id);if(item){item.method=method;item.checkout=intentId;}});
+ if(isTestMode){const kicker=document.querySelector<HTMLElement>('#detail-content .detail-kicker');if(kicker)kicker.textContent='AniBayan secure payment - test mode';}
  if(r.data.existing){
-  if(r.data.status==='succeeded'){if(progress)progress.textContent='Payment received. Updating your order…';await dashRefreshPaymentStatus(false);return;}
+  if(r.data.status==='succeeded'){if(progress)progress.textContent='Payment received. Updating your order...';await dashRefreshPaymentStatus(false);return;}
   if(r.data.status==='processing'){if(progress){progress.hidden=false;progress.textContent='Payment is still processing. AniBayan will update your order when it is confirmed.';}button.disabled=false;button.innerHTML=label;dashWatchPayments();return;}
   const nextAction=r.data.nextAction;
-  if(r.data.status==='awaiting_next_action'&&intentMethod==='qrph'&&typeof nextAction?.code?.image_url==='string'&&nextAction.code.image_url.startsWith('data:image/')){dashShowQrPh(nextAction.code.image_url,ids);dashWatchPayments();return;}
+  if(r.data.status==='awaiting_next_action'&&intentMethod==='qrph'){
+   if(isTestMode){const code=nextAction?.code;const testUrl=code?.test_url;const image=code?.image_url;if(typeof testUrl==='string'&&typeof image==='string'&&image.startsWith('data:image/')&&dashShowTestQrPh(testUrl,image,ids)){dashWatchPayments();return;}dashPaymentError(button,label,progress,error,'PayMongo did not return its test QR and simulator. Please try again.');return;}
+   if(typeof nextAction?.code?.image_url==='string'&&nextAction.code.image_url.startsWith('data:image/')){dashShowQrPh(nextAction.code.image_url,ids);dashWatchPayments();return;}
+  }
   const resumeUrl=nextAction?.redirect?.url;
-  if(r.data.status==='awaiting_next_action'&&intentMethod==='card'&&typeof resumeUrl==='string')try{if(new URL(resumeUrl).protocol==='https:'){if(progress)progress.textContent='Returning to bank verification…';location.assign(resumeUrl);return;}}catch{}
+  if(r.data.status==='awaiting_next_action'&&intentMethod==='card'&&typeof resumeUrl==='string')try{if(new URL(resumeUrl).protocol==='https:'){if(progress)progress.textContent='Returning to bank verification...';location.assign(resumeUrl);return;}}catch{}
   dashPaymentError(button,label,progress,error,'The earlier payment needs another moment to update. Check your orders shortly, then try again.');return;
  }
  if(!r.data.clientKey){dashPaymentError(button,label,progress,error,'AniBayan could not prepare the secure payment. Please try again.');return;}
@@ -1418,9 +1423,10 @@ async function dashStartPayment(ids:string[],button:HTMLButtonElement):Promise<v
  const attached=await dashPayMongoPost(publicKey,'payment_intents/'+encodeURIComponent(intentId)+'/attach',{data:{attributes:{payment_method:paymentMethodId,client_key:clientKey,return_url:String(r.data.returnUrl)}}});
  if(!attached.ok){dashPaymentError(button,label,progress,error,attached.message||'PayMongo could not start the payment. Check the details and try again.');return;}
  const attributes=attached.data?.data?.attributes||{};
- if(attributes.status==='succeeded'){if(progress)progress.textContent='Payment received. Updating your order…';await dashRefreshPaymentStatus(false);return;}
+ if(attributes.status==='succeeded'){if(progress)progress.textContent='Payment received. Updating your order...';await dashRefreshPaymentStatus(false);return;}
  if(attributes.status==='processing'){if(progress){progress.hidden=false;progress.textContent='PayMongo is processing your payment. AniBayan will update when it is confirmed.';}button.disabled=false;button.innerHTML=label;dashWatchPayments();return;}
  if(attributes.status==='awaiting_next_action'&&intentMethod==='qrph'){
+  if(isTestMode){const code=attributes.next_action?.code;const testUrl=code?.test_url;const image=code?.image_url;if(typeof testUrl==='string'&&typeof image==='string'&&image.startsWith('data:image/')&&dashShowTestQrPh(testUrl,image,ids)){dashWatchPayments();return;}dashPaymentError(button,label,progress,error,'PayMongo did not return its test QR and simulator. Please try again.');return;}
   const image=attributes.next_action?.code?.image_url;
   if(typeof image!=='string'||!image.startsWith('data:image/')){dashPaymentError(button,label,progress,error,'PayMongo did not return a QR image. Please try again.');return;}
   dashShowQrPh(image,ids);
@@ -1429,24 +1435,33 @@ async function dashStartPayment(ids:string[],button:HTMLButtonElement):Promise<v
  }
  if(attributes.status==='awaiting_next_action'&&intentMethod==='card'){
   const redirect=attributes.next_action?.redirect?.url;
-  if(typeof redirect==='string')try{if(new URL(redirect).protocol==='https:'){
-    if(progress)progress.textContent='Opening your bank’s secure verification…';
-    location.assign(redirect);return;
-   }}catch{}
+  if(typeof redirect==='string')try{if(new URL(redirect).protocol==='https:'){if(progress)progress.textContent='Opening your bank verification...';location.assign(redirect);return;}}catch{}
  }
  const detail=attributes.last_payment_error?.message;
  dashPaymentError(button,label,progress,error,typeof detail==='string'&&detail?detail:'Payment could not be completed. Check the details and try again.');
-}
-function dashPaymentError(button:HTMLButtonElement,label:string,progress:HTMLElement|null,error:HTMLElement|null,message:string):void{
+}function dashPaymentError(button:HTMLButtonElement,label:string,progress:HTMLElement|null,error:HTMLElement|null,message:string):void{
  if(progress)progress.hidden=true;button.disabled=false;button.innerHTML=label;
  if(error){error.hidden=false;error.textContent=message;}else dashToast(message);
+}
+function dashPaymentMessage(r:DashResponse):string{
+ const message=typeof r.data.message==='string'?r.data.message:'';
+ if((r.status===502||r.status===503)&&/^(PayMongo|Online payment)/.test(message))return message;
+ return dashMessage(r,'Online payment isn’t available right now. Try again in a moment.');
 }
 async function dashPayMongoPost(publicKey:string,path:string,body:Record<string,unknown>):Promise<{ok:boolean;data:any;message:string}>{
  try{
   const response=await fetch('https://api.paymongo.com/v1/'+path,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json',Authorization:'Basic '+btoa(publicKey+':')},body:JSON.stringify(body)});
   const data=await response.json().catch(()=>({}));
-  const message=data?.errors?.[0]?.detail;
-  return {ok:response.ok,data,message:typeof message==='string'?message:''};
+  const code=String(data?.errors?.[0]?.code||'').toLowerCase();
+  const message=({
+   parameter_below_minimum:'The minimum online payment is ₱1.00.',
+   parameter_above_maximum:'PayMongo accepts up to ₱9,999,999.99 per transaction. This total needs to be split into smaller orders before payment.',
+   amount_exceed_limit:'This amount is over the limit set by your QR Ph bank or wallet. Contact them or choose card payment.',
+   payment_method_not_allowed:'The selected payment method is not enabled for the PayMongo account. Enable it in PayMongo or choose another method.',
+   account_not_activated:'The PayMongo account is not activated for the selected payment method.',
+   card_declined:'Your card was declined. Check the details or try another card.',
+  } as Record<string,string>)[code]||(!response.ok?'PayMongo could not start this payment. Please try again.':'');
+  return {ok:response.ok,data,message};
  }catch{return {ok:false,data:{},message:'PayMongo could not be reached. Check your connection and try again.'};}
 }
 function dashShowQrPh(image:string,ids:string[]):void{
@@ -1454,7 +1469,16 @@ function dashShowQrPh(image:string,ids:string[]):void{
  const img=document.createElement('img');img.src=image;img.alt='Single-use QR Ph payment code';img.width=250;img.height=250;
  document.getElementById('qrph-image-slot')?.append(img);
 }
-let dashPaymentPoll=0;
+function dashShowTestQrPh(testUrl:string,image:string,ids:string[]):boolean{
+ let simulatorUrl='';
+ try{const parsed=new URL(testUrl);if(parsed.protocol==='https:')simulatorUrl=parsed.href;}catch{}
+ if(!simulatorUrl)return false;
+ const total=Number(document.getElementById('payment-title')?.getAttribute('data-total')||0);
+ dashOpen('<p class="detail-kicker">AniBayan &middot; PayMongo test mode</p><h2 id="detail-title">QR Ph test payment</h2><p class="detail-subtitle">'+ids.map(dashOrderNo).join(', ')+' &middot; test amount '+dp(total)+'</p><div class="qrph-payment"><div id="qrph-image-slot" class="qrph-image-slot"></div><p>This QR is shown for testing. Do not scan it with a wallet; use the PayMongo simulator to complete the test.</p></div><p id="qrph-status" class="payment-status" role="status">Waiting for test payment confirmation&hellip;</p><div class="detail-actions"><a class="control primary" href="'+de(simulatorUrl)+'" target="_blank" rel="noopener noreferrer">Open PayMongo test simulator</a><button class="control" data-close-dialog>Close</button><button class="control" data-payment-check>Check payment status</button></div>');
+ const img=document.createElement('img');img.src=image;img.alt='QR Ph test payment preview';img.width=250;img.height=250;
+ document.getElementById('qrph-image-slot')?.append(img);
+ return true;
+}let dashPaymentPoll=0;
 let dashPaymentChecking=false;
 function dashWatchPayments():void{
  if(dashPaymentPoll)window.clearInterval(dashPaymentPoll);
@@ -1463,7 +1487,7 @@ function dashWatchPayments():void{
 async function dashRefreshPaymentStatus(manual:boolean):Promise<void>{
  if(dashPaymentChecking)return;
  dashPaymentChecking=true;
- const r=await dashApi('payments/check');
+ const r=await dashApi('payments/check',{});
  dashPaymentChecking=false;
  if(r.data.state){dashApplyState(r.data.state as DashServerState);dashRender();}
  const paid=(r.data.result?.paid||[]) as string[];
@@ -1630,6 +1654,15 @@ function dashSubmitMember(form:HTMLFormElement):void{
    dashDialog.close();dashToast(value('name')+' membership application is waiting for your confirmation.');
  });
 }
+function dashSubmitMemberRemove(form:HTMLFormElement):void{
+ const member=dashboardMembers.find(m=>m.id===form.dataset.member);
+ if(!member){dashDialog.close();dashToast('That member could not be found.');return;}
+ const note=String(new FormData(form).get('note')??'').trim();
+ if(!dashShowErrors(form,note.length>=5?{}:{note:'Write at least 5 characters in the removal note.'}))return;
+ void dashDo('member.remove',{id:member.id,note},form).then(r=>{
+  if(r){dashDialog.close();dashToast(member.name+' was removed from your members.');}
+ });
+}
 function dashOrgProfileForm():void{
  const org=dashMyOrg();
  if(!org)return;
@@ -1704,7 +1737,6 @@ function dashCheckoutForm():void{
   +choices+fresh
   +dashField('phone','Mobile number'+dashRequired,'<input '+dashPhoneInput+' value="'+de(me.phone||'')+'">','The organization calls this number to arrange delivery.')
    +'<div class="form-field"><span class="form-label" id="method-label">Payment method'+dashRequired+'</span><div class="choice-list" role="radiogroup" aria-labelledby="method-label">'+dashPaymentMethods.map((m,i)=>'<label class="choice"><input type="radio" name="method" value="'+m[0]+'"'+(i===0?' checked':'')+'><span><strong>'+m[0]+'</strong><small>'+m[1]+'</small></span></label>').join('')+'</div></div>'
-  +dashField('note','Note for the organization','<textarea rows="2" maxlength="200" placeholder="Gate code, preferred delivery time…"></textarea>')
   +'</div><p class="form-error" id="checkout-error" role="alert" hidden></p><div class="detail-actions"><button type="button" class="control" data-close-dialog>Back to cart</button><button type="submit" class="control primary">Place order'+(orgs.length>1?'s':'')+' · '+dp(total)+'</button></div></form>');
  if(!saved.length)void dashMountMap();
  dashFocusField(saved.length?'[type=submit]':'#field-barangay');
@@ -1713,8 +1745,8 @@ function dashSubmitCheckout(form:HTMLFormElement):void{
  const entries=dashCartEntries().filter(e=>dashCartSelection.has(e.crop.id));
  if(!entries.length){dashDialog.close();dashToast('Select at least one harvest in your cart before checking out.');return;}
  const data=new FormData(form);
- const phone=String(data.get('phone')??'').trim(),note=String(data.get('note')??'').trim();
- const method=String(data.get('method')||'Cash on delivery');
+  const phone=String(data.get('phone')??'').trim();
+  const method=String(data.get('method')||'Cash on delivery');
  const choice=String(data.get('address')||'new');
  const errors:Record<string,string>={};
  const place:Record<string,unknown>=choice!=='new'?{address:Number(choice)}:{...dashReadAddressBlock(data,errors),label:String(data.get('label')??'').trim(),save:!!data.get('save')};
@@ -1722,7 +1754,7 @@ function dashSubmitCheckout(form:HTMLFormElement):void{
  if(!dashShowErrors(form,errors))return;
  const error=document.getElementById('checkout-error')!;
  // The server checks stock again, places one order per organization and empties the cart.
-  void dashApi('actions/checkout',{...place,phone,method,note,crops:entries.map(e=>e.crop.id)}).then(r=>{
+   void dashApi('actions/checkout',{...place,phone,method,crops:entries.map(e=>e.crop.id)}).then(r=>{
   if(r.data.state)dashApplyState(r.data.state as DashServerState);
   dashRender();
   if(!r.ok){
@@ -1970,7 +2002,9 @@ async function dashMountMap():Promise<void>{
  const field=(name:string)=>form.elements.namedItem(name) as HTMLInputElement;
  const slot=form.querySelector<HTMLElement>('[data-error-for="pin"]')!;
  const clearButton=form.querySelector<HTMLElement>('[data-clear-pin]')!;
- const map=L.map(box,{scrollWheelZoom:false,maxBounds:[[13.22,121.02],[13.52,121.37]],minZoom:12}).setView([13.401,121.180],13);
+ const cityRings=(dashCalapan||[]).flatMap(b=>b.polygons.map(poly=>poly[0]));
+ const cityBounds=L.latLngBounds(cityRings.flatMap(ring=>ring.map(([lng,lat])=>[lat,lng])));
+ const map=L.map(box,{scrollWheelZoom:false,maxBounds:cityBounds.pad(.025),maxBoundsViscosity:1,minZoom:12}).setView([13.401,121.180],13);
  dashMapView=map;
  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(map);
  const outlines:Record<string,any>={};
@@ -1979,7 +2013,7 @@ async function dashMountMap():Promise<void>{
  let marker:any=null;let last:[number,number]|null=null;
  const setPin=(lat:number,lng:number,lookup:boolean):void=>{
   const barangay=dashBarangayAt(lat,lng);
-  if(!barangay){slot.textContent='AniBayan delivers only within Calapan City. Pin a place inside the city.';if(marker&&last)marker.setLatLng(last);return;}
+  if(!barangay){slot.textContent='AniBayan delivers only within Calapan City. Pin a place inside the city.';if(marker&&last){marker.setLatLng(last);map.panTo(last,{animate:false});}else map.fitBounds(cityBounds,{padding:[12,12],animate:false});return;}
   slot.textContent='';last=[lat,lng];
   if(!marker){marker=L.marker([lat,lng],{draggable:true,title:'Delivery pin'}).addTo(map);marker.on('dragend',()=>{const p=marker.getLatLng();setPin(p.lat,p.lng,true);});}
   else marker.setLatLng([lat,lng]);
@@ -2394,6 +2428,7 @@ function dashStart():void{
   else if(form.id==='profile-form')dashSubmitProfile(form);
   else if(form.id==='org-profile-form')dashSubmitOrgProfile(form);
   else if(form.id==='member-form')dashSubmitMember(form);
+  else if(form.id==='member-remove-form')dashSubmitMemberRemove(form);
    else if(form.id==='admin-listing-remove-form')dashSubmitAdminListingRemove(form);
   else if(form.id==='barangay-form')dashSubmitBarangay(form);
   else if(form.id==='barangay-edit-form')dashSubmitBarangayEdit(form);
@@ -2483,12 +2518,7 @@ function dashHandleClick(event:MouseEvent):void{
  }
  if(data.memberRemove){
   const member=dashboardMembers.find(m=>m.id===data.memberRemove);
-  if(member)dashOpen('<p class="detail-kicker">Member farmers</p><h2 id="detail-title">Remove '+de(member.name)+'?</h2><p class="detail-subtitle">They will no longer be listed as a member of '+de(dashOrgName)+'.</p><div class="detail-actions"><button class="control" data-close-dialog>Cancel</button><button class="control danger" data-member-remove-confirm="'+member.id+'">Remove member</button></div>');
-  return;
- }
- if(data.memberRemoveConfirm){
-  const member=dashboardMembers.find(m=>m.id===data.memberRemoveConfirm);
-  if(member)void dashDo('member.remove',{id:member.id}).then(r=>{if(r){dashDialog.close();dashToast(member.name+' was removed from your members.');}});
+  if(member)dashOpen('<p class="detail-kicker">Member farmers · '+de(dashOrgName)+'</p><h2 id="detail-title">Remove '+de(member.name)+'?</h2><p class="detail-subtitle">They will no longer be listed as a member of '+de(dashOrgName)+'. Add a note explaining this removal before continuing.</p><form class="dash-form" id="member-remove-form" data-member="'+member.id+'" novalidate><div class="form-grid single">'+dashField('note','Note for removal'+dashRequired,'<textarea rows="3" required minlength="5" maxlength="200" placeholder="Reason for removing this member..."></textarea>','This note is saved in the activity log.',true)+'</div><div class="detail-actions"><button type="button" class="control" data-close-dialog>Cancel</button><button type="submit" class="control danger">Remove member</button></div></form>');
   return;
  }
  if(data.review&&data.reviewName){

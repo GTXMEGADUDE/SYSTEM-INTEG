@@ -5,10 +5,13 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
 
 // An AniBayan account: a buyer (role Consumer), an organization's representative, or an administrator.
 class User extends Authenticatable
 {
+    use Notifiable;
+
     protected $guarded = [];
 
     protected $hidden = ['password', 'remember_token'];

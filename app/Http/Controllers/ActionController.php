@@ -269,8 +269,9 @@ class ActionController extends Controller
             'lat' => 'nullable|numeric|required_with:lng', 'lng' => 'nullable|numeric|required_with:lat',
         ], ['barangay.*' => 'Choose a barangay in Calapan City.', 'lat.*' => 'Pin a place in Calapan City.', 'lng.*' => 'Pin a place in Calapan City.']);
         if (isset($data['lat'], $data['lng'])) {
-            if (! Calapan::barangayAt((float) $data['lat'], (float) $data['lng'])) {
-                throw ValidationException::withMessages(['pin' => 'AniBayan delivers only within Calapan City. Pin a place inside the city.']);
+            $pinBarangay = Calapan::barangayAt((float) $data['lat'], (float) $data['lng']);
+            if (! $pinBarangay || $pinBarangay !== $data['barangay']) {
+                throw ValidationException::withMessages(['pin' => 'AniBayan delivers only within Calapan City. Pin a place inside the selected barangay.']);
             }
             $data['lat'] = round((float) $data['lat'], 6);
             $data['lng'] = round((float) $data['lng'], 6);
@@ -665,7 +666,17 @@ class ActionController extends Controller
 
     private function memberRemove(Request $request, User $user): void
     {
-        $this->orgMember($request, $this->myOrg($user))->delete();
+        $request->merge(['note' => trim((string) $request->input('note'))]);
+        $data = $request->validate([
+            'id' => 'required|string|max:20', 'note' => 'required|string|min:5|max:200',
+        ], [
+            'note.required' => 'Enter a note before removing this member.',
+            'note.min' => 'Write at least 5 characters in the removal note.',
+        ]);
+
+        $member = $this->orgMember($request, $this->myOrg($user));
+        Activity::record('member-removed', $user->email, 'Removed '.$member->name.' — '.$data['note']);
+        $member->delete();
     }
 
     private function orgProfile(Request $request, User $user): void

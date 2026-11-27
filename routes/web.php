@@ -18,6 +18,8 @@ Route::prefix('api')->group(function () {
     Route::get('/state', [AuthController::class, 'state']);
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/register', [AuthController::class, 'register']);
+    Route::post('/password/forgot', [AuthController::class, 'forgotPassword']);
+    Route::post('/password/reset', [AuthController::class, 'resetPassword']);
     Route::post('/logout', [AuthController::class, 'logout']);
     // A file attached to an organization's application (administrators only).
     Route::get('/documents/{id}', [AuthController::class, 'document'])->whereNumber('id');
