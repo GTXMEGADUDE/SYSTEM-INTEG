@@ -3,6 +3,7 @@
 const authRoot=document.getElementById('auth-content')!;
 const authParams=new URLSearchParams(location.search);
 const authEmailPattern=/^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const authPoliciesVersion='2026-11-27';
 type AuthView='signin'|'register'|'submitted'|'forgot'|'reset';
 let authView:AuthView=authParams.get('reset')==='1'&&location.hash==='#reset'?'reset':location.hash==='#forgot'?'forgot':location.hash==='#register'?'register':'signin';
 let authSubmitted:{organization:string;email:string;requestedBarangay?:boolean}|undefined;
@@ -67,7 +68,8 @@ function authRegisterView():string{
   +barangayOther
   +dashField('crops','Main crops'+dashRequired,'<input required maxlength="80" placeholder="e.g. Rice, calamansi">','',true)
   +'<div class="form-field wide"><span class="form-label" id="documents-label">Documents'+dashRequired+'</span><div class="choice-list" role="group" aria-labelledby="documents-label" aria-describedby="error-documents">'+authDocuments.map(([key,label])=>'<div class="choice doc-upload" data-doc="'+key+'"><span><strong>'+de(label)+'</strong><small data-doc-file>'+authDocumentHint+'</small></span><label class="control small file-button"><span data-doc-action>Attach</span><input type="file" name="documents['+key+']" accept="'+authDocumentTypes.join(',')+'" aria-label="Attach '+de(label)+'"></label><button type="button" class="control small" data-doc-remove="'+key+'" aria-label="Remove '+de(label)+'" hidden>Remove</button></div>').join('')+'</div><small class="field-error" id="error-documents" data-error-for="documents"></small></div>'
-  +'</div><p class="form-error" id="register-error" role="alert" hidden></p><button type="submit" class="control primary auth-submit" id="register-submit">'+(organization?'Submit application':'Create account')+'</button><p class="auth-switch">Already have an account? <button type="button" class="text-button" data-auth-view="signin">Sign in</button></p></form>';
+  +'<label class="policy-accept"><input type="checkbox" name="sensitive_data_consent" value="'+authPoliciesVersion+'" required><span>I explicitly consent to AniBayan using the identity and organization documents I submit to review and manage this application.</span></label><small class="field-error policy-error" data-error-for="sensitive_data_consent"></small>'
+  +'</div><label class="policy-accept"><input type="checkbox" name="policies_accepted" value="'+authPoliciesVersion+'" required><span>I agree to the <a href="terms.html" target="_blank" rel="noopener">Terms &amp; Conditions</a> and acknowledge that I have read the <a href="privacy.html" target="_blank" rel="noopener">Privacy Notice</a>.</span></label><small class="field-error policy-error" data-error-for="policies_accepted"></small><p class="form-error" id="register-error" role="alert" hidden></p><button type="submit" class="control primary auth-submit" id="register-submit">'+(organization?'Submit application':'Create account')+'</button><p class="auth-switch">Already have an account? <button type="button" class="text-button" data-auth-view="signin">Sign in</button></p></form>';
 }
 function authSubmittedView():string{
  const account=authSubmitted!;
@@ -156,6 +158,7 @@ async function authRegister(form:HTMLFormElement):Promise<void>{
  const barangayChoice=value('barangayChoice');
  const barangay=barangayChoice==='__other__'?value('barangayOther').replace(/\s+/g,' '):barangayChoice;
  const password=String(data.get('password')??''),confirm=String(data.get('password_confirmation')??'');
+ const policiesAccepted=value('policies_accepted');
  const files=organization?authDocumentInputs(form).filter(input=>input.files?.length):[];
  const errors:Record<string,string>={};
  if(value('name').length<3)errors.name='Enter your full name.';
@@ -164,7 +167,9 @@ async function authRegister(form:HTMLFormElement):Promise<void>{
  if(password.length<8)errors.password='Use at least 8 characters.';
  if(!confirm)errors.password_confirmation='Enter your password again.';
  else if(confirm!==password)errors.password_confirmation='The passwords don’t match.';
+ if(policiesAccepted!==authPoliciesVersion)errors.policies_accepted='Agree to the Terms & Conditions and acknowledge the Privacy Notice to create an account.';
  if(organization){
+  if(value('sensitive_data_consent')!==authPoliciesVersion)errors.sensitive_data_consent='Consent is needed to submit organization documents for review.';
   if(value('orgName').length<3)errors.orgName='Enter your organization’s name.';
   if(barangayChoice==='__other__'){
    if(barangay.length<2)errors.barangayOther='Enter your barangay name.';
@@ -182,7 +187,8 @@ async function authRegister(form:HTMLFormElement):Promise<void>{
  }
  const body=new FormData();
  (organization?['type','name','email','phone','orgName','crops']:['type','name','email','phone']).forEach(name=>body.append(name,value(name)));
- if(organization)body.append('barangay',barangay);
+ body.append('policies_accepted',authPoliciesVersion);body.append('terms_version',authPoliciesVersion);body.append('privacy_notice_version',authPoliciesVersion);
+ if(organization){body.append('barangay',barangay);body.append('sensitive_data_consent',authPoliciesVersion);}
  body.append('password',password);body.append('password_confirmation',confirm);
  files.forEach(input=>body.append(input.name,input.files![0]));
  const submit=document.getElementById('register-submit') as HTMLButtonElement;

@@ -163,6 +163,8 @@
 .home-footer nav>a {font-size:14px;line-height:23px;color:var(--muted)}
 .home-footer nav>a:hover {color:var(--leaf)}
 .home-footer-bottom {border-top:1px solid var(--line);height:76px;display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--muted)}
+.home-legal-links{display:flex;gap:16px;flex-wrap:wrap}
+.home-legal-links a:hover{text-decoration:underline;color:var(--deep)}
 .land-dialog {padding:0;max-width:900px;width:900px;max-height:85vh;overflow:auto;border-radius:26px}
 .land-dialog>img {width:100%;height:290px;object-fit:cover;object-position:center 58%}
 .land-dialog>div {padding:34px 44px 42px}

@@ -610,6 +610,8 @@ function dashShell():void{
   dashRoot.innerHTML=`<aside class="sidebar" id="sidebar"><a class="dash-brand" href="index.html" aria-label="AniBayan homepage"><img src="assets/anibayan-logo.png" alt=""></a><p class="sidebar-role"><span class="role-badge">${dashRole.workspace}</span></p><p class="nav-label">${dashRole.navLabel}</p><nav class="side-nav" aria-label="${dashRole.workspace} navigation">${dashRole.nav.map(link).join('')}</nav><p class="nav-label">General</p><nav class="side-nav" aria-label="Account and help">${(dashRole.settingsNav?link(dashRole.settingsNav):'')+link(['help','help','Help & support'])}</nav><div class="sidebar-foot"><div class="sidebar-card">${di(dashRole.cardIcon)}<strong>${de(dashRole.cardTitle)}</strong>${de(dashRole.cardText)}</div><div class="workspace-switch"><div class="workspace-menu" id="workspace-menu" hidden>${menu}</div><button class="sidebar-user" id="workspace-toggle" aria-expanded="false" aria-controls="workspace-menu" aria-label="Account menu">${avatar}<span class="sidebar-user-copy"><strong>${de(dashRole.user)}</strong><small>${dashRole.userRole}</small></span>${di('chevron')}</button></div></div></aside><div class="sidebar-backdrop" id="sidebar-backdrop"></div><div class="workspace"><header class="topbar"><button class="icon-button collapse-button" id="collapse-sidebar" aria-label="Toggle navigation" aria-controls="sidebar">${di('menu')}</button><label class="global-search">${di('search')}<input id="dashboard-search" type="search" placeholder="${dashState.view==='cart'?'Search items in your cart':dashRole.search}" aria-label="Search current section"><kbd>/</kbd></label><span class="topbar-spacer"></span><a class="market-shortcut" href="${dashRole.shortcut[1]}">${di(dashRole.shortcut[2])}<span>${dashRole.shortcut[0]}</span>${di('up')}</a><div class="notification-wrap"><button class="icon-button notification-button" id="show-notifications" aria-label="Show notifications" aria-expanded="false" aria-controls="notification-panel">${di('bell')}<span class="notification-dot" id="notification-dot"></span></button><div class="notification-panel" id="notification-panel" hidden><h2>Notifications</h2><ul id="notification-list"></ul></div></div><div class="header-account">${headerUser}</div></header><main class="main-content" id="dashboard-content" tabindex="-1"></main></div>`;
 }
 function dashRenderNotifications():void{
+ const legal=dashRoot.querySelector<HTMLElement>('.sidebar-foot');
+ if(legal&&!legal.querySelector('.sidebar-legal'))legal.insertAdjacentHTML('afterbegin','<nav class="sidebar-legal" aria-label="Legal"><a href="terms.html">Terms &amp; Conditions</a><a href="privacy.html">Privacy Notice</a></nav>');
  const notes=dashBlocked().length?[]:dashNotifications();
  document.getElementById('notification-list')!.innerHTML=notes.length?notes.map(n=>'<li><p>'+de(n[0])+'</p><a href="#'+n[1]+'">'+n[2]+' →</a></li>').join(''):'<li><p>You’re all caught up.</p></li>';
  document.getElementById('notification-dot')!.hidden=!notes.length;
@@ -1763,6 +1765,7 @@ function dashSubmitPassword(form:HTMLFormElement):void{
  });
 }
 const dashPaymentMethods=[['Cash on delivery','Pay the organization when your order arrives.'],['GCash or QR Ph','Scan a single-use QR Ph code in AniBayan with GCash or another supported wallet.'],['Credit or debit card','Enter card details securely in AniBayan; bank verification may be needed.']];
+const dashTermsVersion='2026-11-27';
 function dashCheckoutForm():void{
  const entries=dashCartEntries().filter(e=>dashCartSelection.has(e.crop.id));
  if(!entries.length||entries.some(e=>dashCartProblem(e)))return;
@@ -1776,7 +1779,7 @@ function dashCheckoutForm():void{
   +choices+fresh
   +dashField('phone','Mobile number'+dashRequired,'<input '+dashPhoneInput+' value="'+de(me.phone||'')+'">','The organization calls this number to arrange delivery.')
    +'<div class="form-field"><span class="form-label" id="method-label">Payment method'+dashRequired+'</span><div class="choice-list" role="radiogroup" aria-labelledby="method-label">'+dashPaymentMethods.map((m,i)=>'<label class="choice"><input type="radio" name="method" value="'+m[0]+'"'+(i===0?' checked':'')+'><span><strong>'+m[0]+'</strong><small>'+m[1]+'</small></span></label>').join('')+'</div></div>'
-  +'</div><p class="form-error" id="checkout-error" role="alert" hidden></p><div class="detail-actions"><button type="button" class="control" data-close-dialog>Back to cart</button><button type="submit" class="control primary">Place order'+(orgs.length>1?'s':'')+' · '+dp(total)+'</button></div></form>');
+  +'</div><label class="policy-accept checkout-policy"><input type="checkbox" name="accept_terms" value="'+dashTermsVersion+'" required><span>I agree to the <a href="terms.html" target="_blank" rel="noopener">Terms &amp; Conditions</a> for this order and have read the <a href="privacy.html" target="_blank" rel="noopener">Privacy Notice</a>.</span></label><small class="field-error policy-error" data-error-for="accept_terms"></small><p class="form-error" id="checkout-error" role="alert" hidden></p><div class="detail-actions"><button type="button" class="control" data-close-dialog>Back to cart</button><button type="submit" class="control primary">Place order'+(orgs.length>1?'s':'')+' · '+dp(total)+'</button></div></form>');
  if(!saved.length)void dashMountMap();
  dashFocusField(saved.length?'[type=submit]':'#field-barangay');
 }
@@ -1786,14 +1789,16 @@ function dashSubmitCheckout(form:HTMLFormElement):void{
  const data=new FormData(form);
   const phone=String(data.get('phone')??'').trim();
   const method=String(data.get('method')||'Cash on delivery');
+ const acceptedTerms=String(data.get('accept_terms')||'');
  const choice=String(data.get('address')||'new');
  const errors:Record<string,string>={};
  const place:Record<string,unknown>=choice!=='new'?{address:Number(choice)}:{...dashReadAddressBlock(data,errors),label:String(data.get('label')??'').trim(),save:!!data.get('save')};
  if(!dashPhonePattern.test(phone))errors.phone='Enter a mobile number like 0917 555 0148.';
+ if(acceptedTerms!==dashTermsVersion)errors.accept_terms='Agree to the order terms before placing your order.';
  if(!dashShowErrors(form,errors))return;
  const error=document.getElementById('checkout-error')!;
  // The server checks stock again, places one order per organization and empties the cart.
-   void dashApi('actions/checkout',{...place,phone,method,crops:entries.map(e=>e.crop.id)}).then(r=>{
+   void dashApi('actions/checkout',{...place,phone,method,crops:entries.map(e=>e.crop.id),terms_version:acceptedTerms}).then(r=>{
   if(r.data.state)dashApplyState(r.data.state as DashServerState);
   dashRender();
   if(!r.ok){

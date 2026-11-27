@@ -64,6 +64,7 @@ class ActionController extends Controller
     private const REPORT_REASONS = ['Short or wrong quantity', 'Poor quality or spoiled', 'Harvest date not as listed', 'Late or no fulfillment', 'Payment or refund problem', 'Other'];
 
     private const PAYMENT_METHODS = ['Cash on delivery', 'GCash', 'GCash or QR Ph', 'Credit or debit card', 'QR Ph'];
+    private const TERMS_VERSION = '2026-11-27';
 
     // A Philippine mobile number: 0917 555 0148 or +63 917 555 0148 (at most 12 digits).
     public const PHONE = '/^(\+63[\s-]?|0)9\d{2}[\s-]?\d{3}[\s-]?\d{4}$/';
@@ -203,6 +204,7 @@ class ActionController extends Controller
         $this->buyer($user);
         $data = $request->validate([
             'address' => 'nullable|integer', 'phone' => ['required', 'regex:'.self::PHONE], 'method' => ['required', Rule::in(self::PAYMENT_METHODS)],
+            'terms_version' => ['required', Rule::in([self::TERMS_VERSION])],
             'note' => 'nullable|string|max:200', 'save' => 'boolean', 'crops' => 'required|array|min:1|max:100', 'crops.*' => 'required|string|distinct',
         ], ['phone.regex' => 'Enter a mobile number like 0917 555 0148.']);
         if (! empty($data['address'])) {
@@ -240,6 +242,7 @@ class ActionController extends Controller
                 'total' => $total, 'placed_on' => today(), 'status' => 'Pending', 'payment' => 'Unpaid',
                 'address' => $place['text'], 'lat' => $place['lat'], 'lng' => $place['lng'],
                 'phone' => $data['phone'], 'method' => $data['method'], 'note' => $data['note'] ?? '',
+                'terms_version' => $data['terms_version'], 'terms_accepted_at' => now(),
             ]);
             foreach ($items as $item) {
                 OrderItem::create(['order_id' => $order->id, 'crop_id' => $item['crop']->id, 'name' => $item['crop']->name, 'quantity' => $item['quantity'], 'unit' => $item['crop']->unit, 'price' => $item['crop']->price]);

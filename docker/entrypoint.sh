@@ -18,4 +18,5 @@ if [ ! -e public/storage ]; then
 fi
 
 php artisan config:cache
+php artisan migrate --force
 exec apache2-foreground

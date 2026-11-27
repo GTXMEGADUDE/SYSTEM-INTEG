@@ -65,6 +65,8 @@ input::placeholder{color:var(--subtle)}
 .nav-count{margin-left:auto;font-size:11px;font-weight:600;line-height:20px;min-width:22px;padding:0 6px;text-align:center;border-radius:999px;background:#f5cf6b;color:#4d3706}
 .side-nav a[aria-current=page] .nav-count{background:#ffffff40;color:inherit}
 .sidebar-foot{margin-top:auto;padding-top:18px}
+.sidebar-legal{display:flex;flex-wrap:wrap;gap:8px 14px;margin-bottom:12px;padding:0 10px;font-size:12px;color:var(--sb-muted)}
+.sidebar-legal a:hover{text-decoration:underline;color:var(--sb-strong)}
 .sidebar-card{margin-bottom:12px;padding:14px;border:1px solid var(--sb-line);background:var(--sb-card);border-radius:12px;font-size:12px;line-height:1.5;color:var(--sb-muted)}
 .sidebar-card .icon{color:var(--green);margin-bottom:8px}
 .sidebar-card strong{display:block;color:var(--sb-strong);font-size:13px;margin-bottom:3px}
@@ -608,6 +610,11 @@ tr.flagged-row .repeat-count{color:#9c3d3d}
 .choice small{display:block;font-size:12px;color:var(--muted);margin-top:2px}
 .check-row{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink)}
 .check-row input{accent-color:var(--green-strong);width:16px;height:16px}
+.policy-accept{grid-column:1/-1;display:flex;align-items:flex-start;gap:10px;margin-top:18px;color:var(--muted);font-size:13px;line-height:1.6}
+.policy-accept input{flex:0 0 17px;width:17px;height:17px;margin:2px 0 0;accent-color:var(--green-strong)}
+.policy-accept a{color:var(--green-strong);font-weight:600;text-decoration:underline;text-underline-offset:2px}
+.policy-error{grid-column:1/-1;display:block;margin:3px 0 0 27px;color:#9c3d3d}
+.checkout-policy{margin-top:20px}
 .check-group{display:flex;flex-direction:column;gap:8px}
 /* Sign-up document slots: a .choice row with its file name and Attach/Replace + Remove buttons. */
 .choice.doc-upload{flex-wrap:wrap;align-items:center;cursor:default}
@@ -711,6 +718,8 @@ tr.flagged-row .repeat-count{color:#9c3d3d}
 .auth-done .detail-actions{justify-content:center}
 .auth-foot{font-size:13px;color:var(--muted)}
 .auth-foot a:hover{text-decoration:underline}
+.auth-legal{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.auth-legal a:hover{text-decoration:underline}
 
 @media(max-width:1240px){.shop-filter-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:900px){

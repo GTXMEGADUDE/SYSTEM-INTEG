@@ -26,6 +26,7 @@ use Throwable;
 class AuthController extends Controller
 {
     private const HOSTED_DEMO_LOGIN_EMAILS = ['alex@example.com', 'ramon@example.com', 'admin@example.com'];
+    private const POLICIES_VERSION = '2026-11-27';
 
     public function state(Request $request): JsonResponse
     {
@@ -143,9 +144,12 @@ class AuthController extends Controller
             'type' => 'required|in:buyer,organization', 'name' => 'required|string|min:3|max:80',
             'email' => 'required|email|max:120|unique:users,email', 'phone' => ['required', 'regex:'.ActionController::PHONE],
             'password' => ['required', 'string', 'min:8', 'max:200', 'confirmed', $this->rejectSharedStarterPassword()],
+            'policies_accepted' => ['required', 'in:'.self::POLICIES_VERSION],
+            'terms_version' => ['required', 'in:'.self::POLICIES_VERSION], 'privacy_notice_version' => ['required', 'in:'.self::POLICIES_VERSION],
         ];
         if ($organization) {
             $rules += [
+                'sensitive_data_consent' => ['required', 'in:'.self::POLICIES_VERSION],
                 'orgName' => ['required', 'string', 'min:3', 'max:80', function (string $attribute, mixed $value, \Closure $fail) {
                     if (Organization::whereRaw('lower(name) = ?', [mb_strtolower(trim((string) $value))])->exists()) {
                         $fail('An organization with this name is already on AniBayan.');
@@ -192,6 +196,9 @@ class AuthController extends Controller
                     'name' => $data['name'], 'email' => strtolower($data['email']), 'password' => $data['password'],
                     'role' => $organization ? 'Representative' : 'Consumer', 'organization_id' => $org?->id, 'status' => $organization ? 'Pending' : 'Active',
                     'phone' => $data['phone'], 'joined_on' => today(), 'last_active_on' => today(),
+                    'terms_version' => $data['terms_version'], 'privacy_notice_version' => $data['privacy_notice_version'], 'policies_accepted_at' => now(),
+                    'sensitive_data_consent_version' => $organization ? $data['sensitive_data_consent'] : null,
+                    'sensitive_data_consent_at' => $organization ? now() : null,
                 ]);
             });
         } catch (Throwable $e) {
