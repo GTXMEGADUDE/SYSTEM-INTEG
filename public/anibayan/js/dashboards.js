@@ -1532,15 +1532,6 @@ function dashNavCounts() {
         return { orders: orders.filter(o => o.status === 'Pending').length, members: dashMyMembers().filter(m => m.status === 'Pending').length };
     return { orders: orders.filter(o => !['Completed', 'Cancelled', 'Refunded'].includes(o.status)).length, cart: dashCart().length };
 }
-function dashLabelResponsiveTables(root) {
-    root.querySelectorAll('.table-wrap table').forEach(table => {
-        const labels = Array.from(table.tHead?.rows[0]?.cells || []).map(cell => cell.textContent?.replace(/\s+/g, ' ').trim() || 'Details');
-        Array.from(table.tBodies).forEach(body => Array.from(body.rows).forEach(row => Array.from(row.cells).forEach((cell, index) => {
-            if (!cell.dataset.label)
-                cell.dataset.label = labels[index] || 'Details';
-        })));
-    });
-}
 function dashRender() {
     // A table's search box is redrawn with the table; keep the cursor in it, even when a health check finishes mid-typing.
     const typing = document.activeElement instanceof HTMLInputElement && document.activeElement.dataset.tableSearch !== undefined ? [document.activeElement.selectionStart ?? 0, document.activeElement.selectionEnd ?? 0] : null;
@@ -1603,9 +1594,7 @@ function dashRender() {
         content = p.kind === 'org' ? dashOrgProfileView(p.slug) : dashUserProfileView(p.slug);
     else
         content = dashHelp();
-    const dashboardContent = document.getElementById('dashboard-content');
-    dashboardContent.innerHTML = (blocked.length || view === 'profile' ? '' : dashHeading()) + content + '<footer class="design-note"><span>AniBayan · ' + dashRole.workspace + '</span><span>' + (dashMe() ? 'Signed in as ' + de(dashMe().email) : 'Browsing as a guest') + '</span></footer>';
-    dashLabelResponsiveTables(dashboardContent);
+    document.getElementById('dashboard-content').innerHTML = (blocked.length || view === 'profile' ? '' : dashHeading()) + content + '<footer class="design-note"><span>AniBayan · ' + dashRole.workspace + '</span><span>' + (dashMe() ? 'Signed in as ' + de(dashMe().email) : 'Browsing as a guest') + '</span></footer>';
     const box = typing ? document.querySelector('[data-table-search]') : null;
     if (box && typing) {
         box.focus({ preventScroll: true });

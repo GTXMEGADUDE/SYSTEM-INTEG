@@ -19,7 +19,7 @@
     Promise.all([state, ready]).then(function (values) {
         window.anibayanState = values[0];
         var script = document.createElement('script');
-        script.src = 'js/dashboards.js?v=20261127-payment-method';
+        script.src = 'js/dashboards.js?v=20261127-storage-csp';
         document.body.appendChild(script);
     });
 })();
