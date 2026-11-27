@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Route;
 // AniBayan's pages are static files in public/anibayan/; they read and change their data through these routes.
 // They run in the web group, so sign-in uses Laravel's session cookie and every POST needs the XSRF-TOKEN cookie
 // sent back as the X-XSRF-TOKEN header (the pages do this in shared.ts).
-Route::redirect('/', '/anibayan/');
+Route::redirect('/', '/anibayan/index.html');
 
 Route::prefix('api')->group(function () {
     // The signed-in person's data (see App\Support\AppState).
