@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Manage your farmer organization’s orders, crop listings, ratings, member farmers and payments on AniBayan."><title>AniBayan — Organization workspace</title><link rel="icon" href="favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="dashboard.css"><script>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Manage your farmer organization’s orders, crop listings, ratings, member farmers and payments on AniBayan."><title>AniBayan — Organization workspace</title><link rel="icon" href="favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="dashboard.css?v=20261127-logo"><script>
 // AniBayan's data lives on its server: load the signed-in person's data first, then start the dashboard (js/dashboards.js).
 (function(){var ready=new Promise(function(done){if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',done);else done();});
 var state=fetch('../api/state',{headers:{Accept:'application/json'},credentials:'same-origin',cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;});

@@ -824,6 +824,6 @@ tr.flagged-row .repeat-count{color:#9c3d3d}
   .product-tile-copy{padding:0 2px}
 }
 .dash-brand{height:auto;min-height:70px}
-.dash-brand>img{width:88px;height:70px;object-fit:contain;flex-shrink:0;background:#fffdf2;border-radius:9px;padding:3px}
-.auth-brand>img{width:82px;height:66px;object-fit:contain;background:#fffdf2;border-radius:9px;padding:3px}
+.dash-brand>img{width:88px;height:70px;object-fit:contain;flex-shrink:0;filter:drop-shadow(0 0 1.5px #fffdf2) drop-shadow(0 0 3px #173b2c)}
+.auth-brand>img{width:82px;height:66px;object-fit:contain;filter:drop-shadow(0 0 1.5px #fffdf2) drop-shadow(0 0 3px #173b2c)}
 @media(min-width:901px){.sidebar-collapsed .dash-brand{min-height:48px;justify-content:center;padding-inline:0}.sidebar-collapsed .dash-brand>img{width:48px;height:38px}}
