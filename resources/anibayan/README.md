@@ -19,7 +19,7 @@ With the app running (`php artisan serve`), open `http://127.0.0.1:8000/anibayan
 
 ## Test accounts
 
-Seeded sample accounts are for local development only. Their shared starter password is rejected by the production sign-in flow; use a unique password for hosted accounts.
+The hosted demo login keeps the shared starter password for the buyer, representative and administrator accounts shown below. The shared password is rejected for other production accounts; use demo accounts only for testing.
 
 | Email | Account |
 | --- | --- |

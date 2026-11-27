@@ -23,6 +23,7 @@ class SecurityHardeningTest extends TestCase
             $table->string('password');
             $table->string('role')->default('Consumer');
             $table->string('status')->default('Active');
+            $table->date('last_active_on')->nullable();
             $table->timestamps();
         });
         Schema::create('activities', function (Blueprint $table) {
@@ -78,15 +79,23 @@ class SecurityHardeningTest extends TestCase
             ->assertTooManyRequests();
     }
 
-    public function test_shared_seed_password_is_rejected_in_production(): void
+    public function test_shared_seed_password_still_works_for_the_three_hosted_demo_accounts_only(): void
     {
         config()->set('app.env', 'production');
         User::create([
-            'name' => 'Seeded Buyer', 'email' => 'buyer@example.com', 'password' => Hash::make(config('anibayan.demo_password')),
+            'name' => 'Alex Reyes', 'email' => 'alex@example.com', 'password' => Hash::make(config('anibayan.demo_password')),
+            'role' => 'Consumer', 'status' => 'Active',
+        ]);
+        User::create([
+            'name' => 'Another Account', 'email' => 'other@example.com', 'password' => Hash::make(config('anibayan.demo_password')),
             'role' => 'Consumer', 'status' => 'Active',
         ]);
 
-        $this->postJson('/api/login', ['email' => 'buyer@example.com', 'password' => config('anibayan.demo_password')])
+        $this->postJson('/api/login', ['email' => 'alex@example.com', 'password' => config('anibayan.demo_password')])
+            ->assertOk()
+            ->assertJsonPath('role', 'Consumer');
+
+        $this->postJson('/api/login', ['email' => 'other@example.com', 'password' => config('anibayan.demo_password')])
             ->assertUnprocessable()
             ->assertJsonPath('message', 'The email or password is incorrect.');
     }

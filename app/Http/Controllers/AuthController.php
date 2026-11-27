@@ -25,6 +25,8 @@ use Throwable;
 // applies and can sign in once an administrator approves the organization. Every attempt goes in the activity log.
 class AuthController extends Controller
 {
+    private const HOSTED_DEMO_LOGIN_EMAILS = ['alex@example.com', 'ramon@example.com', 'admin@example.com'];
+
     public function state(Request $request): JsonResponse
     {
         $user = Auth::user();
@@ -58,7 +60,8 @@ class AuthController extends Controller
         if (! $account) {
             return $refuse('signin-failed', 'No account with this email', 'The email or password is incorrect.');
         }
-        if ($this->isSharedStarterPassword($data['password']) || ! Hash::check($data['password'], $account->password)) {
+        if (! Hash::check($data['password'], $account->password)
+            || ($this->isSharedStarterPassword($data['password']) && ! in_array($email, self::HOSTED_DEMO_LOGIN_EMAILS, true))) {
             return $refuse('signin-failed', 'Wrong password', 'The email or password is incorrect.');
         }
         if ($account->status === 'Suspended') {

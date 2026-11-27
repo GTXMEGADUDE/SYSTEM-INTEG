@@ -28,7 +28,7 @@ For card and GCash payments, put the PayMongo test keys (PayMongo dashboard → 
 
 ## Test accounts
 
-Seeded sample accounts are for local development only. Their shared starter password is rejected by the production sign-in flow; use a unique password for hosted accounts.
+The hosted demo login keeps the shared starter password for these three accounts. The shared password is rejected for other production accounts; use the demo accounts only for testing.
 
 - `alex@example.com`: buyer (shop, cart, checkout, orders)
 - `ramon@example.com`: representative of Canubing Vegetable Growers (orders, listings, members)
