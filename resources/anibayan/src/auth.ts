@@ -10,8 +10,6 @@ let authForgotEmail='';
 let authForgotSent=false;
 const authResetToken=authParams.get('token')||'';
 const authResetEmail=authParams.get('email')||'';
-// Test accounts: [email, name, what it is, role].
-const authSamples=[['alex@example.com','Alex Reyes','Buyer','Consumer'],['ramon@example.com','Ramon Dulnuan','Canubing Vegetable Growers','Representative'],['admin@example.com','AniBayan Admin','Platform administrator','Administrator']];
 const authNotices:Record<string,string>={
  signin:'Sign in to continue.',
  buyer:'Sign in with a buyer account to order, save harvests and rate growers.',
@@ -36,19 +34,13 @@ const authDocumentTypes=['application/pdf','image/jpeg','image/png','image/webp'
 const authDocumentMaxBytes=5*1024*1024;
 const authDocumentHint='PDF, JPG, PNG or WebP · up to 5 MB';
 const authFileSize=(bytes:number)=>bytes<1024*1024?Math.max(1,Math.round(bytes/1024))+' KB':(bytes/1024/1024).toFixed(1)+' MB';
-const authAvatarClass=(role:string)=>role==='Administrator'?'admin-avatar':role==='Representative'?'organization-avatar':'consumer-avatar';
-const authInitials=(name:string)=>name.split(' ').map(part=>part[0]).join('').slice(0,2).toUpperCase();
-const authArrow='<svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12h14 m-5-5 5 5-5 5"/></svg>';
-
 function authSignInView():string{
   const notice=authNotices[authParams.get('notice')||''];
   const reason=authParams.get('reason');
- const samples=authSamples.map(([email,name,label,role])=>'<button class="demo-account" data-sample="'+de(email)+'"><span class="avatar '+authAvatarClass(role)+'">'+(role==='Administrator'?'AD':authInitials(name))+'</span><span><strong>'+de(name)+'</strong><small>'+de(label)+'</small></span>'+authArrow+'</button>').join('');
   return '<form class="auth-form" id="signin-form" novalidate><h1>Welcome back</h1><p class="auth-lead">Sign in to shop fresh harvests or manage your organization.</p>'+(notice?'<p class="auth-notice">'+de(notice)+(reason?' Reason: '+de(reason):'')+'</p>':'')+'<div class="form-grid single">'
   +dashField('email','Email','<input type="email" required autocomplete="email" placeholder="name@example.com">')
   +dashField('password','Password','<input type="password" required autocomplete="current-password">')
-  +'</div><p class="auth-forgot"><button type="button" class="text-button" data-auth-view="forgot">Forgot password?</button></p><p class="form-error" id="signin-error" role="alert" hidden></p><button type="submit" class="control primary auth-submit">Sign in</button><p class="auth-switch">New to AniBayan? <button type="button" class="text-button" data-auth-view="register">Create an account</button></p></form>'
-  +'<div class="demo-accounts"><h2>Test accounts</h2><p>Each test account uses the password <strong>'+dashDemoPassword+'</strong> until it’s changed. Choose one to sign in.</p><div class="demo-list">'+samples+'</div></div>';
+  +'</div><p class="auth-forgot"><button type="button" class="text-button" data-auth-view="forgot">Forgot password?</button></p><p class="form-error" id="signin-error" role="alert" hidden></p><button type="submit" class="control primary auth-submit">Sign in</button><p class="auth-switch">New to AniBayan? <button type="button" class="text-button" data-auth-view="register">Create an account</button></p></form>';
 }
 function authForgotView():string{
  return '<form class="auth-form" id="forgot-form" novalidate><h1>Forgot password?</h1><p class="auth-lead">Enter the email address on your account and we’ll send a reset link.</p>'+(authForgotSent?'<p class="auth-notice" role="status">If an account exists for that email, we sent a password reset link.</p>':'')+'<div class="form-grid single">'+dashField('email','Email','<input type="email" required maxlength="160" autocomplete="email" placeholder="name@example.com" value="'+de(authForgotEmail)+'">')+'</div><p class="form-error" id="forgot-error" role="alert" hidden></p><button type="submit" class="control primary auth-submit">Send reset link</button><p class="auth-switch"><button type="button" class="text-button" data-auth-view="signin">Back to sign in</button></p></form>';
@@ -213,14 +205,6 @@ document.addEventListener('click',event=>{
    authForgotEmail=email?.value.trim()||'';authForgotSent=false;
   }
   authSetView(next);
-  return;
- }
- if(el.dataset.sample){
-  const form=document.getElementById('signin-form') as HTMLFormElement|null;
-  if(!form)return;
-  (form.elements.namedItem('email') as HTMLInputElement).value=el.dataset.sample;
-  (form.elements.namedItem('password') as HTMLInputElement).value=dashDemoPassword;
-  void authSignIn(form);
   return;
  }
  if(el.dataset.docRemove){

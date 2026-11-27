@@ -21,7 +21,7 @@ interface DashboardPrivacy { profile:boolean; reviews:boolean; city:boolean; gro
 // A file attached to an organization's application; administrators open it from /api/documents/{id}.
 interface DashboardDocument { id:number; type:string; name:string; size:number; mime:string }
 interface DashboardOrganization extends DashboardLook { name:string; region:string; crop:string; image:string; listings:number; status:string; representative:string; applied:string; members:number; stopped?:boolean; farmers?:{name:string;crops:string;area:number;joined:string}[]; documents:DashboardDocument[]; approved?:string; phone?:string; description?:string; terminated?:string; terminatedFor?:string; applicationDeclineReason?:string; completedOrders?:number }
-// Starting accounts use dashDemoPassword until their password is changed or reset. Only administrators and the person
+// Starting accounts are seeded by the server. Only administrators and the person
 // themself get email, phone, address and last-active; others get the public profile, trimmed by the buyer's privacy
 // settings. city, completedOrders and growers: a buyer's public profile details, worked out by the server.
 // On a public profile the page sets the missing email, joined and lastActive to ''.
@@ -48,8 +48,6 @@ const dashTodayDate=new Date();
 const dashIsoDate=(date:Date)=>date.getFullYear()+'-'+String(date.getMonth()+1).padStart(2,'0')+'-'+String(date.getDate()).padStart(2,'0');
 const dashToday=dashIsoDate(dashTodayDate);
 const dashDaysAgo=(days:number)=>{const date=new Date(dashTodayDate);date.setDate(date.getDate()-days);return dashIsoDate(date);};
-const dashDemoPassword='anibayan';
-
 // The data itself comes from AniBayan's server (see shared.ts); these lists hold the signed-in person's copy.
 // The starting data is in database/seeders/DatabaseSeeder.php.
 const dashboardOrders:DashboardOrder[]=[];

@@ -3,7 +3,6 @@ const dashTodayDate = new Date();
 const dashIsoDate = (date) => date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
 const dashToday = dashIsoDate(dashTodayDate);
 const dashDaysAgo = (days) => { const date = new Date(dashTodayDate); date.setDate(date.getDate() - days); return dashIsoDate(date); };
-const dashDemoPassword = 'anibayan';
 // The data itself comes from AniBayan's server (see shared.ts); these lists hold the signed-in person's copy.
 // The starting data is in database/seeders/DatabaseSeeder.php.
 const dashboardOrders = [];
