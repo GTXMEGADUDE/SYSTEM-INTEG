@@ -38,6 +38,33 @@ function dashClearFieldError(input:HTMLInputElement):void{
  if(slot&&slot.textContent){slot.textContent='';form.querySelectorAll('[name="'+input.name+'"]').forEach(field=>field.removeAttribute('aria-invalid'));}
 }
 
+const dashPasswordEye='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
+const dashPasswordEyeOff='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 3 18 18"/><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 5.2A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a16.2 16.2 0 0 1-3.2 3.9"/><path d="M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.6 9.6 0 0 0 4.1-.9"/></svg>';
+function dashSetupPasswordToggles(root:ParentNode):void{
+ root.querySelectorAll<HTMLInputElement>('input[type="password"][data-password-toggle-input]').forEach(input=>{
+  if(input.closest('.password-control'))return;
+  const parent=input.parentElement;
+  if(!parent)return;
+  const wrapper=document.createElement('span');wrapper.className='password-control';
+  parent.insertBefore(wrapper,input);wrapper.append(input);
+  const button=document.createElement('button');button.type='button';button.className='password-toggle';
+  button.dataset.passwordToggle='true';button.setAttribute('aria-label','Show password');button.setAttribute('aria-pressed','false');
+  if(input.id)button.setAttribute('aria-controls',input.id);
+  button.title='Show password';button.innerHTML=dashPasswordEye;wrapper.append(button);
+ });
+}
+dashSetupPasswordToggles(document);
+document.addEventListener('click',event=>{
+ const target=event.target;
+ if(!(target instanceof Element))return;
+ const button=target.closest<HTMLButtonElement>('button[data-password-toggle]');
+ const input=button?.parentElement?.querySelector<HTMLInputElement>('input[data-password-toggle-input]');
+ if(!button||!input)return;
+ const show=input.type==='password';input.type=show?'text':'password';
+ button.setAttribute('aria-pressed',String(show));button.setAttribute('aria-label',show?'Hide password':'Show password');
+ button.title=show?'Hide password':'Show password';button.innerHTML=show?dashPasswordEyeOff:dashPasswordEye;
+});
+
 /* ---------- AniBayan's data lives on the server (Laravel + MySQL) ---------- */
 // Pages load the signed-in person's data from /api/state and send every change to /api/actions/…; the server
 // checks who may do it, saves it to the database and answers with the fresh data. Nothing is kept in the browser:

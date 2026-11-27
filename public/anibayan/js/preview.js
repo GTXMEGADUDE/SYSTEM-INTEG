@@ -49,7 +49,7 @@ const dashboardHealthLog = [];
 // AniBayan serves Calapan City, Oriental Mindoro only. Organizations and delivery addresses pick one of its
 // 62 barangays (names from Philippines JSON Maps, PSGC 2026-3q). An organization's region is "<barangay>, Calapan City".
 const dashCityName = 'Calapan City';
-const dashBarangays = ['Balingayan', 'Balite', 'Baruyan', 'Batino', 'Bayanan I', 'Bayanan II', 'Biga', 'Bondoc', 'Bucayao', 'Buhuan', 'Bulusan', 'Calero', 'Camansihan', 'Camilmil', 'Canubing I', 'Canubing II', 'Comunal', 'Guinobatan', 'Gulod', 'Gutad', 'Ibaba East', 'Ibaba West', 'Ilaya', 'Lalud', 'Lazareto', 'Libis', 'Lumangbayan', 'Mahal Na Pangalan', 'Maidlang', 'Malad', 'Malamig', 'Managpi', 'Masipit', 'Nag-Iba I', 'Nag-Iba II', 'Navotas', 'Pachoca', 'Palhi', 'Panggalaan', 'Parang', 'Patas', 'Personas', 'Puting Tubig', 'Salong', 'San Antonio', 'San Vicente Central', 'San Vicente East', 'San Vicente North', 'San Vicente South', 'San Vicente West', 'Sapul', 'Silonay', 'Sta. Cruz', 'Sta. Isabel', 'Sta. Maria Village', 'Sta. Rita', 'Sto. Niño', 'Suqui', 'Tawagan', 'Tawiran', 'Tibag', 'Wawa'];
+let dashBarangays = ['Balingayan', 'Balite', 'Baruyan', 'Batino', 'Bayanan I', 'Bayanan II', 'Biga', 'Bondoc', 'Bucayao', 'Buhuan', 'Bulusan', 'Calero', 'Camansihan', 'Camilmil', 'Canubing I', 'Canubing II', 'Comunal', 'Guinobatan', 'Gulod', 'Gutad', 'Ibaba East', 'Ibaba West', 'Ilaya', 'Lalud', 'Lazareto', 'Libis', 'Lumangbayan', 'Mahal Na Pangalan', 'Maidlang', 'Malad', 'Malamig', 'Managpi', 'Masipit', 'Nag-Iba I', 'Nag-Iba II', 'Navotas', 'Pachoca', 'Palhi', 'Panggalaan', 'Parang', 'Patas', 'Personas', 'Puting Tubig', 'Salong', 'San Antonio', 'San Vicente Central', 'San Vicente East', 'San Vicente North', 'San Vicente South', 'San Vicente West', 'Sapul', 'Silonay', 'Sta. Cruz', 'Sta. Isabel', 'Sta. Maria Village', 'Sta. Rita', 'Sto. Niño', 'Suqui', 'Tawagan', 'Tawiran', 'Tibag', 'Wawa'];
 // Delivery addresses: "<house and street>, Barangay <name>, Calapan City, Oriental Mindoro".
 const dashJoinAddress = (street, barangay) => street + ', Barangay ' + barangay + ', ' + dashCityName + ', Oriental Mindoro';
 function dashSplitAddress(address) {
@@ -108,9 +108,52 @@ function dashClearFieldError(input) {
         form.querySelectorAll('[name="' + input.name + '"]').forEach(field => field.removeAttribute('aria-invalid'));
     }
 }
+const dashPasswordEye = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
+const dashPasswordEyeOff = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 3 18 18"/><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 5.2A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a16.2 16.2 0 0 1-3.2 3.9"/><path d="M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.6 9.6 0 0 0 4.1-.9"/></svg>';
+function dashSetupPasswordToggles(root) {
+    root.querySelectorAll('input[type="password"][data-password-toggle-input]').forEach(input => {
+        if (input.closest('.password-control'))
+            return;
+        const parent = input.parentElement;
+        if (!parent)
+            return;
+        const wrapper = document.createElement('span');
+        wrapper.className = 'password-control';
+        parent.insertBefore(wrapper, input);
+        wrapper.append(input);
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'password-toggle';
+        button.dataset.passwordToggle = 'true';
+        button.setAttribute('aria-label', 'Show password');
+        button.setAttribute('aria-pressed', 'false');
+        if (input.id)
+            button.setAttribute('aria-controls', input.id);
+        button.title = 'Show password';
+        button.innerHTML = dashPasswordEye;
+        wrapper.append(button);
+    });
+}
+dashSetupPasswordToggles(document);
+document.addEventListener('click', event => {
+    const target = event.target;
+    if (!(target instanceof Element))
+        return;
+    const button = target.closest('button[data-password-toggle]');
+    const input = button?.parentElement?.querySelector('input[data-password-toggle-input]');
+    if (!button || !input)
+        return;
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    button.setAttribute('aria-pressed', String(show));
+    button.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    button.title = show ? 'Hide password' : 'Show password';
+    button.innerHTML = show ? dashPasswordEyeOff : dashPasswordEye;
+});
 let dashSessionMe = '';
 // Set when the server signed this person out because the account is no longer active ("suspended", "terminated").
 let dashBlockedStatus = '';
+let dashBlockedReason = '';
 // True when the server couldn't be reached when the page loaded.
 let dashOffline = false;
 let dashPrefs = {};
@@ -135,6 +178,9 @@ function dashApplyState(s) {
     dashReplaceRecord(dashboardCarts, s.carts);
     dashSessionMe = s.me || '';
     dashBlockedStatus = s.blocked || '';
+    dashBlockedReason = s.blockedReason || '';
+    if (Array.isArray(s.barangays) && s.barangays.length)
+        dashReplaceList(dashBarangays, s.barangays);
     dashPrefs = s.preferences || {};
 }
 // The dashboards' loader (in their HTML) fetches the data before the script runs; this applies it.

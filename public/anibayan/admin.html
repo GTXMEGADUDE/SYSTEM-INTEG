@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="AniBayan administrator workspace: accounts, user reports, organization applications and site health."><title>AniBayan — Admin workspace</title><link rel="icon" href="favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="dashboard.css?v=20261127-logo"><script>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="AniBayan administrator workspace: accounts, user reports, organization applications and site health."><title>AniBayan — Admin workspace</title><link rel="icon" href="favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="dashboard.css?v=20261127-password-eye"><script>
 // AniBayan's data lives on its server: load the signed-in person's data first, then start the dashboard (js/dashboards.js).
 (function(){var ready=new Promise(function(done){if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',done);else done();});
 var state=fetch('../api/state',{headers:{Accept:'application/json'},credentials:'same-origin',cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).catch(function(){return null;});
-Promise.all([state,ready]).then(function(v){window.anibayanState=v[0];var s=document.createElement('script');s.src='js/dashboards.js';document.body.appendChild(s);});})();
+Promise.all([state,ready]).then(function(v){window.anibayanState=v[0];var s=document.createElement('script');s.src='js/dashboards.js?v=20261127-password-eye';document.body.appendChild(s);});})();
 </script></head><body data-dashboard="admin"><a class="skip" href="#dashboard-content">Skip to dashboard</a><div id="dashboard-app"></div><dialog id="detail-dialog" aria-labelledby="detail-title"><div id="detail-content"></div><button class="dialog-close" aria-label="Close details" data-close-dialog><svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></dialog><div id="dashboard-toast" role="status" aria-live="polite"></div><!--Start of Tawk.to Script-->
 <script type="text/javascript">
 var Tawk_API=Tawk_API||{}, Tawk_LoadStart=new Date();

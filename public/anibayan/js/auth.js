@@ -81,6 +81,48 @@ function dashClearFieldError(input) {
         form.querySelectorAll('[name="' + input.name + '"]').forEach(field => field.removeAttribute('aria-invalid'));
     }
 }
+const dashPasswordEye = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
+const dashPasswordEyeOff = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 3 18 18"/><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 5.2A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a16.2 16.2 0 0 1-3.2 3.9"/><path d="M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.6 9.6 0 0 0 4.1-.9"/></svg>';
+function dashSetupPasswordToggles(root) {
+    root.querySelectorAll('input[type="password"][data-password-toggle-input]').forEach(input => {
+        if (input.closest('.password-control'))
+            return;
+        const parent = input.parentElement;
+        if (!parent)
+            return;
+        const wrapper = document.createElement('span');
+        wrapper.className = 'password-control';
+        parent.insertBefore(wrapper, input);
+        wrapper.append(input);
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'password-toggle';
+        button.dataset.passwordToggle = 'true';
+        button.setAttribute('aria-label', 'Show password');
+        button.setAttribute('aria-pressed', 'false');
+        if (input.id)
+            button.setAttribute('aria-controls', input.id);
+        button.title = 'Show password';
+        button.innerHTML = dashPasswordEye;
+        wrapper.append(button);
+    });
+}
+dashSetupPasswordToggles(document);
+document.addEventListener('click', event => {
+    const target = event.target;
+    if (!(target instanceof Element))
+        return;
+    const button = target.closest('button[data-password-toggle]');
+    const input = button?.parentElement?.querySelector('input[data-password-toggle-input]');
+    if (!button || !input)
+        return;
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    button.setAttribute('aria-pressed', String(show));
+    button.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    button.title = show ? 'Hide password' : 'Show password';
+    button.innerHTML = show ? dashPasswordEyeOff : dashPasswordEye;
+});
 let dashSessionMe = '';
 // Set when the server signed this person out because the account is no longer active ("suspended", "terminated").
 let dashBlockedStatus = '';
@@ -218,7 +260,7 @@ function authSignInView() {
     const reason = authParams.get('reason');
     return '<form class="auth-form" id="signin-form" novalidate><h1>Welcome back</h1><p class="auth-lead">Sign in to shop fresh harvests or manage your organization.</p>' + (notice ? '<p class="auth-notice">' + de(notice) + (reason ? ' Reason: ' + de(reason) : '') + '</p>' : '') + '<div class="form-grid single">'
         + dashField('email', 'Email', '<input type="email" required autocomplete="email" placeholder="name@example.com">')
-        + dashField('password', 'Password', '<input type="password" required autocomplete="current-password">')
+        + dashField('password', 'Password', '<input type="password" data-password-toggle-input required autocomplete="current-password">')
         + '</div><p class="auth-forgot"><button type="button" class="text-button" data-auth-view="forgot">Forgot password?</button></p><p class="form-error" id="signin-error" role="alert" hidden></p><button type="submit" class="control primary auth-submit">Sign in</button><p class="auth-switch">New to AniBayan? <button type="button" class="text-button" data-auth-view="register">Create an account</button></p></form>';
 }
 function authForgotView() {
@@ -227,7 +269,7 @@ function authForgotView() {
 function authResetView() {
     if (!authResetToken || !authResetEmail)
         return '<div class="auth-done"><h1>Reset link unavailable</h1><p>Request a new password reset link to continue.</p><div class="detail-actions"><button type="button" class="control primary" data-auth-view="forgot">Request a new link</button></div></div>';
-    return '<form class="auth-form" id="reset-form" novalidate><h1>Choose a new password</h1><p class="auth-lead">Set a new password for ' + de(authResetEmail) + '.</p><div class="form-grid single">' + dashField('password', 'New password', '<input type="password" required minlength="8" maxlength="200" autocomplete="new-password">', 'At least 8 characters.') + dashField('password_confirmation', 'Confirm new password', '<input type="password" required minlength="8" maxlength="200" autocomplete="new-password">') + '</div><p class="form-error" id="reset-error" role="alert" hidden></p><button type="submit" class="control primary auth-submit">Reset password</button><p class="auth-switch"><button type="button" class="text-button" data-auth-view="signin">Back to sign in</button></p></form>';
+    return '<form class="auth-form" id="reset-form" novalidate><h1>Choose a new password</h1><p class="auth-lead">Set a new password for ' + de(authResetEmail) + '.</p><div class="form-grid single">' + dashField('password', 'New password', '<input type="password" data-password-toggle-input required minlength="8" maxlength="200" autocomplete="new-password">', 'At least 8 characters.') + dashField('password_confirmation', 'Confirm new password', '<input type="password" data-password-toggle-input required minlength="8" maxlength="200" autocomplete="new-password">') + '</div><p class="form-error" id="reset-error" role="alert" hidden></p><button type="submit" class="control primary auth-submit">Reset password</button><p class="auth-switch"><button type="button" class="text-button" data-auth-view="signin">Back to sign in</button></p></form>';
 }
 function authRegisterView() {
     const organization = authParams.get('type') === 'organization';
@@ -239,8 +281,8 @@ function authRegisterView() {
         + dashField('name', 'Full name' + dashRequired, '<input required maxlength="80" autocomplete="name">', '', true)
         + dashField('email', 'Email' + dashRequired, '<input type="email" required maxlength="120" autocomplete="email" placeholder="name@example.com">')
         + dashField('phone', 'Mobile number' + dashRequired, '<input ' + dashPhoneInput + ' placeholder="0917 555 0148">')
-        + dashField('password', 'Password' + dashRequired, '<input type="password" required minlength="8" maxlength="200" autocomplete="new-password">', 'At least 8 characters.')
-        + dashField('password_confirmation', 'Confirm password' + dashRequired, '<input type="password" required minlength="8" maxlength="200" autocomplete="new-password">')
+        + dashField('password', 'Password' + dashRequired, '<input type="password" data-password-toggle-input required minlength="8" maxlength="200" autocomplete="new-password">', 'At least 8 characters.')
+        + dashField('password_confirmation', 'Confirm password' + dashRequired, '<input type="password" data-password-toggle-input required minlength="8" maxlength="200" autocomplete="new-password">')
         + '</div><div class="form-grid org-fields"' + (organization ? '' : ' hidden') + '><h2 class="form-section">Your organization</h2>'
         + dashField('orgName', 'Organization name' + dashRequired, '<input required maxlength="80">', '', true)
         + dashField('barangayChoice', 'Barangay, ' + dashCityName + dashRequired, '<select required>' + dashBarangayOptions('') + '<option value="__other__">My barangay is not listed</option></select>', 'If it is missing, choose the last option to request it.')
@@ -259,7 +301,7 @@ function authRender() {
     const tabs = authView === 'signin' || authView === 'register' ? '<div class="auth-tabs" role="tablist" aria-label="Account"><button role="tab" id="tab-signin" aria-selected="' + (authView === 'signin') + '" aria-controls="auth-panel" data-auth-view="signin">Sign in</button><button role="tab" id="tab-register" aria-selected="' + (authView === 'register') + '" aria-controls="auth-panel" data-auth-view="register">Create account</button></div>' : '';
     const panel = authView === 'signin' ? authSignInView() : authView === 'register' ? authRegisterView() : authView === 'forgot' ? authForgotView() : authView === 'reset' ? authResetView() : authSubmittedView();
     authRoot.innerHTML = banner + tabs + '<div id="auth-panel"' + (tabs ? ' role="tabpanel" aria-labelledby="tab-' + (authView === 'register' ? 'register' : 'signin') + '"' : '') + '>' + panel + '</div>';
-    document.title = 'AniBayan — ' + (authView === 'signin' ? 'Sign in' : 'Create an account');
+    dashSetupPasswordToggles(authRoot);
     document.title = 'AniBayan — ' + (authView === 'register' ? 'Create an account' : authView === 'forgot' ? 'Forgot password' : authView === 'reset' ? 'Reset password' : 'Sign in');
 }
 function authSetView(view) {

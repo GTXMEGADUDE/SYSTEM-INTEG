@@ -1211,7 +1211,7 @@ function dashRender():void{
  dashShowReposition();
 }
 function dashNavigate(view:string):void{if(location.hash.slice(1)===view)dashReadHash();else location.hash=view;}
-function dashOpen(html:string):void{document.getElementById('detail-content')!.innerHTML=html;if(!dashDialog.open)dashDialog.showModal();}
+function dashOpen(html:string):void{const content=document.getElementById('detail-content')!;content.innerHTML=html;dashSetupPasswordToggles(content);if(!dashDialog.open)dashDialog.showModal();}
 function dashFocusField(selector:string):void{document.querySelector<HTMLElement>('#detail-content '+selector)?.focus();}
 const dashFact=(label:string,value:string)=>'<div><dt>'+label+'</dt><dd>'+value+'</dd></div>';
 const dashFileSize=(bytes:number)=>bytes<1024*1024?Math.max(1,Math.round(bytes/1024))+' KB':(bytes/1024/1024).toFixed(1)+' MB';
@@ -1742,9 +1742,9 @@ function dashSubmitProfile(form:HTMLFormElement):void{
 }
 function dashPasswordForm():void{
  dashOpen('<p class="detail-kicker">Security</p><h2 id="detail-title">Change your password</h2><p class="detail-subtitle">You’ll use the new password the next time you sign in.</p><form class="dash-form" id="password-form" novalidate><div class="form-grid single">'
-  +dashField('current','Current password'+dashRequired,'<input type="password" required autocomplete="current-password">')
-  +dashField('password','New password'+dashRequired,'<input type="password" required minlength="8" autocomplete="new-password">','At least 8 characters.')
-  +dashField('confirm','Confirm new password'+dashRequired,'<input type="password" required autocomplete="new-password">')
+  +dashField('current','Current password'+dashRequired,'<input type="password" data-password-toggle-input required autocomplete="current-password">')
+  +dashField('password','New password'+dashRequired,'<input type="password" data-password-toggle-input required minlength="8" autocomplete="new-password">','At least 8 characters.')
+  +dashField('confirm','Confirm new password'+dashRequired,'<input type="password" data-password-toggle-input required autocomplete="new-password">')
   +'</div><div class="detail-actions"><button type="button" class="control" data-close-dialog>Cancel</button><button type="submit" class="control primary">'+di('key')+'Change password</button></div></form>');
  dashFocusField('#field-current');
 }

@@ -81,6 +81,48 @@ function dashClearFieldError(input) {
         form.querySelectorAll('[name="' + input.name + '"]').forEach(field => field.removeAttribute('aria-invalid'));
     }
 }
+const dashPasswordEye = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
+const dashPasswordEyeOff = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 3 18 18"/><path d="M10.6 10.6a2 2 0 0 0 2.8 2.8"/><path d="M9.9 5.2A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a16.2 16.2 0 0 1-3.2 3.9"/><path d="M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.6 9.6 0 0 0 4.1-.9"/></svg>';
+function dashSetupPasswordToggles(root) {
+    root.querySelectorAll('input[type="password"][data-password-toggle-input]').forEach(input => {
+        if (input.closest('.password-control'))
+            return;
+        const parent = input.parentElement;
+        if (!parent)
+            return;
+        const wrapper = document.createElement('span');
+        wrapper.className = 'password-control';
+        parent.insertBefore(wrapper, input);
+        wrapper.append(input);
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'password-toggle';
+        button.dataset.passwordToggle = 'true';
+        button.setAttribute('aria-label', 'Show password');
+        button.setAttribute('aria-pressed', 'false');
+        if (input.id)
+            button.setAttribute('aria-controls', input.id);
+        button.title = 'Show password';
+        button.innerHTML = dashPasswordEye;
+        wrapper.append(button);
+    });
+}
+dashSetupPasswordToggles(document);
+document.addEventListener('click', event => {
+    const target = event.target;
+    if (!(target instanceof Element))
+        return;
+    const button = target.closest('button[data-password-toggle]');
+    const input = button?.parentElement?.querySelector('input[data-password-toggle-input]');
+    if (!button || !input)
+        return;
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    button.setAttribute('aria-pressed', String(show));
+    button.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    button.title = show ? 'Hide password' : 'Show password';
+    button.innerHTML = show ? dashPasswordEyeOff : dashPasswordEye;
+});
 let dashSessionMe = '';
 // Set when the server signed this person out because the account is no longer active ("suspended", "terminated").
 let dashBlockedStatus = '';
@@ -272,7 +314,10 @@ const dashInitials = (name) => name.split(' ').map(part => part[0]).join('').sli
 // Stock photos live in assets/; uploaded photos are saved by the server under uploads/.
 const dashImg = (src) => /^(data:|blob:|https?:|uploads\/)/.test(src) ? src : 'assets/' + src;
 // A missing upload should never leave a broken-image icon in the marketplace or account pages.
-const dashFallbackPhotos = [[/sweet[ -]potato/i, 'sweet-potatoes.jpg'], [/\brice\b|\bgrain/i, 'rice.jpg'], [/\bmango/i, 'mango.jpg'], [/\bbanana/i, 'bananas.jpg'], [/\bonion/i, 'onion.jpg'], [/\bcarrot/i, 'carrot.jpg'], [/\btomato/i, 'tomatoes.jpg'], [/\beggplant/i, 'eggplant.jpg'], [/\bfruit/i, 'mango.jpg']];
+const dashFallbackPhotos = [
+    [/sweet[ -]potato/i, 'sweet-potatoes.jpg'], [/\brice\b|\bgrain/i, 'rice.jpg'], [/\bmango/i, 'mango.jpg'], [/\bbanana/i, 'bananas.jpg'],
+    [/\bonion/i, 'onion.jpg'], [/\bcarrot/i, 'carrot.jpg'], [/\btomato/i, 'tomatoes.jpg'], [/\beggplant/i, 'eggplant.jpg'], [/\bfruit/i, 'mango.jpg'],
+];
 function dashInstallImageFallbacks() {
     document.addEventListener('error', event => {
         const image = event.target;
@@ -1547,7 +1592,7 @@ function dashNavigate(view) { if (location.hash.slice(1) === view)
     dashReadHash();
 else
     location.hash = view; }
-function dashOpen(html) { document.getElementById('detail-content').innerHTML = html; if (!dashDialog.open)
+function dashOpen(html) { const content = document.getElementById('detail-content'); content.innerHTML = html; dashSetupPasswordToggles(content); if (!dashDialog.open)
     dashDialog.showModal(); }
 function dashFocusField(selector) { document.querySelector('#detail-content ' + selector)?.focus(); }
 const dashFact = (label, value) => '<div><dt>' + label + '</dt><dd>' + value + '</dd></div>';
@@ -1741,7 +1786,7 @@ function dashConfirmReset() {
 }
 // AniBayan renders the PayMongo Payment Intent flow in its own payment dialog.
 function dashPaymentDialog(ids) {
-    const selected = ids.map(id => dashboardOrders.find(o => o.id === id)).filter(o => !!o && o.payment === 'Unpaid' && o.status !== 'Cancelled');
+    const selected = ids.map(id => dashboardOrders.find(o => o.id === id)).filter((o) => !!o && o.payment === 'Unpaid' && o.status !== 'Cancelled');
     const expanded = new Map();
     selected.forEach(order => {
         const group = order.checkout ? dashboardOrders.filter(o => o.checkout === order.checkout && o.payment === 'Unpaid' && o.status !== 'Cancelled') : [order];
@@ -1773,7 +1818,8 @@ function dashPaymentDialog(ids) {
     error.setAttribute('role', 'alert');
     error.hidden = true;
     detail.querySelector('.detail-actions')?.before(progress, error);
-}// Creates an intent on AniBayan's server, tokenizes payment details with PayMongo's public key, then attaches it.
+}
+// Creates an intent on AniBayan's server, tokenizes payment details with PayMongo's public key, then attaches it.
 async function dashStartPayment(ids, button) {
     const order = dashboardOrders.find(o => o.id === ids[0]);
     const method = order?.method === 'Credit or debit card' ? 'Credit or debit card' : 'GCash or QR Ph';
@@ -1828,13 +1874,10 @@ async function dashStartPayment(ids, button) {
     const publicKey = String(r.data.publicKey), intentId = String(r.data.intentId), intentMethod = String(r.data.method || (method === 'Credit or debit card' ? 'card' : 'qrph'));
     const isTestMode = publicKey.startsWith('pk_test_');
     if (!r.data.existing)
-        ids.forEach(id => {
-            const item = dashboardOrders.find(o => o.id === id);
-            if (item) {
-                item.method = method;
-                item.checkout = intentId;
-            }
-        });
+        ids.forEach(id => { const item = dashboardOrders.find(o => o.id === id); if (item) {
+            item.method = method;
+            item.checkout = intentId;
+        } });
     if (isTestMode) {
         const kicker = document.querySelector('#detail-content .detail-kicker');
         if (kicker)
@@ -1860,7 +1903,9 @@ async function dashStartPayment(ids, button) {
         const nextAction = r.data.nextAction;
         if (r.data.status === 'awaiting_next_action' && intentMethod === 'qrph') {
             if (isTestMode) {
-                const code = nextAction?.code, testUrl = code?.test_url, image = code?.image_url;
+                const code = nextAction?.code;
+                const testUrl = code?.test_url;
+                const image = code?.image_url;
                 if (typeof testUrl === 'string' && typeof image === 'string' && image.startsWith('data:image/') && dashShowTestQrPh(testUrl, image, ids)) {
                     dashWatchPayments();
                     return;
@@ -1925,7 +1970,9 @@ async function dashStartPayment(ids, button) {
     }
     if (attributes.status === 'awaiting_next_action' && intentMethod === 'qrph') {
         if (isTestMode) {
-            const code = attributes.next_action?.code, testUrl = code?.test_url, image = code?.image_url;
+            const code = attributes.next_action?.code;
+            const testUrl = code?.test_url;
+            const image = code?.image_url;
             if (typeof testUrl === 'string' && typeof image === 'string' && image.startsWith('data:image/') && dashShowTestQrPh(testUrl, image, ids)) {
                 dashWatchPayments();
                 return;
@@ -1957,7 +2004,8 @@ async function dashStartPayment(ids, button) {
     }
     const detail = attributes.last_payment_error?.message;
     dashPaymentError(button, label, progress, error, typeof detail === 'string' && detail ? detail : 'Payment could not be completed. Check the details and try again.');
-}function dashPaymentError(button, label, progress, error, message) {
+}
+function dashPaymentError(button, label, progress, error, message) {
     if (progress)
         progress.hidden = true;
     button.disabled = false;
@@ -1973,22 +2021,21 @@ function dashPaymentMessage(r) {
     const message = typeof r.data.message === 'string' ? r.data.message : '';
     if ((r.status === 502 || r.status === 503) && /^(PayMongo|Online payment)/.test(message))
         return message;
-    return dashMessage(r, 'Online payment is not available right now. Try again in a moment.');
+    return dashMessage(r, 'Online payment isn’t available right now. Try again in a moment.');
 }
 async function dashPayMongoPost(publicKey, path, body) {
     try {
         const response = await fetch('https://api.paymongo.com/v1/' + path, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: 'Basic ' + btoa(publicKey + ':') }, body: JSON.stringify(body) });
         const data = await response.json().catch(() => ({}));
         const code = String(data?.errors?.[0]?.code || '').toLowerCase();
-        const messages = {
-            parameter_below_minimum: 'The minimum online payment is \u20b11.00.',
-            parameter_above_maximum: 'PayMongo accepts up to \u20b19,999,999.99 per transaction. This total needs to be split into smaller orders before payment.',
+        const message = {
+            parameter_below_minimum: 'The minimum online payment is ₱1.00.',
+            parameter_above_maximum: 'PayMongo accepts up to ₱9,999,999.99 per transaction. This total needs to be split into smaller orders before payment.',
             amount_exceed_limit: 'This amount is over the limit set by your QR Ph bank or wallet. Contact them or choose card payment.',
             payment_method_not_allowed: 'The selected payment method is not enabled for the PayMongo account. Enable it in PayMongo or choose another method.',
             account_not_activated: 'The PayMongo account is not activated for the selected payment method.',
-            card_declined: 'Your card was declined. Check the details or try another card.'
-        };
-        const message = messages[code] || (!response.ok ? 'PayMongo could not start this payment. Please try again.' : '');
+            card_declined: 'Your card was declined. Check the details or try another card.',
+        }[code] || (!response.ok ? 'PayMongo could not start this payment. Please try again.' : '');
         return { ok: response.ok, data, message };
     }
     catch {
@@ -2023,7 +2070,8 @@ function dashShowTestQrPh(testUrl, image, ids) {
     img.height = 250;
     document.getElementById('qrph-image-slot')?.append(img);
     return true;
-}let dashPaymentPoll = 0;
+}
+let dashPaymentPoll = 0;
 let dashPaymentChecking = false;
 function dashWatchPayments() {
     if (dashPaymentPoll)
@@ -2407,9 +2455,9 @@ function dashSubmitProfile(form) {
 }
 function dashPasswordForm() {
     dashOpen('<p class="detail-kicker">Security</p><h2 id="detail-title">Change your password</h2><p class="detail-subtitle">You’ll use the new password the next time you sign in.</p><form class="dash-form" id="password-form" novalidate><div class="form-grid single">'
-        + dashField('current', 'Current password' + dashRequired, '<input type="password" required autocomplete="current-password">')
-        + dashField('password', 'New password' + dashRequired, '<input type="password" required minlength="8" autocomplete="new-password">', 'At least 8 characters.')
-        + dashField('confirm', 'Confirm new password' + dashRequired, '<input type="password" required autocomplete="new-password">')
+        + dashField('current', 'Current password' + dashRequired, '<input type="password" data-password-toggle-input required autocomplete="current-password">')
+        + dashField('password', 'New password' + dashRequired, '<input type="password" data-password-toggle-input required minlength="8" autocomplete="new-password">', 'At least 8 characters.')
+        + dashField('confirm', 'Confirm new password' + dashRequired, '<input type="password" data-password-toggle-input required autocomplete="new-password">')
         + '</div><div class="detail-actions"><button type="button" class="control" data-close-dialog>Cancel</button><button type="submit" class="control primary">' + di('key') + 'Change password</button></div></form>');
     dashFocusField('#field-current');
 }

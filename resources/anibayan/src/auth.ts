@@ -39,7 +39,7 @@ function authSignInView():string{
   const reason=authParams.get('reason');
   return '<form class="auth-form" id="signin-form" novalidate><h1>Welcome back</h1><p class="auth-lead">Sign in to shop fresh harvests or manage your organization.</p>'+(notice?'<p class="auth-notice">'+de(notice)+(reason?' Reason: '+de(reason):'')+'</p>':'')+'<div class="form-grid single">'
   +dashField('email','Email','<input type="email" required autocomplete="email" placeholder="name@example.com">')
-  +dashField('password','Password','<input type="password" required autocomplete="current-password">')
+  +dashField('password','Password','<input type="password" data-password-toggle-input required autocomplete="current-password">')
   +'</div><p class="auth-forgot"><button type="button" class="text-button" data-auth-view="forgot">Forgot password?</button></p><p class="form-error" id="signin-error" role="alert" hidden></p><button type="submit" class="control primary auth-submit">Sign in</button><p class="auth-switch">New to AniBayan? <button type="button" class="text-button" data-auth-view="register">Create an account</button></p></form>';
 }
 function authForgotView():string{
@@ -47,7 +47,7 @@ function authForgotView():string{
 }
 function authResetView():string{
  if(!authResetToken||!authResetEmail)return '<div class="auth-done"><h1>Reset link unavailable</h1><p>Request a new password reset link to continue.</p><div class="detail-actions"><button type="button" class="control primary" data-auth-view="forgot">Request a new link</button></div></div>';
- return '<form class="auth-form" id="reset-form" novalidate><h1>Choose a new password</h1><p class="auth-lead">Set a new password for '+de(authResetEmail)+'.</p><div class="form-grid single">'+dashField('password','New password','<input type="password" required minlength="8" maxlength="200" autocomplete="new-password">','At least 8 characters.')+dashField('password_confirmation','Confirm new password','<input type="password" required minlength="8" maxlength="200" autocomplete="new-password">')+'</div><p class="form-error" id="reset-error" role="alert" hidden></p><button type="submit" class="control primary auth-submit">Reset password</button><p class="auth-switch"><button type="button" class="text-button" data-auth-view="signin">Back to sign in</button></p></form>';
+ return '<form class="auth-form" id="reset-form" novalidate><h1>Choose a new password</h1><p class="auth-lead">Set a new password for '+de(authResetEmail)+'.</p><div class="form-grid single">'+dashField('password','New password','<input type="password" data-password-toggle-input required minlength="8" maxlength="200" autocomplete="new-password">','At least 8 characters.')+dashField('password_confirmation','Confirm new password','<input type="password" data-password-toggle-input required minlength="8" maxlength="200" autocomplete="new-password">')+'</div><p class="form-error" id="reset-error" role="alert" hidden></p><button type="submit" class="control primary auth-submit">Reset password</button><p class="auth-switch"><button type="button" class="text-button" data-auth-view="signin">Back to sign in</button></p></form>';
 }
 function authRegisterView():string{
  const organization=authParams.get('type')==='organization';
@@ -59,8 +59,8 @@ function authRegisterView():string{
   +dashField('name','Full name'+dashRequired,'<input required maxlength="80" autocomplete="name">','',true)
   +dashField('email','Email'+dashRequired,'<input type="email" required maxlength="120" autocomplete="email" placeholder="name@example.com">')
   +dashField('phone','Mobile number'+dashRequired,'<input '+dashPhoneInput+' placeholder="0917 555 0148">')
-  +dashField('password','Password'+dashRequired,'<input type="password" required minlength="8" maxlength="200" autocomplete="new-password">','At least 8 characters.')
-  +dashField('password_confirmation','Confirm password'+dashRequired,'<input type="password" required minlength="8" maxlength="200" autocomplete="new-password">')
+  +dashField('password','Password'+dashRequired,'<input type="password" data-password-toggle-input required minlength="8" maxlength="200" autocomplete="new-password">','At least 8 characters.')
+  +dashField('password_confirmation','Confirm password'+dashRequired,'<input type="password" data-password-toggle-input required minlength="8" maxlength="200" autocomplete="new-password">')
   +'</div><div class="form-grid org-fields"'+(organization?'':' hidden')+'><h2 class="form-section">Your organization</h2>'
   +dashField('orgName','Organization name'+dashRequired,'<input required maxlength="80">','',true)
   +dashField('barangayChoice','Barangay, '+dashCityName+dashRequired,'<select required>'+dashBarangayOptions('')+'<option value="__other__">My barangay is not listed</option></select>','If it is missing, choose the last option to request it.')
@@ -79,6 +79,7 @@ function authRender():void{
  const tabs=authView==='signin'||authView==='register'?'<div class="auth-tabs" role="tablist" aria-label="Account"><button role="tab" id="tab-signin" aria-selected="'+(authView==='signin')+'" aria-controls="auth-panel" data-auth-view="signin">Sign in</button><button role="tab" id="tab-register" aria-selected="'+(authView==='register')+'" aria-controls="auth-panel" data-auth-view="register">Create account</button></div>':'';
  const panel=authView==='signin'?authSignInView():authView==='register'?authRegisterView():authView==='forgot'?authForgotView():authView==='reset'?authResetView():authSubmittedView();
  authRoot.innerHTML=banner+tabs+'<div id="auth-panel"'+(tabs?' role="tabpanel" aria-labelledby="tab-'+(authView==='register'?'register':'signin')+'"':'')+'>'+panel+'</div>';
+ dashSetupPasswordToggles(authRoot);
  document.title='AniBayan — '+(authView==='register'?'Create an account':authView==='forgot'?'Forgot password':authView==='reset'?'Reset password':'Sign in');
 }
 function authSetView(view:AuthView):void{
