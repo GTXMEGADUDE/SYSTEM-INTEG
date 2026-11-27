@@ -198,7 +198,7 @@ input::placeholder{color:var(--subtle)}
 .donut-legend strong{margin-left:auto;font-weight:600}
 
 /* ---------- Tables ---------- */
-.table-wrap{position:relative;overflow-x:auto;padding:0 20px 4px;flex:1}
+.table-wrap{position:relative;overflow-x:auto;padding:0 20px 4px;flex:1;width:100%;min-width:0;container-type:inline-size;container-name:dashboard-table}
 table{border-collapse:collapse;width:100%;text-align:left;white-space:nowrap}
 th{font-size:12px;font-weight:600;color:var(--muted);padding:14px 10px 10px;border-bottom:1px solid var(--line)}
 td{font-size:13px;padding:13px 10px;border-bottom:1px solid var(--line);color:var(--muted);vertical-align:middle}
@@ -216,19 +216,18 @@ td strong{font-weight:600;color:var(--ink)}
 .table-action .icon{height:17px;width:17px}
 .table-action:hover{background:var(--tint);color:var(--deep)}
 .table-footer{padding:12px 20px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
-/* Keep organization order cards fully visible when the workspace is narrower than its wide orders table. */
-@media(max-width:1150px){
-  body[data-dashboard=organization] .order-table-wrap{overflow:visible;padding:0 14px 8px}
-  body[data-dashboard=organization] .order-table-wrap table{display:block;width:100%;white-space:normal}
-  body[data-dashboard=organization] .order-table-wrap thead{display:none}
-  body[data-dashboard=organization] .order-table-wrap tbody{display:grid;gap:10px}
-  body[data-dashboard=organization] .order-table-wrap tbody tr{display:grid;grid-template-columns:minmax(0,1fr);padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
-  body[data-dashboard=organization] .order-table-wrap tbody td{display:grid;grid-template-columns:minmax(76px,28%) minmax(0,1fr);align-items:start;gap:12px;min-width:0;padding:8px 0;border-bottom:1px solid var(--line);white-space:normal}
-  body[data-dashboard=organization] .order-table-wrap tbody td::before{content:attr(data-label);color:var(--muted);font-size:12px;font-weight:600}
-  body[data-dashboard=organization] .order-table-wrap tbody td:last-child{display:flex;justify-content:flex-end;padding-top:10px;border-bottom:0}
-  body[data-dashboard=organization] .order-table-wrap tbody td:last-child::before{content:none}
-  body[data-dashboard=organization] .order-table-wrap .table-product{min-width:0}
-  body[data-dashboard=organization] .order-table-wrap .row-actions{flex-wrap:wrap}
+/* Compact every dashboard table into labeled rows when its own card is too narrow. */
+@container dashboard-table (max-width:1080px){
+  .table-wrap table{display:block;width:100%;white-space:normal}
+  .table-wrap thead{display:none}
+  .table-wrap tbody{display:grid;gap:10px}
+  .table-wrap tbody tr{display:grid;grid-template-columns:minmax(0,1fr);padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+  .table-wrap tbody td{display:grid;grid-template-columns:minmax(76px,28%) minmax(0,1fr);align-items:start;gap:12px;min-width:0;padding:8px 0;border-bottom:1px solid var(--line);white-space:normal;overflow-wrap:anywhere}
+  .table-wrap tbody td::before{content:attr(data-label);color:var(--muted);font-size:12px;font-weight:600}
+  .table-wrap tbody td[data-label="Actions"]{display:flex;grid-column:1/-1;justify-content:flex-end;padding-top:10px;border-bottom:0}
+  .table-wrap tbody td[data-label="Actions"]::before{content:none}
+  .table-wrap .table-product{min-width:0}
+  .table-wrap .row-actions{flex-wrap:wrap}
 }
 .status{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;line-height:1.4;padding:2px 9px;border-radius:999px;white-space:nowrap;background:#e7f5e3;color:#2a6b2f;border:1px solid #cde6c6}
 .status::before{content:'';width:6px;height:6px;background:currentColor;border-radius:50%}
