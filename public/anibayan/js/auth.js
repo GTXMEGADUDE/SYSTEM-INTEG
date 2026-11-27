@@ -290,7 +290,8 @@ function authRegisterView() {
         + barangayOther
         + dashField('crops', 'Main crops' + dashRequired, '<input required maxlength="80" placeholder="e.g. Rice, calamansi">', '', true)
         + '<div class="form-field wide"><span class="form-label" id="documents-label">Documents' + dashRequired + '</span><div class="choice-list" role="group" aria-labelledby="documents-label" aria-describedby="error-documents">' + authDocuments.map(([key, label]) => '<div class="choice doc-upload" data-doc="' + key + '"><span><strong>' + de(label) + '</strong><small data-doc-file>' + authDocumentHint + '</small></span><label class="control small file-button"><span data-doc-action>Attach</span><input type="file" name="documents[' + key + ']" accept="' + authDocumentTypes.join(',') + '" aria-label="Attach ' + de(label) + '"></label><button type="button" class="control small" data-doc-remove="' + key + '" aria-label="Remove ' + de(label) + '" hidden>Remove</button></div>').join('') + '</div><small class="field-error" id="error-documents" data-error-for="documents"></small></div>'
-        + '<label class="policy-accept"><input type="checkbox" name="sensitive_data_consent" value="' + authPoliciesVersion + '" required><span>I explicitly consent to AniBayan using the identity and organization documents I submit to review and manage this application.</span></label><small class="field-error policy-error" data-error-for="sensitive_data_consent"></small></div><label class="policy-accept"><input type="checkbox" name="policies_accepted" value="' + authPoliciesVersion + '" required><span>I agree to the <a href="terms.html" target="_blank" rel="noopener">Terms &amp; Conditions</a> and acknowledge that I have read the <a href="privacy.html" target="_blank" rel="noopener">Privacy Notice</a>.</span></label><small class="field-error policy-error" data-error-for="policies_accepted"></small><p class="form-error" id="register-error" role="alert" hidden></p><button type="submit" class="control primary auth-submit" id="register-submit">' + (organization ? 'Submit application' : 'Create account') + '</button><p class="auth-switch">Already have an account? <button type="button" class="text-button" data-auth-view="signin">Sign in</button></p></form>';
+        + '<label class="policy-accept"><input type="checkbox" name="sensitive_data_consent" value="' + authPoliciesVersion + '" required><span>I explicitly consent to AniBayan using the identity and organization documents I submit to review and manage this application.</span></label><small class="field-error policy-error" data-error-for="sensitive_data_consent"></small>'
+        + '</div><label class="policy-accept"><input type="checkbox" name="policies_accepted" value="' + authPoliciesVersion + '" required><span>I agree to the <a href="terms.html" target="_blank" rel="noopener">Terms &amp; Conditions</a> and acknowledge that I have read the <a href="privacy.html" target="_blank" rel="noopener">Privacy Notice</a>.</span></label><small class="field-error policy-error" data-error-for="policies_accepted"></small><p class="form-error" id="register-error" role="alert" hidden></p><button type="submit" class="control primary auth-submit" id="register-submit">' + (organization ? 'Submit application' : 'Create account') + '</button><p class="auth-switch">Already have an account? <button type="button" class="text-button" data-auth-view="signin">Sign in</button></p></form>';
 }
 function authSubmittedView() {
     const account = authSubmitted;
@@ -426,14 +427,14 @@ async function authRegister(form) {
         errors.email = 'Enter an email address like name@example.com.';
     if (!dashPhonePattern.test(value('phone')))
         errors.phone = 'Enter a mobile number like 0917 555 0148.';
-    if (policiesAccepted !== authPoliciesVersion)
-        errors.policies_accepted = 'Agree to the Terms & Conditions and acknowledge the Privacy Notice to create an account.';
     if (password.length < 8)
         errors.password = 'Use at least 8 characters.';
     if (!confirm)
         errors.password_confirmation = 'Enter your password again.';
     else if (confirm !== password)
         errors.password_confirmation = 'The passwords don’t match.';
+    if (policiesAccepted !== authPoliciesVersion)
+        errors.policies_accepted = 'Agree to the Terms & Conditions and acknowledge the Privacy Notice to create an account.';
     if (organization) {
         if (value('sensitive_data_consent') !== authPoliciesVersion)
             errors.sensitive_data_consent = 'Consent is needed to submit organization documents for review.';
