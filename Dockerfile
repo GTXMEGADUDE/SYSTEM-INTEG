@@ -6,6 +6,10 @@ RUN apt-get update \
     && a2enmod headers rewrite \
     && rm -rf /var/lib/apt/lists/*
 
+RUN printf 'expose_php=Off\n' > /usr/local/etc/php/conf.d/99-security.ini
+RUN printf 'ServerTokens Prod\nServerSignature Off\n' > /etc/apache2/conf-available/zz-anibayan-security.conf \
+    && a2enconf zz-anibayan-security
+
 COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 
 WORKDIR /var/www/html
