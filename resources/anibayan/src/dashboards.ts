@@ -1512,17 +1512,28 @@ function dashWatchPayments():void{
  if(dashPaymentPoll)window.clearInterval(dashPaymentPoll);
  dashPaymentPoll=window.setInterval(()=>{void dashRefreshPaymentStatus(false);},5000);
 }
-async function dashRefreshPaymentStatus(manual:boolean):Promise<void>{
- if(dashPaymentChecking)return;
+async function dashRefreshPaymentStatus(manual:boolean,button?:HTMLButtonElement):Promise<void>{
+ if(dashPaymentChecking){if(manual){const status=document.getElementById('qrph-status');if(status)status.textContent='Payment status is already being checked. Please wait.';}return;}
  dashPaymentChecking=true;
- const r=await dashApi('payments/check',{});
- dashPaymentChecking=false;
- if(r.data.state){dashApplyState(r.data.state as DashServerState);dashRender();}
- const paid=(r.data.result?.paid||[]) as string[];
- if(paid.length){if(dashPaymentPoll)window.clearInterval(dashPaymentPoll);dashPaymentPoll=0;dashDialog.close();dashReceiptDialog(paid.map(n=>'AB-2026-'+n.replace('#','')),'Payment received');dashToast('Payment received for '+paid.join(', ')+'.');return;}
- const stillOpen=dashRoleOrders().some(o=>o.checkout&&o.payment==='Unpaid');
- if(!stillOpen&&dashPaymentPoll){window.clearInterval(dashPaymentPoll);dashPaymentPoll=0;const status=document.getElementById('qrph-status');if(status)status.textContent='This payment attempt expired or was not completed. You can try again from My orders.';}
- else if(manual){const status=document.getElementById('qrph-status');if(status)status.textContent='Payment is still processing or has not been confirmed yet.';else dashToast('Payment is still processing or has not been confirmed yet.');}
+ const oldLabel=button?.textContent||'';
+ if(button){button.disabled=true;button.textContent='Checking…';}
+ const initialStatus=document.getElementById('qrph-status');
+ if(manual&&initialStatus)initialStatus.textContent='Checking with PayMongo…';
+ try{
+  const r=await dashApi('payments/check',{});
+  if(r.data.state){dashApplyState(r.data.state as DashServerState);dashRender();}
+  if(!r.ok){if(manual){const message=typeof r.data.message==='string'?r.data.message:'AniBayan could not verify this payment right now. Please try again.';const status=document.getElementById('qrph-status');if(status)status.textContent=message;else dashToast(message);}return;}
+  const result=r.data.result||{};
+  const paid=(result.paid||[]) as string[];
+  if(paid.length){if(dashPaymentPoll)window.clearInterval(dashPaymentPoll);dashPaymentPoll=0;dashDialog.close();dashReceiptDialog(paid.map(n=>'AB-2026-'+n.replace('#','')),'Payment received');dashToast('Payment received for '+paid.join(', ')+'.');return;}
+  const stillOpen=dashRoleOrders().some(o=>o.checkout&&o.payment==='Unpaid');
+  if(result.unverified){if(manual){const message='AniBayan could not reach PayMongo to verify this payment. Please try again in a moment.';const status=document.getElementById('qrph-status');if(status)status.textContent=message;else dashToast(message);}return;}
+  if(!stillOpen){if(dashPaymentPoll){window.clearInterval(dashPaymentPoll);dashPaymentPoll=0;}const status=document.getElementById('qrph-status');if(status)status.textContent='This payment attempt is no longer open. You can try again from My orders.';return;}
+  if(manual){const message=(result.pending||[]).length?'PayMongo has not confirmed this payment yet. Complete the payment in the simulator or wallet, then check again.':'Payment is still processing or has not been confirmed yet.';const status=document.getElementById('qrph-status');if(status)status.textContent=message;else dashToast(message);}
+ }finally{
+  dashPaymentChecking=false;
+  if(button){button.disabled=false;button.textContent=oldLabel;}
+ }
 }
 // Reconciles in-app Payment Intents after a provider return and whenever the buyer reopens the orders page.
 async function dashCheckPayments():Promise<void>{
@@ -2617,7 +2628,7 @@ function dashHandleClick(event:MouseEvent):void{
  if(data.pay){
   void dashStartPayment(data.pay.split(','),target as HTMLButtonElement);return;
  }
- if(data.paymentCheck!==undefined){void dashRefreshPaymentStatus(true);return;}
+ if(data.paymentCheck!==undefined){void dashRefreshPaymentStatus(true,target as HTMLButtonElement);return;}
  if(data.payLater!==undefined){dashDialog.close();dashNavigate('orders');dashToast('Your order is waiting for payment. Use Pay now in My orders when you’re ready.');return;}
  if(data.addListing!==undefined){dashListingForm();return;}
  if(data.editOrgProfile!==undefined){dashOrgProfileForm();return;}

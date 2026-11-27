@@ -183,26 +183,39 @@ class PaymentController extends Controller
         }
         $cancelled = $request->boolean('cancelled');
         $paid = [];
+        $pending = [];
+        $unverified = false;
         if ($this->client()) {
             $open = Order::where('user_id', $buyer->id)->where('payment', 'Unpaid')->whereNotNull('checkout_session')->get()->groupBy('checkout_session');
             foreach ($open as $session => $orders) {
                 $isIntent = str_starts_with((string) $session, 'pi_');
                 $url = $isIntent ? self::INTENTS.'/'.$session : 'https://api.paymongo.com/v1/checkout_sessions/'.$session;
                 $response = $this->safePayMongoRequest(fn () => $this->client()->get($url));
-                if (! $response || $response->failed()) {
+                if (! $response) {
+                    $unverified = true;
+                    continue;
+                }
+                if ($response->failed()) {
+                    Log::warning('PayMongo payment status check failed.', [
+                        'status' => $response->status(),
+                        'code' => $response->json('errors.0.code'),
+                    ]);
+                    $unverified = true;
                     continue;
                 }
                 $attributes = $response->json('data.attributes') ?? [];
                 if ($isIntent) {
                     $intentStatus = $attributes['status'] ?? '';
-                    $payment = collect($attributes['payments'] ?? [])->first(fn ($item) => data_get($item, 'attributes.status') === 'paid');
+                    $payment = collect($attributes['payments'] ?? [])->first(fn ($item) => in_array(data_get($item, 'attributes.status'), ['paid', 'succeeded'], true));
                     foreach ($orders as $order) {
-                        if ($intentStatus === 'succeeded') {
+                        if ($intentStatus === 'succeeded' || $payment) {
                             $order->update(['payment' => 'Paid', 'payment_ref' => data_get($payment, 'id') ?: $session, 'checkout_session' => null, 'paid_at' => now(), 'funds' => 'Held']);
                             Activity::record('order-paid', $buyer->email, $order->number().' · ₱'.number_format($order->total).' · '.$order->method);
                             $paid[] = $order->number();
                         } elseif (in_array($intentStatus, ['awaiting_payment_method', 'cancelled'], true)) {
                             $order->update(['checkout_session' => null]);
+                        } else {
+                            $pending[] = $order->number();
                         }
                     }
                     continue;
@@ -218,12 +231,14 @@ class PaymentController extends Controller
                     } elseif (! collect($attributes['payments'] ?? [])->contains(fn ($item) => in_array(data_get($item, 'attributes.status'), ['pending', 'processing'], true))
                         && (($attributes['status'] ?? '') !== 'active' || $cancelled)) {
                         $order->update(['checkout_session' => null]);
+                    } else {
+                        $pending[] = $order->number();
                     }
                 }
             }
         }
 
-        return response()->json(['result' => ['paid' => $paid], 'state' => AppState::for($buyer->fresh())]);
+        return response()->json(['result' => ['paid' => array_values(array_unique($paid)), 'pending' => array_values(array_unique($pending)), 'unverified' => $unverified], 'state' => AppState::for($buyer->fresh())]);
     }
 
     private function client(): ?PendingRequest
