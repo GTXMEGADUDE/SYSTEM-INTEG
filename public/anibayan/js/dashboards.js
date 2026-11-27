@@ -1025,8 +1025,8 @@ function dashOrderTable(mode) {
     const head = dashPanelHead(title, '', mode === 'recent' ? '<button class="text-button" data-go="orders">View all ' + di('arrow') + '</button>' : '');
     const filters = mode === 'all' ? dashFilters(['All', 'Pending', 'Confirmed', 'Processing', 'Delivered', 'Refund requested', 'Completed', 'Refunded', 'Cancelled'], dashPlural(orders.length, 'order')) : '';
     const empty = !dashRoleOrders().length ? dashEmpty('No orders yet', isConsumerDashboard ? 'Orders you place from your cart appear here.' : 'Orders from buyers appear here.') : dashEmpty('No matching orders', 'Try another search or order status.');
-    const table = orders.length ? '<table><thead><tr>' + cols.map(c => '<th scope="col">' + c[0] + '</th>').join('') + '<th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>' + orders.map(o => '<tr>' + cols.map(c => '<td>' + c[1](o) + '</td>').join('') + '<td>' + actions(o) + '</td></tr>').join('') + '</tbody></table>' : empty;
-    return '<section class="panel">' + head + filters + '<div class="table-wrap">' + table + '</div>' + (mode === 'recent' ? '' : '<div class="table-footer"><span>Showing ' + orders.length + ' of ' + dashPlural(dashRoleOrders().length, 'order') + '</span></div>') + '</section>';
+    const table = orders.length ? '<table><thead><tr>' + cols.map(c => '<th scope="col">' + c[0] + '</th>').join('') + '<th scope="col"><span class="sr-only">Actions</span></th></tr></thead><tbody>' + orders.map(o => '<tr>' + cols.map(c => '<td data-label="' + de(c[0]) + '">' + c[1](o) + '</td>').join('') + '<td data-label="Actions">' + actions(o) + '</td></tr>').join('') + '</tbody></table>' : empty;
+    return '<section class="panel">' + head + filters + '<div class="table-wrap order-table-wrap">' + table + '</div>' + (mode === 'recent' ? '' : '<div class="table-footer"><span>Showing ' + orders.length + ' of ' + dashPlural(dashRoleOrders().length, 'order') + '</span></div>') + '</section>';
 }
 /* ---------- Admin: accounts, user reports, organization applications and site health ---------- */
 const dashAppStatus = (org) => org.status === 'Active' ? 'Approved' : org.status;
@@ -1813,13 +1813,14 @@ function dashPaymentDialog(ids) {
     const method = orders[0].method || 'GCash';
     const selectedMethod = method === 'Credit or debit card' ? 'card' : 'qrph';
     const paymentNote = selectedMethod === 'card' ? 'Card details go directly to PayMongo and are not stored by AniBayan.' : 'Scan a single-use QR Ph code with GCash or a supported bank app. The limit may depend on your bank.';
+    const methodField = dashField('paymentMethod', 'Payment method', '<select><option value="GCash or QR Ph"' + (selectedMethod === 'qrph' ? ' selected' : '') + '>GCash or QR Ph</option><option value="Credit or debit card"' + (selectedMethod === 'card' ? ' selected' : '') + '>Credit or debit card</option></select>', 'You can change this before you pay.', true);
     const cardFields = '<form id="payment-card-form" class="dash-form"' + (selectedMethod === 'card' ? '' : ' hidden') + ' novalidate><div class="form-grid">'
         + dashField('cardNumber', 'Card number' + dashRequired, '<input type="text" inputmode="numeric" autocomplete="cc-number" maxlength="23" placeholder="Card number" required>', 'Card details go directly to PayMongo and are not stored by AniBayan.', true)
         + dashField('cardExpiryMonth', 'Expiry month' + dashRequired, '<input type="text" inputmode="numeric" autocomplete="cc-exp-month" maxlength="2" placeholder="MM" required>')
         + dashField('cardExpiryYear', 'Expiry year' + dashRequired, '<input type="text" inputmode="numeric" autocomplete="cc-exp-year" maxlength="4" placeholder="YYYY" required>')
         + dashField('cardCvc', 'Security code' + dashRequired, '<input type="password" inputmode="numeric" autocomplete="cc-csc" maxlength="4" required>')
         + '</div></form>';
-    dashOpen('<p class="detail-kicker">AniBayan secure payment</p><h2 id="payment-title" data-total="' + total + '">Pay ' + dp(total) + ' with ' + (selectedMethod === 'card' ? 'card' : 'GCash / QR Ph') + '</h2><p class="detail-subtitle">' + orders.map(o => dashOrderNo(o.id) + ' &middot; ' + de(o.organization)).join('<br>') + '</p><p class="detail-note">' + paymentNote + '</p>' + cardFields + '<div class="detail-actions"><button class="control" data-pay-later>Pay later</button><button type="button" class="control primary" data-pay="' + orders.map(o => o.id).join(',') + '">' + di('wallet') + 'Pay ' + dp(total) + '</button></div>');
+    dashOpen('<p class="detail-kicker">AniBayan secure payment</p><h2 id="payment-title" data-total="' + total + '">Pay ' + dp(total) + ' with ' + (selectedMethod === 'card' ? 'card' : 'GCash / QR Ph') + '</h2><p class="detail-subtitle">' + orders.map(o => dashOrderNo(o.id) + ' &middot; ' + de(o.organization)).join('<br>') + '</p>' + methodField + '<p class="detail-note" id="payment-note">' + paymentNote + '</p>' + cardFields + '<div class="detail-actions"><button class="control" data-pay-later>Pay later</button><button type="button" class="control primary" data-pay="' + orders.map(o => o.id).join(',') + '" data-payment-method="' + (selectedMethod === 'card' ? 'Credit or debit card' : 'GCash or QR Ph') + '">' + di('wallet') + 'Pay ' + dp(total) + '</button></div>');
     const detail = document.getElementById('detail-content');
     const progress = document.createElement('p');
     progress.id = 'payment-progress';
@@ -1836,7 +1837,7 @@ function dashPaymentDialog(ids) {
 // Creates an intent on AniBayan's server, tokenizes payment details with PayMongo's public key, then attaches it.
 async function dashStartPayment(ids, button) {
     const order = dashboardOrders.find(o => o.id === ids[0]);
-    const method = order?.method === 'Credit or debit card' ? 'Credit or debit card' : 'GCash or QR Ph';
+    const method = button.dataset.paymentMethod === 'Credit or debit card' || (!button.dataset.paymentMethod && order?.method === 'Credit or debit card') ? 'Credit or debit card' : 'GCash or QR Ph';
     const progress = document.getElementById('payment-progress'), error = document.getElementById('payment-error');
     if (progress) {
         progress.hidden = false;
@@ -2057,7 +2058,7 @@ async function dashPayMongoPost(publicKey, path, body) {
     }
 }
 function dashShowQrPh(image, ids) {
-    dashOpen('<p class="detail-kicker">AniBayan · GCash / QR Ph</p><h2 id="detail-title">Scan to pay</h2><p class="detail-subtitle">' + ids.map(dashOrderNo).join(', ') + ' · this single-use code expires in about 30 minutes.</p><div class="qrph-payment"><div id="qrph-image-slot" class="qrph-image-slot"></div><p>Open GCash, your bank, or another QR Ph-enabled wallet, scan this code, and approve the amount shown.</p></div><p id="qrph-status" class="payment-status" role="status">Waiting for payment confirmation…</p><div class="detail-actions"><button class="control" data-close-dialog>Close</button></div>');
+    dashOpen('<p class="detail-kicker">AniBayan · GCash / QR Ph</p><h2 id="detail-title">Scan to pay</h2><p class="detail-subtitle">' + ids.map(dashOrderNo).join(', ') + ' · this single-use code expires in about 30 minutes.</p><div class="qrph-payment"><div id="qrph-image-slot" class="qrph-image-slot"></div><p>Open GCash, your bank, or another QR Ph-enabled wallet, scan this code, and approve the amount shown.</p></div><p id="qrph-status" class="payment-status" role="status">Waiting for payment confirmation…</p><div class="detail-actions"><button class="control" data-change-payment="' + ids.join(',') + '">Change payment method</button><button class="control" data-close-dialog>Close</button></div>');
     const img = document.createElement('img');
     img.src = image;
     img.alt = 'Single-use QR Ph payment code';
@@ -2076,7 +2077,7 @@ function dashShowTestQrPh(testUrl, image, ids) {
     if (!simulatorUrl)
         return false;
     const total = Number(document.getElementById('payment-title')?.getAttribute('data-total') || 0);
-    dashOpen('<p class="detail-kicker">AniBayan &middot; PayMongo test mode</p><h2 id="detail-title">QR Ph test payment</h2><p class="detail-subtitle">' + ids.map(dashOrderNo).join(', ') + ' &middot; test amount ' + dp(total) + '</p><div class="qrph-payment"><div id="qrph-image-slot" class="qrph-image-slot"></div></div><div class="detail-actions"><a class="control primary" href="' + de(simulatorUrl) + '" target="_blank" rel="noopener noreferrer">Open PayMongo test simulator</a><button class="control" data-close-dialog>Close</button></div>');
+    dashOpen('<p class="detail-kicker">AniBayan &middot; PayMongo test mode</p><h2 id="detail-title">QR Ph test payment</h2><p class="detail-subtitle">' + ids.map(dashOrderNo).join(', ') + ' &middot; test amount ' + dp(total) + '</p><div class="qrph-payment"><div id="qrph-image-slot" class="qrph-image-slot"></div></div><div class="detail-actions"><a class="control primary" href="' + de(simulatorUrl) + '" target="_blank" rel="noopener noreferrer">Open PayMongo test simulator</a><button class="control" data-change-payment="' + ids.join(',') + '">Change payment method</button><button class="control" data-close-dialog>Close</button></div>');
     const img = document.createElement('img');
     img.src = image;
     img.alt = 'QR Ph test payment preview';
@@ -3451,6 +3452,39 @@ function dashStart() {
             dashAddRefundFiles(input);
             return;
         }
+        if (input.id === 'field-paymentMethod') {
+            const card = input.value === 'Credit or debit card';
+            const title = document.getElementById('payment-title');
+            const total = Number(title?.getAttribute('data-total') || 0);
+            if (title)
+                title.textContent = 'Pay ' + dp(total) + ' with ' + (card ? 'card' : 'GCash / QR Ph');
+            const note = document.getElementById('payment-note');
+            if (note)
+                note.textContent = card ? 'Card details go directly to PayMongo and are not stored by AniBayan.' : 'Scan a single-use QR Ph code with GCash or a supported bank app. The limit may depend on your bank.';
+            const form = document.getElementById('payment-card-form');
+            if (form) {
+                form.hidden = !card;
+                if (!card)
+                    form.reset();
+                form.querySelectorAll('[aria-invalid="true"]').forEach(field => field.removeAttribute('aria-invalid'));
+                form.querySelectorAll('.field-error').forEach(slot => slot.textContent = '');
+            }
+            const progress = document.getElementById('payment-progress');
+            if (progress)
+                progress.hidden = true;
+            const error = document.getElementById('payment-error');
+            if (error) {
+                error.hidden = true;
+                error.textContent = '';
+            }
+            const button = document.querySelector('#detail-content [data-pay]');
+            if (button) {
+                button.dataset.paymentMethod = input.value;
+                button.disabled = false;
+                button.innerHTML = di('wallet') + 'Pay ' + dp(total);
+            }
+            return;
+        }
         if (input.name === 'barangay' && input.form?.querySelector('#map-picker')) {
             dashMapControls?.fly(input.value);
         }
@@ -3803,6 +3837,10 @@ function dashHandleClick(event) {
     if (data.reportOrder) {
         if (dashRequireBuyer())
             dashReportForm(data.reportOrder);
+        return;
+    }
+    if (data.changePayment) {
+        dashPaymentDialog(data.changePayment.split(','));
         return;
     }
     if (data.payOrder) {
