@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Auth;
 
 // CPU, memory and storage of the machine running AniBayan, for the administrator's Site health page.
 // Sizes are in bytes. A reading the machine doesn't give is null.
@@ -10,6 +11,9 @@ class ServerHealthController extends Controller
 {
     public function __invoke(): JsonResponse
     {
+        $viewer = Auth::user();
+        abort_unless($viewer && $viewer->status === 'Active' && $viewer->isAdmin(), 404);
+
         $reading = PHP_OS_FAMILY === 'Windows' ? $this->windows() : $this->linux();
         $total = @disk_total_space(base_path());
         $free = @disk_free_space(base_path());

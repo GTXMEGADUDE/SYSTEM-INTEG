@@ -47,7 +47,7 @@ class AuthController extends Controller
 
     public function login(Request $request): JsonResponse
     {
-        $data = $request->validate(['email' => 'required|email', 'password' => 'required|string'], ['email.*' => 'Enter your email address.', 'password.*' => 'Enter your password.']);
+        $data = $request->validate(['email' => 'required|email|max:160', 'password' => 'required|string|max:200'], ['email.*' => 'Enter your email address.', 'password.*' => 'Enter your password.']);
         $email = strtolower(trim($data['email']));
         $account = User::where('email', $email)->first();
         $refuse = function (string $type, string $detail, string $message) use ($account, $email) {
@@ -58,7 +58,7 @@ class AuthController extends Controller
         if (! $account) {
             return $refuse('signin-failed', 'No account with this email', 'The email or password is incorrect.');
         }
-        if (! Hash::check($data['password'], $account->password)) {
+        if ($this->isSharedStarterPassword($data['password']) || ! Hash::check($data['password'], $account->password)) {
             return $refuse('signin-failed', 'Wrong password', 'The email or password is incorrect.');
         }
         if ($account->status === 'Suspended') {
@@ -102,7 +102,7 @@ class AuthController extends Controller
         $request->merge(['email' => strtolower(trim((string) $request->input('email')))]);
         $data = $request->validate([
             'email' => 'required|email|max:160', 'token' => 'required|string',
-            'password' => 'required|string|min:8|max:200|confirmed',
+            'password' => ['required', 'string', 'min:8', 'max:200', 'confirmed', $this->rejectSharedStarterPassword()],
         ], [
             'email.*' => 'Enter your email address.', 'token.*' => 'This reset link is invalid or expired. Request a new one.',
             'password.min' => 'Use at least 8 characters.', 'password.confirmed' => 'The passwords do not match.',
@@ -139,7 +139,7 @@ class AuthController extends Controller
         $rules = [
             'type' => 'required|in:buyer,organization', 'name' => 'required|string|min:3|max:80',
             'email' => 'required|email|max:120|unique:users,email', 'phone' => ['required', 'regex:'.ActionController::PHONE],
-            'password' => 'required|string|min:8|max:200|confirmed',
+            'password' => ['required', 'string', 'min:8', 'max:200', 'confirmed', $this->rejectSharedStarterPassword()],
         ];
         if ($organization) {
             $rules += [
@@ -232,5 +232,21 @@ class AuthController extends Controller
         Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
+    }
+
+    private function isSharedStarterPassword(string $password): bool
+    {
+        $starter = (string) config('anibayan.demo_password', '');
+
+        return config('app.env') === 'production' && $starter !== '' && hash_equals($starter, $password);
+    }
+
+    private function rejectSharedStarterPassword(): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail): void {
+            if (is_string($value) && $this->isSharedStarterPassword($value)) {
+                $fail('This shared starter password is disabled. Choose another password or use password reset.');
+            }
+        };
     }
 }

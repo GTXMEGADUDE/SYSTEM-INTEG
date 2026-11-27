@@ -19,7 +19,7 @@ With the app running (`php artisan serve`), open `http://127.0.0.1:8000/anibayan
 
 ## Test accounts
 
-Every test account uses the password `anibayan` until it is changed or reset.
+Seeded sample accounts are for local development only. Their shared starter password is rejected by the production sign-in flow; use a unique password for hosted accounts.
 
 | Email | Account |
 | --- | --- |

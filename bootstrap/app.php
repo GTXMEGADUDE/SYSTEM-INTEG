@@ -19,10 +19,18 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->trustProxies(
             at: '*',
             headers: Request::HEADER_X_FORWARDED_FOR
-                | Request::HEADER_X_FORWARDED_HOST
                 | Request::HEADER_X_FORWARDED_PORT
                 | Request::HEADER_X_FORWARDED_PROTO,
         );
+        $middleware->trustHosts(at: static function (): array {
+            $appHost = parse_url((string) config('app.url'), PHP_URL_HOST);
+            $trustedHosts = $appHost ? ['^'.preg_quote($appHost, '#').'$'] : [];
+            $trustedHosts[] = '^localhost$';
+            $trustedHosts[] = '^127\\.0\\.0\\.1$';
+            $trustedHosts[] = '^\\[?::1\\]?$';
+
+            return $trustedHosts;
+        }, subdomains: false);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

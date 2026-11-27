@@ -28,7 +28,7 @@ For card and GCash payments, put the PayMongo test keys (PayMongo dashboard → 
 
 ## Test accounts
 
-Every test account uses the password `anibayan`.
+Seeded sample accounts are for local development only. Their shared starter password is rejected by the production sign-in flow; use a unique password for hosted accounts.
 
 - `alex@example.com`: buyer (shop, cart, checkout, orders)
 - `ramon@example.com`: representative of Canubing Vegetable Growers (orders, listings, members)

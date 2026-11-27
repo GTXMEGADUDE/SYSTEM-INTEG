@@ -1030,7 +1030,7 @@ class ActionController extends Controller
 
     private function passwordChange(Request $request, User $user): void
     {
-        $data = $request->validate(['current' => 'required|string', 'password' => 'required|string|min:8|max:200', 'confirm' => 'required|same:password'],
+        $data = $request->validate(['current' => 'required|string|max:200', 'password' => ['required', 'string', 'min:8', 'max:200', $this->rejectSharedStarterPassword()], 'confirm' => 'required|same:password'],
             ['password.min' => 'Use at least 8 characters.', 'confirm.same' => 'The two new passwords don’t match.']);
         if (! Hash::check($data['current'], $user->password)) {
             abort(response()->json(['message' => 'That isn’t your current password.', 'errors' => ['current' => ['That isn’t your current password.']]], 422));
@@ -1040,6 +1040,16 @@ class ActionController extends Controller
         }
         $user->update(['password' => $data['password']]);
         Activity::record('password-changed', $user->email);
+    }
+
+    private function rejectSharedStarterPassword(): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail): void {
+            $starter = (string) config('anibayan.demo_password', '');
+            if (config('app.env') === 'production' && $starter !== '' && is_string($value) && hash_equals($starter, $value)) {
+                $fail('This shared starter password is disabled. Choose another password.');
+            }
+        };
     }
 
     private function preferences(Request $request, User $user): void
