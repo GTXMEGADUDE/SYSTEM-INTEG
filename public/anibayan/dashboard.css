@@ -823,3 +823,7 @@ tr.flagged-row .repeat-count{color:#9c3d3d}
   .product-media>.status{left:8px;bottom:8px;font-size:12px;padding:2px 9px}
   .product-tile-copy{padding:0 2px}
 }
+.dash-brand{height:auto;min-height:70px}
+.dash-brand>img{width:88px;height:70px;object-fit:contain;flex-shrink:0;background:#fffdf2;border-radius:9px;padding:3px}
+.auth-brand>img{width:82px;height:66px;object-fit:contain;background:#fffdf2;border-radius:9px;padding:3px}
+@media(min-width:901px){.sidebar-collapsed .dash-brand{min-height:48px;justify-content:center;padding-inline:0}.sidebar-collapsed .dash-brand>img{width:48px;height:38px}}

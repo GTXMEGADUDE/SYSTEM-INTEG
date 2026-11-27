@@ -167,3 +167,5 @@
 
 /* The original desktop artboard forced a 1100px canvas even on phones. */
 body{min-width:0}
+.brand>img{width:96px;height:76px;object-fit:contain;flex-shrink:0;background:#fffdf2;border-radius:10px;padding:3px}
+@media(max-width:760px){.brand>img{width:72px;height:58px}}
