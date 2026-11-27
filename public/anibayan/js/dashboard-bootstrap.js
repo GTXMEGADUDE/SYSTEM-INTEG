@@ -19,7 +19,7 @@
     Promise.all([state, ready]).then(function (values) {
         window.anibayanState = values[0];
         var script = document.createElement('script');
-        script.src = 'js/dashboards.js?v=20261127-table-fit';
+        script.src = 'js/dashboards.js?v=20261127-order-status-note';
         document.body.appendChild(script);
     });
 })();

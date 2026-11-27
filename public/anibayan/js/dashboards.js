@@ -1014,7 +1014,7 @@ function dashOrderTable(mode) {
     if (isOrgDashboard)
         cols.push(['Buyer', o => de(o.customer)]);
     cols.push(['Total', o => '<strong>' + dp(o.total) + '</strong>']);
-    const statusCell = (o) => ds(o.status) + (o.status === 'Cancelled' && o.cancelReason ? '<small class="cell-note">' + de(o.cancelReason) + '</small>' : '');
+    const statusCell = (o) => ds(o.status);
     if (mode === 'payments')
         cols.push(['Payment', o => ds(o.payment) + (o.method ? '<small class="cell-note">' + de(o.method) + '</small>' : '')], ['Funds', o => o.funds ? ds(o.funds) : '<small class="cell-note">' + (o.payment === 'Paid' ? 'Cash' : '–') + '</small>'], ['Order status', statusCell]);
     else
