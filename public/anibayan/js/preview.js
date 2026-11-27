@@ -208,6 +208,21 @@ function icon(name) { return '<svg class="icon" aria-hidden="true"><use href="#'
 const video = getElement('hero-film');
 const playbackButton = getElement('toggle-video');
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+document.addEventListener('error', event => {
+    const image = event.target;
+    if (!(image instanceof HTMLImageElement) || image.dataset.fallbackApplied)
+        return;
+    image.dataset.fallbackApplied = 'true';
+    const avatar = image.closest('.header-avatar');
+    if (avatar) {
+        const initials = avatar.title.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase();
+        if (initials) {
+            avatar.replaceChildren(document.createTextNode(initials));
+            return;
+        }
+    }
+    image.src = 'assets/field-detail.jpg';
+}, true);
 function updatePlayback() {
     playbackButton.setAttribute('aria-label', video.paused ? 'Play background video' : 'Pause background video');
     playbackButton.setAttribute('aria-pressed', String(video.paused));
@@ -300,6 +315,23 @@ function setupHarvestGallery() {
     }
     function render() {
         scheduled = false;
+        if (window.matchMedia('(max-width: 900px)').matches) {
+            for (const tile of tiles) {
+                tile.style.opacity = '1';
+                tile.style.transform = 'none';
+            }
+            copy.style.opacity = '1';
+            copy.style.translate = '0 0';
+            next.style.opacity = '1';
+            incoming.style.setProperty('--story-shift', '0px');
+            incoming.style.setProperty('--gallery-stage-height', '0px');
+            gallery.inert = false;
+            incoming.inert = false;
+            storyIntro.style.opacity = '1';
+            storyIntro.style.transform = 'none';
+            gallery.dataset.scrollProgress = 'static';
+            return;
+        }
         if (reducedMotion.matches) {
             for (let i = 0; i < tiles.length; i++) {
                 tiles[i].style.opacity = '1';

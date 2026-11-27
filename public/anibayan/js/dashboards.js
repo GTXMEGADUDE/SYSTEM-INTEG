@@ -272,6 +272,30 @@ const dashOrderNo = (id) => id.replace('AB-2026-', '#');
 const dashInitials = (name) => name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase();
 // Stock photos live in assets/; uploaded photos are saved by the server under uploads/.
 const dashImg = (src) => /^(data:|blob:|https?:|uploads\/)/.test(src) ? src : 'assets/' + src;
+// A missing upload should never leave a broken-image icon in the marketplace or account pages.
+const dashFallbackPhotos = [[/sweet[ -]potato/i, 'sweet-potatoes.jpg'], [/\brice\b|\bgrain/i, 'rice.jpg'], [/\bmango/i, 'mango.jpg'], [/\bbanana/i, 'bananas.jpg'], [/\bonion/i, 'onion.jpg'], [/\bcarrot/i, 'carrot.jpg'], [/\btomato/i, 'tomatoes.jpg'], [/\beggplant/i, 'eggplant.jpg'], [/\bfruit/i, 'mango.jpg']];
+function dashInstallImageFallbacks() {
+    document.addEventListener('error', event => {
+        const image = event.target;
+        if (!(image instanceof HTMLImageElement) || image.dataset.fallbackApplied)
+            return;
+        image.dataset.fallbackApplied = 'true';
+        const context = [image.alt, image.parentElement?.textContent, image.closest('article,section,.panel')?.textContent].filter(Boolean).join(' ').toLowerCase();
+        const avatar = image.closest('.avatar');
+        if (avatar) {
+            const label = avatar.closest('.profile-id')?.querySelector('.profile-name h1,.profile-name h2')?.textContent
+                || avatar.closest('.table-product,.organization-row,.sidebar-user,.workspace-account')?.querySelector('strong')?.textContent
+                || avatar.parentElement?.querySelector('strong')?.textContent || '';
+            if (label.trim()) {
+                avatar.replaceChildren(document.createTextNode(dashInitials(label.trim())));
+                return;
+            }
+        }
+        const fallback = dashFallbackPhotos.find(([pattern]) => pattern.test(context))?.[1] || 'field-detail.jpg';
+        image.src = 'assets/' + fallback;
+    }, true);
+}
+dashInstallImageFallbacks();
 /* ---------- Changing data: every change goes to the server ---------- */
 const dashInFlight = new Set();
 // Sends one action to the server, which checks it, saves it and answers with this person's fresh data; the page
@@ -408,7 +432,9 @@ const dashPrivacy = (a) => ({ ...dashPrivacyDefaults, ...(a.privacy || {}) });
 function dashCity(address) { const parts = (address || '').split(',').map(p => p.trim()).filter(Boolean); return parts.length >= 3 ? parts.slice(-2).join(', ') : ''; }
 // A banner without an uploaded photo: the organization's own photo, or a green gradient picked from the buyer's name.
 function dashBannerStyle(look, fallback) {
-    return 'background-image:' + (look.banner ? 'url(&quot;' + de(look.banner) + '&quot;)' : fallback) + ';background-position:' + (look.bannerX ?? 50) + '% ' + (look.bannerY ?? 50) + '%';
+    return look.banner
+        ? 'background-image:linear-gradient(135deg,#183f2d20,#183f2d65),url(&quot;' + de(look.banner) + '&quot;),url(&quot;assets/field-detail.jpg&quot;);background-position:center,' + (look.bannerX ?? 50) + '% ' + (look.bannerY ?? 50) + '%,center;background-size:cover,cover,cover'
+        : 'background-image:' + fallback + ',url(&quot;assets/field-detail.jpg&quot;);background-position:center,center;background-size:cover,cover';
 }
 function dashUserBanner(name) {
     const hue = 95 + [...name].reduce((sum, c) => sum + c.charCodeAt(0), 0) % 60;

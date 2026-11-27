@@ -63,3 +63,107 @@
 .market-intro{will-change:auto}
 @media(max-width:1300px){.community-grid{grid-template-columns:320px minmax(0,1fr)}.community-stat{padding-left:22px}.community-stat strong{font-size:40px}.community-stat span{font-size:14px}.gallery-copy{width:490px}.gallery-copy h2{font-size:42px;line-height:51px}.gallery-copy h2 em{font-size:54px}.gallery-copy>p:last-child{font-size:14px}}
 @media(prefers-reduced-motion:reduce){.community-track{will-change:auto}.community-viewport{mask-image:none}.community-stat{flex-basis:calc((100% - 48px)/3)}.community-stat[aria-hidden="true"]{display:none}.harvest-gallery{height:840px;min-height:0;max-height:none}.harvest-stage{position:relative;height:840px;min-height:0;max-height:none}.market-handoff{margin-top:0;transform:none;will-change:auto}.harvest-tile,.gallery-copy,.gallery-next,.market-intro{will-change:auto}}
+
+/* Phone and small tablet layouts. Keep the page fluid instead of shrinking a desktop canvas. */
+@media(max-width:900px){
+  body{min-width:0;overflow-x:hidden}
+  .container{width:calc(100% - 48px)}
+  .hero{height:auto;min-height:clamp(620px,100svh,820px)}
+  .site-header{top:16px;height:auto;display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+  .brand{gap:8px}
+  .brand>span{font-size:25px;line-height:32px}
+  .brand>svg{width:29px;height:28px}
+  .header-actions{gap:8px}
+  .cart-control{padding:6px;gap:4px}
+  .cart-control .icon{width:25px;height:25px}
+  .sign-in{width:auto;height:40px;padding:0 16px;font-size:14px}
+  .header-avatar{width:40px;height:40px}
+  .hero-nav{position:static;order:3;left:auto;transform:none;margin:0;width:100%;height:48px;justify-content:flex-start;gap:4px;overflow-x:auto;padding:4px;border-radius:24px}
+  .hero-nav a{height:38px;padding-inline:14px;font-size:14px}
+  .hero-content{inset:auto 0 126px}
+  .hero-content h1{font-size:clamp(42px,8vw,58px);line-height:1.12;letter-spacing:-1.8px}
+  .hero-content h1 em{font-size:clamp(44px,8vw,60px);letter-spacing:-1.2px}
+  .hero-description{font-size:16px;line-height:25px}
+  .hero-actions{margin-top:24px;gap:18px;flex-wrap:wrap}
+  .hero-actions>.button{width:auto}
+  .hero-actions>.text-link{gap:10px}
+  .hero-bottom{height:auto;min-height:68px;padding:12px 0;gap:12px;align-items:center}
+  .hero-bottom>a{gap:14px}
+  .hero-bottom>div{gap:12px}
+  .film-caption{font-size:12px}
+  .community{height:auto;padding:22px 0}
+  .community-grid{height:auto;grid-template-columns:minmax(0,1fr);gap:12px}
+  .community h2{font-size:24px;line-height:1.3}
+  .community-stat{padding-left:14px}
+  .community-stat strong{font-size:34px;line-height:42px}
+  .community-stat span{font-size:13px;line-height:20px}
+  .marketplace{min-height:0;padding:40px 0}
+  .market-intro{display:grid;gap:16px}
+  .market-intro h2{font-size:30px;line-height:1.2;margin-top:10px}
+  .search-field{margin:0;width:100%;height:50px;padding-inline:16px}
+  .categories{height:auto;display:flex;overflow-x:auto;gap:10px;margin-top:22px;padding-bottom:8px}
+  .category{flex:0 0 auto;height:44px;padding:0 8px;gap:8px;font-size:14px}
+  .category.active{max-width:none;padding-inline:14px}
+  .category-reset{flex:0 0 auto;padding:0 12px}
+  .product-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+  .product-card{height:auto;min-width:0}
+  .product-image{height:clamp(150px,32vw,220px)}
+  .product-body{padding:14px}
+  .product-body h3{font-size:17px;line-height:1.3}
+  .product-organization{font-size:13px;line-height:1.4;min-height:0}
+  .product-bottom{height:auto;min-height:42px;flex-wrap:wrap;margin-top:12px}
+  .price{font-size:20px}
+  .price small{font-size:13px;margin-left:3px}
+  .add-to-cart{height:40px;padding-inline:12px;font-size:13px}
+  .market-more{gap:12px;align-items:flex-start;font-size:13px}
+  .market-more .text-link{gap:8px;white-space:nowrap}
+  .growers{height:auto;grid-template-columns:minmax(0,1fr);gap:24px;padding:44px 0}
+  .grower-photo{width:100%;height:clamp(240px,58vw,420px);object-fit:cover}
+  .growers-copy{padding:0}
+  .growers-copy h2{font-size:30px;line-height:1.2;margin-top:12px}
+  .growers-description{margin-top:16px;font-size:15px;line-height:1.6}
+  #grower-list{margin-top:18px}
+  .steps{height:auto;padding:24px 0 36px}
+  .steps ol{grid-template-columns:minmax(0,1fr);gap:14px;margin-top:20px}
+  .steps li{padding-top:16px}
+  .steps h3{margin-top:8px}
+  .site-footer{height:auto;padding-bottom:18px}
+  .footer-callout{height:auto;min-height:130px;padding:24px 0;gap:18px;flex-wrap:wrap}
+  .footer-callout p{font-size:25px;line-height:1.25}
+  .footer-callout em{font-size:28px;line-height:1.2}
+  .footer-callout>.button{width:auto}
+  .footer-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;padding:26px 0;min-height:0}
+  .footer-grid>div:first-child{grid-column:1/-1}
+  .footer-bottom{height:auto;min-height:64px;gap:12px;flex-wrap:wrap;padding:14px 0}
+  dialog{width:calc(100% - 28px);max-width:560px;max-height:88svh;padding:22px}
+}
+
+@media(max-width:560px){
+  .container{width:calc(100% - 36px)}
+  .hero{min-height:clamp(600px,100svh,760px)}
+  .hero-content{bottom:118px}
+  .hero-content h1{font-size:40px;line-height:1.08}
+  .hero-content h1 em{font-size:42px}
+  .hero-description{font-size:15px;line-height:23px}
+  .hero-description br{display:none}
+  .hero-actions{align-items:flex-start;flex-direction:column;gap:15px}
+  .hero-actions>.button{min-height:48px;padding-inline:18px}
+  .hero-bottom{font-size:12px}
+  .hero-bottom>a{gap:8px}
+  .hero-bottom>div{gap:8px}
+  .film-caption{max-width:170px;line-height:1.35}
+  .product-grid{grid-template-columns:minmax(0,1fr)}
+  .product-image{height:220px}
+  .product-body{padding:16px}
+  .product-body h3{font-size:19px}
+  .product-bottom{flex-wrap:nowrap}
+  .price{font-size:24px}
+  .price small{font-size:15px;margin-left:5px}
+  .add-to-cart{font-size:14px;padding-inline:15px}
+  .footer-grid{grid-template-columns:minmax(0,1fr);gap:20px}
+  .footer-grid>div:first-child{grid-column:auto}
+  .basket-total{gap:14px;font-size:17px}
+}
+
+/* The original desktop artboard forced a 1100px canvas even on phones. */
+body{min-width:0}
